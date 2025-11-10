@@ -7,52 +7,69 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// Générer un ID utilisateur unique pour ce navigateur
-const getUserId = () => {
-  if (typeof window === 'undefined') return null;
-  let userId = localStorage.getItem('userId');
-  if (!userId) {
-    userId = 'user_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('userId', userId);
-  }
-  return userId;
-};
-
 export default function LockerParcelApp() {
   const [parcels, setParcels] = useState([]);
   const [codeInput, setCodeInput] = useState('');
   const [location, setLocation] = useState('');
   const [lockerType, setLockerType] = useState('mondial-relais');
   const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState(null);
-  const [error, setError] = useState(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
-    setUserId(getUserId());
+    checkAuth();
   }, []);
 
   useEffect(() => {
-    if (userId) {
+    if (isLoggedIn) {
       loadParcels();
     }
-  }, [userId]);
+  }, [isLoggedIn]);
+
+  const checkAuth = () => {
+    const savedUsername = localStorage.getItem('username');
+    const savedPassword = localStorage.getItem('password');
+    
+    if (savedUsername && savedPassword) {
+      setUsername(savedUsername);
+      setPassword(savedPassword);
+      setIsLoggedIn(true);
+    } else {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = () => {
+    if (username.trim() && password.trim()) {
+      localStorage.setItem('username', username.trim());
+      localStorage.setItem('password', password.trim());
+      setIsLoggedIn(true);
+    } else {
+      alert('Veuillez remplir tous les champs');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('username');
+    localStorage.removeItem('password');
+    setIsLoggedIn(false);
+    setUsername('');
+    setPassword('');
+    setParcels([]);
+  };
 
   const loadParcels = async () => {
     try {
-      setError(null);
       const { data, error } = await supabase
         .from('parcels')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', username)
+        .order('collected', { ascending: true })
         .order('date_added', { ascending: false });
 
-      if (error) {
-        console.error('Erreur Supabase:', error);
-        setError('Erreur de connexion à la base de données: ' + error.message);
-        throw error;
-      }
+      if (error) throw error;
       
-      console.log('Colis chargés:', data);
       setParcels(data || []);
     } catch (error) {
       console.error('Erreur de chargement:', error);
@@ -62,20 +79,15 @@ export default function LockerParcelApp() {
   };
 
   const extractParcelCodes = (text) => {
-    // Détecte les codes selon le type de locker
     let codes = [];
     
     if (lockerType === 'mondial-relais') {
-      // Mondial Relais: exactement 6 caractères alphanumériques
       codes = text.match(/[A-Z0-9]{6}(?![A-Z0-9])/gi) || [];
     } else if (lockerType === 'vinted-go') {
-      // Vinted GO: codes variables (4-12 caractères, souvent avec tirets)
-      // Capture les codes séparés par espaces, virgules, retours à la ligne
       codes = text.split(/[\s,\n]+/).filter(code => 
         code.length >= 4 && code.length <= 20 && /[A-Z0-9-]+/i.test(code)
       );
     } else {
-      // Relais Colis, Pickup: codes variables (4-15 caractères)
       codes = text.split(/[\s,\n]+/).filter(code => 
         code.length >= 4 && code.length <= 15 && /[A-Z0-9]+/i.test(code)
       );
@@ -88,7 +100,7 @@ export default function LockerParcelApp() {
     const codes = extractParcelCodes(codeInput);
     
     if (codes.length === 0) {
-      alert('Aucun code de colis valide trouvé pour le type de locker sélectionné');
+      alert('Aucun code de colis valide trouvé');
       return;
     }
 
@@ -97,50 +109,44 @@ export default function LockerParcelApp() {
       location: location.trim() || 'Non spécifié',
       locker_type: lockerType,
       collected: false,
-      user_id: userId
+      user_id: username
     }));
 
-    console.log('Tentative d\'ajout de colis:', newParcels);
-
     try {
-      setError(null);
       const { data, error } = await supabase
         .from('parcels')
         .insert(newParcels)
         .select();
 
-      if (error) {
-        console.error('Erreur Supabase:', error);
-        setError('Erreur lors de l\'ajout: ' + error.message);
-        alert('Erreur lors de l\'ajout des colis: ' + error.message);
-        throw error;
-      }
+      if (error) throw error;
       
-      console.log('Colis ajoutés avec succès:', data);
       setParcels([...data, ...parcels]);
       setCodeInput('');
       setLocation('');
-      alert(`${codes.length} colis ajouté(s) avec succès !`);
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
+      alert('Erreur lors de l\'ajout des colis');
     }
   };
 
   const toggleCollected = async (id, currentStatus) => {
     try {
+      const now = new Date().toISOString();
+      
       const { error } = await supabase
         .from('parcels')
-        .update({ collected: !currentStatus })
+        .update({ 
+          collected: !currentStatus,
+          date_added: !currentStatus ? now : parcels.find(p => p.id === id)?.date_added
+        })
         .eq('id', id);
 
       if (error) throw error;
 
-      setParcels(parcels.map(parcel =>
-        parcel.id === id ? { ...parcel, collected: !currentStatus } : parcel
-      ));
+      // Recharger pour avoir le bon ordre
+      loadParcels();
     } catch (error) {
       console.error('Erreur de mise à jour:', error);
-      setError('Erreur de mise à jour: ' + error.message);
     }
   };
 
@@ -158,7 +164,6 @@ export default function LockerParcelApp() {
       ));
     } catch (error) {
       console.error('Erreur de mise à jour:', error);
-      setError('Erreur de mise à jour: ' + error.message);
     }
   };
 
@@ -174,7 +179,26 @@ export default function LockerParcelApp() {
       setParcels(parcels.filter(parcel => parcel.id !== id));
     } catch (error) {
       console.error('Erreur de suppression:', error);
-      setError('Erreur de suppression: ' + error.message);
+    }
+  };
+
+  const deleteAllCollected = async () => {
+    if (!confirm('Supprimer tous les colis récupérés ?')) return;
+
+    try {
+      const collectedIds = collectedParcels.map(p => p.id);
+      
+      const { error } = await supabase
+        .from('parcels')
+        .delete()
+        .in('id', collectedIds);
+
+      if (error) throw error;
+
+      setParcels(parcels.filter(parcel => !parcel.collected));
+    } catch (error) {
+      console.error('Erreur de suppression:', error);
+      alert('Erreur lors de la suppression');
     }
   };
 
@@ -211,6 +235,66 @@ export default function LockerParcelApp() {
     }
   };
 
+  // Page de connexion
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <div className="bg-indigo-600 p-3 rounded-xl">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              </svg>
+            </div>
+            <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Nom d'utilisateur
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && document.getElementById('password-input').focus()}
+                placeholder="Choisissez un nom d'utilisateur"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Mot de passe
+              </label>
+              <input
+                id="password-input"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="Choisissez un mot de passe"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <button
+              onClick={handleLogin}
+              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition"
+            >
+              Se connecter
+            </button>
+
+            <p className="text-sm text-gray-600 text-center mt-4">
+              Utilisez les mêmes identifiants sur tous vos appareils pour synchroniser vos colis
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -222,41 +306,31 @@ export default function LockerParcelApp() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-2xl mx-auto">
-        {/* Message d'erreur */}
-        {error && (
-          <div className="bg-red-100 border-2 border-red-400 text-red-700 px-4 py-3 rounded-xl mb-6">
-            <strong>Erreur:</strong> {error}
-            <button 
-              onClick={() => setError(null)}
-              className="float-right font-bold"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        {/* Debug Info */}
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6 text-sm">
-          <p><strong>Debug Info:</strong></p>
-          <p>User ID: {userId}</p>
-          <p>Colis en mémoire: {parcels.length}</p>
-          <p>Supabase URL configuré: {process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓' : '✗'}</p>
-        </div>
-
-        {/* Header */}
+        {/* Header avec bouton déconnexion */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="bg-indigo-600 p-3 rounded-xl">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-              </svg>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-600 p-3 rounded-xl">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
+                <p className="text-sm text-gray-500">Connecté: {username}</p>
+              </div>
             </div>
-            <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
+            >
+              Déconnexion
+            </button>
           </div>
 
           {/* Formulaire d'ajout */}
           <div className="space-y-3">
-            {/* Type de locker - DÉPLACÉ EN PREMIER */}
+            {/* Type de locker */}
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-3">Type de locker :</p>
               <div className="grid grid-cols-2 gap-2">
@@ -423,7 +497,7 @@ export default function LockerParcelApp() {
               Récupérés ({collectedParcels.length})
             </h2>
             
-            <div className="space-y-3">
+            <div className="space-y-3 mb-4">
               {collectedParcels.map(parcel => (
                 <div
                   key={parcel.id}
@@ -469,6 +543,17 @@ export default function LockerParcelApp() {
                 </div>
               ))}
             </div>
+
+            <button
+              onClick={deleteAllCollected}
+              className="w-full bg-red-500 text-white py-3 rounded-xl font-semibold hover:bg-red-600 transition flex items-center justify-center gap-2"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Supprimer tous les colis récupérés
+            </button>
           </div>
         )}
       </div>
