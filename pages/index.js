@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Check, Trash2, Calendar, Download } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialiser Supabase
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// Générer un ID utilisateur unique pour ce navigateur
+const getUserId = () => {
+  if (typeof window === 'undefined') return null;
+  let userId = localStorage.getItem('userId');
+  if (!userId) {
+    userId = 'user_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('userId', userId);
+  }
+  return userId;
+};
 
 export default function LockerParcelApp() {
   const [parcels, setParcels] = useState([]);
@@ -7,110 +24,158 @@ export default function LockerParcelApp() {
   const [location, setLocation] = useState('');
   const [lockerType, setLockerType] = useState('mondial-relais');
   const [loading, setLoading] = useState(true);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [error, setError] = useState(null);
 
-  // Détecter si l'app peut être installée
   useEffect(() => {
-    const handler = (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setShowInstallBanner(true);
-    };
-    
-    window.addEventListener('beforeinstallprompt', handler);
-    
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    setUserId(getUserId());
   }, []);
 
-  // Charger les colis au démarrage
   useEffect(() => {
-    loadParcels();
-  }, []);
-
-  // Sauvegarder automatiquement à chaque changement
-  useEffect(() => {
-    if (!loading) {
-      saveParcels();
+    if (userId) {
+      loadParcels();
     }
-  }, [parcels, loading]);
+  }, [userId]);
 
   const loadParcels = async () => {
     try {
-      const result = await window.storage.get('parcels');
-      if (result && result.value) {
-        setParcels(JSON.parse(result.value));
+      setError(null);
+      const { data, error } = await supabase
+        .from('parcels')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date_added', { ascending: false });
+
+      if (error) {
+        console.error('Erreur Supabase:', error);
+        setError('Erreur de connexion à la base de données: ' + error.message);
+        throw error;
       }
+      
+      console.log('Colis chargés:', data);
+      setParcels(data || []);
     } catch (error) {
-      console.log('Aucun colis sauvegardé');
+      console.error('Erreur de chargement:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const saveParcels = async () => {
-    try {
-      await window.storage.set('parcels', JSON.stringify(parcels));
-    } catch (error) {
-      console.error('Erreur de sauvegarde:', error);
-    }
-  };
-
-  const installApp = async () => {
-    if (!deferredPrompt) return;
-    
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    
-    if (outcome === 'accepted') {
-      setShowInstallBanner(false);
-    }
-    
-    setDeferredPrompt(null);
-  };
-
   const extractParcelCodes = (text) => {
-    // Extrait tous les codes de 6 caractères (lettres et chiffres)
-    const codes = text.match(/[A-Z0-9]{6}/gi);
-    return codes ? [...new Set(codes)] : []; // Supprime les doublons
+    // Détecte les codes selon le type de locker
+    let codes = [];
+    
+    if (lockerType === 'mondial-relais') {
+      // Mondial Relais: exactement 6 caractères alphanumériques
+      codes = text.match(/[A-Z0-9]{6}(?![A-Z0-9])/gi) || [];
+    } else if (lockerType === 'vinted-go') {
+      // Vinted GO: codes variables (4-12 caractères, souvent avec tirets)
+      // Capture les codes séparés par espaces, virgules, retours à la ligne
+      codes = text.split(/[\s,\n]+/).filter(code => 
+        code.length >= 4 && code.length <= 20 && /[A-Z0-9-]+/i.test(code)
+      );
+    } else {
+      // Relais Colis, Pickup: codes variables (4-15 caractères)
+      codes = text.split(/[\s,\n]+/).filter(code => 
+        code.length >= 4 && code.length <= 15 && /[A-Z0-9]+/i.test(code)
+      );
+    }
+    
+    return codes ? [...new Set(codes)] : [];
   };
 
-  const addParcels = () => {
+  const addParcels = async () => {
     const codes = extractParcelCodes(codeInput);
     
     if (codes.length === 0) {
-      alert('Aucun code de colis valide trouvé (6 caractères requis)');
+      alert('Aucun code de colis valide trouvé pour le type de locker sélectionné');
       return;
     }
 
     const newParcels = codes.map(code => ({
-      id: Date.now() + Math.random(),
       code: code.toUpperCase(),
       location: location.trim() || 'Non spécifié',
-      lockerType: lockerType,
+      locker_type: lockerType,
       collected: false,
-      dateAdded: new Date().toISOString()
+      user_id: userId
     }));
 
-    setParcels([...newParcels, ...parcels]);
-    setCodeInput('');
-    setLocation('');
+    console.log('Tentative d\'ajout de colis:', newParcels);
+
+    try {
+      setError(null);
+      const { data, error } = await supabase
+        .from('parcels')
+        .insert(newParcels)
+        .select();
+
+      if (error) {
+        console.error('Erreur Supabase:', error);
+        setError('Erreur lors de l\'ajout: ' + error.message);
+        alert('Erreur lors de l\'ajout des colis: ' + error.message);
+        throw error;
+      }
+      
+      console.log('Colis ajoutés avec succès:', data);
+      setParcels([...data, ...parcels]);
+      setCodeInput('');
+      setLocation('');
+      alert(`${codes.length} colis ajouté(s) avec succès !`);
+    } catch (error) {
+      console.error('Erreur d\'ajout:', error);
+    }
   };
 
-  const toggleCollected = (id) => {
-    setParcels(parcels.map(parcel =>
-      parcel.id === id ? { ...parcel, collected: !parcel.collected } : parcel
-    ));
+  const toggleCollected = async (id, currentStatus) => {
+    try {
+      const { error } = await supabase
+        .from('parcels')
+        .update({ collected: !currentStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setParcels(parcels.map(parcel =>
+        parcel.id === id ? { ...parcel, collected: !currentStatus } : parcel
+      ));
+    } catch (error) {
+      console.error('Erreur de mise à jour:', error);
+      setError('Erreur de mise à jour: ' + error.message);
+    }
   };
 
-  const changeLockerType = (id, newType) => {
-    setParcels(parcels.map(parcel =>
-      parcel.id === id ? { ...parcel, lockerType: newType } : parcel
-    ));
+  const changeLockerType = async (id, newType) => {
+    try {
+      const { error } = await supabase
+        .from('parcels')
+        .update({ locker_type: newType })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setParcels(parcels.map(parcel =>
+        parcel.id === id ? { ...parcel, locker_type: newType } : parcel
+      ));
+    } catch (error) {
+      console.error('Erreur de mise à jour:', error);
+      setError('Erreur de mise à jour: ' + error.message);
+    }
   };
 
-  const deleteParcel = (id) => {
-    setParcels(parcels.filter(parcel => parcel.id !== id));
+  const deleteParcel = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('parcels')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setParcels(parcels.filter(parcel => parcel.id !== id));
+    } catch (error) {
+      console.error('Erreur de suppression:', error);
+      setError('Erreur de suppression: ' + error.message);
+    }
   };
 
   const pendingParcels = parcels.filter(p => !p.collected);
@@ -126,21 +191,23 @@ export default function LockerParcelApp() {
     return `Il y a ${diffDays} jours`;
   };
 
-  const getLockerIcon = (type) => {
-    switch(type) {
-      case 'mondial-relais': return '🟡';
-      case 'relais-colis': return '🔵';
-      case 'pickup': return '🟢';
-      default: return '📦';
-    }
-  };
-
   const getLockerName = (type) => {
     switch(type) {
       case 'mondial-relais': return 'Mondial Relais';
       case 'relais-colis': return 'Relais Colis';
       case 'pickup': return 'Pickup';
+      case 'vinted-go': return 'Vinted GO';
       default: return 'Autre';
+    }
+  };
+
+  const getCodeFormatHint = () => {
+    switch(lockerType) {
+      case 'mondial-relais': return 'Format: 6 caractères (ex: A1B2C3)';
+      case 'vinted-go': return 'Format: 4-20 caractères (ex: VT-1234-ABCD)';
+      case 'relais-colis': return 'Format: 4-15 caractères (ex: RC123456)';
+      case 'pickup': return 'Format: 4-15 caractères (ex: PK789012)';
+      default: return '';
     }
   };
 
@@ -155,50 +222,96 @@ export default function LockerParcelApp() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-2xl mx-auto">
-        {/* Bannière d'installation */}
-        {showInstallBanner && (
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl shadow-xl p-6 mb-6">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-1">
-                <h3 className="font-bold text-lg mb-1">Installer l'application</h3>
-                <p className="text-sm text-indigo-100">
-                  Installez l'app sur votre ordinateur pour un accès rapide !
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={installApp}
-                  className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-semibold hover:bg-indigo-50 transition flex items-center gap-2 whitespace-nowrap"
-                >
-                  <Download size={18} />
-                  Installer
-                </button>
-                <button
-                  onClick={() => setShowInstallBanner(false)}
-                  className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-lg transition"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
+        {/* Message d'erreur */}
+        {error && (
+          <div className="bg-red-100 border-2 border-red-400 text-red-700 px-4 py-3 rounded-xl mb-6">
+            <strong>Erreur:</strong> {error}
+            <button 
+              onClick={() => setError(null)}
+              className="float-right font-bold"
+            >
+              ✕
+            </button>
           </div>
         )}
+
+        {/* Debug Info */}
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6 text-sm">
+          <p><strong>Debug Info:</strong></p>
+          <p>User ID: {userId}</p>
+          <p>Colis en mémoire: {parcels.length}</p>
+          <p>Supabase URL configuré: {process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓' : '✗'}</p>
+        </div>
 
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="bg-indigo-600 p-3 rounded-xl">
-              <Package className="text-white" size={28} />
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              </svg>
             </div>
             <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
           </div>
 
           {/* Formulaire d'ajout */}
           <div className="space-y-3">
+            {/* Type de locker - DÉPLACÉ EN PREMIER */}
+            <div className="bg-gray-50 rounded-xl p-4">
+              <p className="text-sm font-semibold text-gray-700 mb-3">Type de locker :</p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
+                  <input
+                    type="radio"
+                    name="lockerType"
+                    value="mondial-relais"
+                    checked={lockerType === 'mondial-relais'}
+                    onChange={(e) => setLockerType(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span className="text-base">🟡 Mondial Relais</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
+                  <input
+                    type="radio"
+                    name="lockerType"
+                    value="vinted-go"
+                    checked={lockerType === 'vinted-go'}
+                    onChange={(e) => setLockerType(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span className="text-base">🟣 Vinted GO</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
+                  <input
+                    type="radio"
+                    name="lockerType"
+                    value="relais-colis"
+                    checked={lockerType === 'relais-colis'}
+                    onChange={(e) => setLockerType(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span className="text-base">🔵 Relais Colis</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
+                  <input
+                    type="radio"
+                    name="lockerType"
+                    value="pickup"
+                    checked={lockerType === 'pickup'}
+                    onChange={(e) => setLockerType(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span className="text-base">🟢 Pickup</span>
+                </label>
+              </div>
+              <p className="text-xs text-indigo-600 mt-2">{getCodeFormatHint()}</p>
+            </div>
+
             <textarea
               value={codeInput}
               onChange={(e) => setCodeInput(e.target.value)}
-              placeholder="Collez vos codes de colis ici (6 caractères chacun)&#10;Exemples: A1B2C3, D4E5F6, G7H8I9..."
+              placeholder={`Collez vos codes ici\n${getCodeFormatHint()}`}
               rows="4"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none"
             />
@@ -211,51 +324,14 @@ export default function LockerParcelApp() {
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
             />
 
-            {/* Type de locker */}
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm font-semibold text-gray-700 mb-3">Type de locker :</p>
-              <div className="space-y-2">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="mondial-relais"
-                    checked={lockerType === 'mondial-relais'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-5 h-5 text-indigo-600"
-                  />
-                  <span className="text-lg">🟡 Mondial Relais</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="relais-colis"
-                    checked={lockerType === 'relais-colis'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-5 h-5 text-indigo-600"
-                  />
-                  <span className="text-lg">🔵 Relais Colis</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="pickup"
-                    checked={lockerType === 'pickup'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-5 h-5 text-indigo-600"
-                  />
-                  <span className="text-lg">🟢 Pickup</span>
-                </label>
-              </div>
-            </div>
-
             <button
               onClick={addParcels}
               className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
             >
-              <Plus size={20} />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
               Ajouter les colis
             </button>
           </div>
@@ -264,7 +340,9 @@ export default function LockerParcelApp() {
         {/* Colis en attente */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Package size={20} className="text-orange-500" />
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            </svg>
             À récupérer ({pendingParcels.length})
           </h2>
           
@@ -279,20 +357,25 @@ export default function LockerParcelApp() {
                 >
                   <div className="flex items-start gap-3">
                     <button
-                      onClick={() => toggleCollected(parcel.id)}
+                      onClick={() => toggleCollected(parcel.id, parcel.collected)}
                       className="mt-1 w-6 h-6 border-2 border-gray-300 rounded-lg flex items-center justify-center hover:border-indigo-500 flex-shrink-0"
                     >
-                      {parcel.collected && <Check size={16} className="text-indigo-600" />}
+                      {parcel.collected && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      )}
                     </button>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <select
-                          value={parcel.lockerType}
+                          value={parcel.locker_type}
                           onChange={(e) => changeLockerType(parcel.id, e.target.value)}
                           className="text-xl bg-transparent border-none focus:outline-none cursor-pointer"
                         >
                           <option value="mondial-relais">🟡</option>
+                          <option value="vinted-go">🟣</option>
                           <option value="relais-colis">🔵</option>
                           <option value="pickup">🟢</option>
                         </select>
@@ -301,11 +384,16 @@ export default function LockerParcelApp() {
                         </div>
                       </div>
                       <div className="text-sm text-gray-600 mb-1">
-                        {getLockerName(parcel.lockerType)} • 📍 {parcel.location}
+                        {getLockerName(parcel.locker_type)} • 📍 {parcel.location}
                       </div>
                       <div className="text-xs text-gray-400 flex items-center gap-1">
-                        <Calendar size={12} />
-                        {formatDate(parcel.dateAdded)}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                          <line x1="16" y1="2" x2="16" y2="6"></line>
+                          <line x1="8" y1="2" x2="8" y2="6"></line>
+                          <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        {formatDate(parcel.date_added)}
                       </div>
                     </div>
                     
@@ -313,7 +401,10 @@ export default function LockerParcelApp() {
                       onClick={() => deleteParcel(parcel.id)}
                       className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition flex-shrink-0"
                     >
-                      <Trash2 size={18} />
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -326,7 +417,9 @@ export default function LockerParcelApp() {
         {collectedParcels.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <Check size={20} className="text-green-500" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
               Récupérés ({collectedParcels.length})
             </h2>
             
@@ -338,21 +431,28 @@ export default function LockerParcelApp() {
                 >
                   <div className="flex items-start gap-3">
                     <button
-                      onClick={() => toggleCollected(parcel.id)}
+                      onClick={() => toggleCollected(parcel.id, parcel.collected)}
                       className="mt-1 w-6 h-6 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0"
                     >
-                      <Check size={16} className="text-white" />
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
                     </button>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xl">{getLockerIcon(parcel.lockerType)}</span>
+                        <span className="text-xl">
+                          {parcel.locker_type === 'mondial-relais' && '🟡'}
+                          {parcel.locker_type === 'vinted-go' && '🟣'}
+                          {parcel.locker_type === 'relais-colis' && '🔵'}
+                          {parcel.locker_type === 'pickup' && '🟢'}
+                        </span>
                         <div className="text-xl font-bold text-gray-600 line-through break-all">
                           {parcel.code}
                         </div>
                       </div>
                       <div className="text-sm text-gray-500">
-                        {getLockerName(parcel.lockerType)} • 📍 {parcel.location}
+                        {getLockerName(parcel.locker_type)} • 📍 {parcel.location}
                       </div>
                     </div>
                     
@@ -360,7 +460,10 @@ export default function LockerParcelApp() {
                       onClick={() => deleteParcel(parcel.id)}
                       className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition flex-shrink-0"
                     >
-                      <Trash2 size={18} />
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
                     </button>
                   </div>
                 </div>
