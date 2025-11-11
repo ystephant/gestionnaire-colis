@@ -9,11 +9,12 @@ const supabase = createClient(
 
 // Logos des transporteurs (SVG en base64 ou URL)
 const LOCKER_LOGOS = {
-  'mondial-relay': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Mondial_Relay_logo.svg/320px-Mondial_Relay_logo.svg.png',
-  'vinted-go': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Vinted_logo.svg/320px-Vinted_logo.svg.png',
-  'relais-colis': 'https://www.relaiscolis.com/wp-content/themes/relaiscolis/img/logo.svg',
-  'pickup': 'https://www.mondialrelay.fr/media/176668/pickup.png'
+  'mondial-relay': 'https://upload.wikimedia.org/wikipedia/commons/6/66/Mondial_Relay_logo.svg',
+  'vinted-go': 'https://upload.wikimedia.org/wikipedia/commons/6/6d/Vinted_logo.svg',
+  'relais-colis': 'https://upload.wikimedia.org/wikipedia/fr/1/1e/Relais_Colis_logo.svg',
+  'pickup': 'https://upload.wikimedia.org/wikipedia/fr/8/8c/Chronopost_Pickup_Station_logo.svg'
 };
+
 
 export default function LockerParcelApp() {
   const [parcels, setParcels] = useState([]);
