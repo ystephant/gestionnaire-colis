@@ -7,7 +7,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// Logos des transporteurs (SVG en base64 ou URL)
+// Logos des transporteurs (locaux)
 const LOCKER_LOGOS = {
   'mondial-relay': '/logos/mondial-relay.png',
   'vinted-go': '/logos/vinted-go.png',
@@ -18,7 +18,7 @@ const LOCKER_LOGOS = {
 export default function LockerParcelApp() {
   const [parcels, setParcels] = useState([]);
   const [codeInput, setCodeInput] = useState('');
-  const [content, setContent] = useState('');
+  const [pickupLocation, setPickupLocation] = useState('hyper-u-locker');
   const [lockerType, setLockerType] = useState('mondial-relay');
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -114,7 +114,7 @@ export default function LockerParcelApp() {
 
     const newParcels = codes.map(code => ({
       code: code.toUpperCase(),
-      location: content.trim() || 'Non spécifié',
+      location: pickupLocation,
       locker_type: lockerType,
       collected: false,
       user_id: username
@@ -130,7 +130,6 @@ export default function LockerParcelApp() {
       
       setParcels([...data, ...parcels]);
       setCodeInput('');
-      setContent('');
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
       alert('Erreur lors de l\'ajout des colis');
@@ -168,6 +167,23 @@ export default function LockerParcelApp() {
 
       setParcels(parcels.map(parcel =>
         parcel.id === id ? { ...parcel, locker_type: newType } : parcel
+      ));
+    } catch (error) {
+      console.error('Erreur de mise à jour:', error);
+    }
+  };
+
+  const changePickupLocation = async (id, newLocation) => {
+    try {
+      const { error } = await supabase
+        .from('parcels')
+        .update({ location: newLocation })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setParcels(parcels.map(parcel =>
+        parcel.id === id ? { ...parcel, location: newLocation } : parcel
       ));
     } catch (error) {
       console.error('Erreur de mise à jour:', error);
@@ -223,12 +239,15 @@ export default function LockerParcelApp() {
     return `📅 Il te reste ${remainingDays} jours`;
   };
 
-  const getPhilibertUrl = (gameName) => {
-    if (!gameName || gameName === 'Non spécifié') return null;
-    const searchQuery = encodeURIComponent(gameName + ' site:philibertnet.com');
-    return `https://www.google.com/search?q=${searchQuery}`;
+  const getPickupLocationName = (location) => {
+    switch(location) {
+      case 'hyper-u-locker': return '🏪 Hyper U - Locker';
+      case 'hyper-u-accueil': return '🏪 Hyper U - Accueil';
+      case 'intermarche-locker': return '🛒 Intermarché - Locker';
+      case 'intermarche-accueil': return '🛒 Intermarché - Accueil';
+      default: return location;
+    }
   };
-
 
   const pendingParcels = parcels.filter(p => !p.collected);
   const collectedParcels = parcels.filter(p => p.collected);
@@ -360,7 +379,7 @@ export default function LockerParcelApp() {
           <div className="space-y-3">
             {/* Type de locker avec logos */}
             <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm font-semibold text-gray-700 mb-3">Type de locker :</p>
+              <p className="text-sm font-semibold text-gray-700 mb-3">Type de transporteur :</p>
               <div className="grid grid-cols-2 gap-2">
                 <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
                   <input
@@ -372,6 +391,7 @@ export default function LockerParcelApp() {
                     className="w-4 h-4 text-indigo-600"
                   />
                   <img src={LOCKER_LOGOS['mondial-relay']} alt="Mondial Relay" className="h-6 object-contain" />
+                  <span className="text-sm font-medium">Mondial Relay</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
                   <input
@@ -383,6 +403,7 @@ export default function LockerParcelApp() {
                     className="w-4 h-4 text-indigo-600"
                   />
                   <img src={LOCKER_LOGOS['vinted-go']} alt="Vinted GO" className="h-6 object-contain" />
+                  <span className="text-sm font-medium">Vinted GO</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
                   <input
@@ -394,6 +415,7 @@ export default function LockerParcelApp() {
                     className="w-4 h-4 text-indigo-600"
                   />
                   <img src={LOCKER_LOGOS['relais-colis']} alt="Relais Colis" className="h-6 object-contain" />
+                  <span className="text-sm font-medium">Relais Colis</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
                   <input
@@ -405,6 +427,7 @@ export default function LockerParcelApp() {
                     className="w-4 h-4 text-indigo-600"
                   />
                   <img src={LOCKER_LOGOS['pickup']} alt="Pickup" className="h-6 object-contain" />
+                  <span className="text-sm font-medium">Pickup</span>
                 </label>
               </div>
               <p className="text-xs text-indigo-600 mt-2">{getCodeFormatHint()}</p>
@@ -418,13 +441,56 @@ export default function LockerParcelApp() {
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none"
             />
             
-            <input
-              type="text"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Contenu du colis (ex: Catane, Azul...)"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
-            />
+            {/* Lieu de récupération */}
+            <div className="bg-gray-50 rounded-xl p-4">
+              <p className="text-sm font-semibold text-gray-700 mb-3">Lieu de récupération du colis :</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pickupLocation"
+                    value="hyper-u-locker"
+                    checked={pickupLocation === 'hyper-u-locker'}
+                    onChange={(e) => setPickupLocation(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span>🏪 Hyper U - Locker</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pickupLocation"
+                    value="hyper-u-accueil"
+                    checked={pickupLocation === 'hyper-u-accueil'}
+                    onChange={(e) => setPickupLocation(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span>🏪 Hyper U - Accueil</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pickupLocation"
+                    value="intermarche-locker"
+                    checked={pickupLocation === 'intermarche-locker'}
+                    onChange={(e) => setPickupLocation(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span>🛒 Intermarché - Locker</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pickupLocation"
+                    value="intermarche-accueil"
+                    checked={pickupLocation === 'intermarche-accueil'}
+                    onChange={(e) => setPickupLocation(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span>🛒 Intermarché - Accueil</span>
+                </label>
+              </div>
+            </div>
 
             <button
               onClick={addParcels}
@@ -455,13 +521,12 @@ export default function LockerParcelApp() {
               {pendingParcels.map(parcel => {
                 const remainingDays = getRemainingDays(parcel.date_added);
                 const isUrgent = remainingDays <= 1;
-                const philibertUrl = getPhilibertUrl(parcel.location);
                 
                 return (
                   <div
                     key={parcel.id}
                     onClick={(e) => {
-                      if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+                      if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'OPTION') {
                         toggleCollected(parcel.id, parcel.collected);
                       }
                     }}
@@ -487,14 +552,15 @@ export default function LockerParcelApp() {
                       </button>
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <img src={LOCKER_LOGOS[parcel.locker_type]} alt="" className="h-5 object-contain" />
                           <select
                             value={parcel.locker_type}
                             onChange={(e) => {
                               e.stopPropagation();
                               changeLockerType(parcel.id, e.target.value);
                             }}
-                            className="bg-transparent border-none focus:outline-none cursor-pointer"
+                            className="text-sm bg-transparent border-none focus:outline-none cursor-pointer font-medium"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <option value="mondial-relay">Mondial Relay</option>
@@ -502,31 +568,29 @@ export default function LockerParcelApp() {
                             <option value="relais-colis">Relais Colis</option>
                             <option value="pickup">Pickup</option>
                           </select>
-                          <img src={LOCKER_LOGOS[parcel.locker_type]} alt="" className="h-5 object-contain inline" />
                         </div>
+                        
                         <div className="text-2xl font-bold text-indigo-600 break-all mb-2">
                           {parcel.code}
                         </div>
-                        <div className="text-sm text-gray-600 mb-1 flex items-center gap-2">
-                          {philibertUrl ? (
-                            <a 
-                              href={philibertUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
-                            >
-                              🎲 {parcel.location}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                                <polyline points="15 3 21 3 21 9"></polyline>
-                                <line x1="10" y1="14" x2="21" y2="3"></line>
-                              </svg>
-                            </a>
-                          ) : (
-                            <span>📦 {parcel.location}</span>
-                          )}
+                        
+                        <div className="mb-2">
+                          <select
+                            value={parcel.location}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              changePickupLocation(parcel.id, e.target.value);
+                            }}
+                            className="text-sm text-gray-600 bg-transparent border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="hyper-u-locker">🏪 Hyper U - Locker</option>
+                            <option value="hyper-u-accueil">🏪 Hyper U - Accueil</option>
+                            <option value="intermarche-locker">🛒 Intermarché - Locker</option>
+                            <option value="intermarche-accueil">🛒 Intermarché - Accueil</option>
+                          </select>
                         </div>
+                        
                         <div className="flex items-center gap-3 text-xs">
                           <span className="text-gray-400 flex items-center gap-1">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -592,12 +656,13 @@ export default function LockerParcelApp() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <img src={LOCKER_LOGOS[parcel.locker_type]} alt="" className="h-5 object-contain" />
-                        <div className="text-xl font-bold text-gray-600 line-through break-all">
-                          {parcel.code}
-                        </div>
+                        <span className="text-sm text-gray-600 font-medium">{getLockerName(parcel.locker_type)}</span>
+                      </div>
+                      <div className="text-xl font-bold text-gray-600 line-through break-all mb-1">
+                        {parcel.code}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {getLockerName(parcel.locker_type)} • 📦 {parcel.location}
+                        {getPickupLocationName(parcel.location)}
                       </div>
                     </div>
                     
