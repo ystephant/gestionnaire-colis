@@ -225,9 +225,10 @@ export default function LockerParcelApp() {
 
   const getPhilibertUrl = (gameName) => {
     if (!gameName || gameName === 'Non spécifié') return null;
-    const searchQuery = encodeURIComponent(gameName);
-    return `https://www.philibertnet.com/fr/recherche?q=${searchQuery}`;
+    const searchQuery = encodeURIComponent(gameName + ' site:philibertnet.com');
+    return `https://www.google.com/search?q=${searchQuery}`;
   };
+
 
   const pendingParcels = parcels.filter(p => !p.collected);
   const collectedParcels = parcels.filter(p => p.collected);
