@@ -9,10 +9,10 @@ const supabase = createClient(
 
 // Logos des transporteurs (SVG en base64 ou URL)
 const LOCKER_LOGOS = {
-  'mondial-relay': 'https://upload.wikimedia.org/wikipedia/commons/6/66/Mondial_Relay_logo.svg',
-  'vinted-go': 'https://upload.wikimedia.org/wikipedia/commons/6/6d/Vinted_logo.svg',
-  'relais-colis': 'https://upload.wikimedia.org/wikipedia/fr/1/1e/Relais_Colis_logo.svg',
-  'pickup': 'https://upload.wikimedia.org/wikipedia/fr/8/8c/Chronopost_Pickup_Station_logo.svg'
+  'mondial-relay': '/logos/mondial-relay.png',
+  'vinted-go': '/logos/vinted-go.png',
+  'relais-colis': '/logos/relais-colis.png',
+  'pickup': '/logos/pickup.png'
 };
 
 
