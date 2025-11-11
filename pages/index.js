@@ -7,11 +7,19 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// Logos des transporteurs (SVG en base64 ou URL)
+const LOCKER_LOGOS = {
+  'mondial-relay': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Mondial_Relay_logo.svg/320px-Mondial_Relay_logo.svg.png',
+  'vinted-go': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Vinted_logo.svg/320px-Vinted_logo.svg.png',
+  'relais-colis': 'https://www.relaiscolis.com/wp-content/themes/relaiscolis/img/logo.svg',
+  'pickup': 'https://www.mondialrelay.fr/media/176668/pickup.png'
+};
+
 export default function LockerParcelApp() {
   const [parcels, setParcels] = useState([]);
   const [codeInput, setCodeInput] = useState('');
-  const [location, setLocation] = useState('');
-  const [lockerType, setLockerType] = useState('mondial-relais');
+  const [content, setContent] = useState('');
+  const [lockerType, setLockerType] = useState('mondial-relay');
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
@@ -81,7 +89,7 @@ export default function LockerParcelApp() {
   const extractParcelCodes = (text) => {
     let codes = [];
     
-    if (lockerType === 'mondial-relais') {
+    if (lockerType === 'mondial-relay') {
       codes = text.match(/[A-Z0-9]{6}(?![A-Z0-9])/gi) || [];
     } else if (lockerType === 'vinted-go') {
       codes = text.split(/[\s,\n]+/).filter(code => 
@@ -106,7 +114,7 @@ export default function LockerParcelApp() {
 
     const newParcels = codes.map(code => ({
       code: code.toUpperCase(),
-      location: location.trim() || 'Non spécifié',
+      location: content.trim() || 'Non spécifié',
       locker_type: lockerType,
       collected: false,
       user_id: username
@@ -122,7 +130,7 @@ export default function LockerParcelApp() {
       
       setParcels([...data, ...parcels]);
       setCodeInput('');
-      setLocation('');
+      setContent('');
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
       alert('Erreur lors de l\'ajout des colis');
@@ -143,7 +151,6 @@ export default function LockerParcelApp() {
 
       if (error) throw error;
 
-      // Recharger pour avoir le bon ordre
       loadParcels();
     } catch (error) {
       console.error('Erreur de mise à jour:', error);
@@ -202,6 +209,26 @@ export default function LockerParcelApp() {
     }
   };
 
+  const getRemainingDays = (dateAdded) => {
+    const added = new Date(dateAdded);
+    const now = new Date();
+    const diffTime = now - added;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    return Math.max(0, 5 - diffDays);
+  };
+
+  const getRemainingDaysText = (remainingDays) => {
+    if (remainingDays === 0) return '⚠️ Dernier jour pour récupérer';
+    if (remainingDays === 1) return '⏰ Il te reste 1 jour';
+    return `📅 Il te reste ${remainingDays} jours`;
+  };
+
+  const getPhilibertUrl = (gameName) => {
+    if (!gameName || gameName === 'Non spécifié') return null;
+    const searchQuery = encodeURIComponent(gameName);
+    return `https://www.philibertnet.com/fr/recherche?query=${searchQuery}`;
+  };
+
   const pendingParcels = parcels.filter(p => !p.collected);
   const collectedParcels = parcels.filter(p => p.collected);
 
@@ -217,7 +244,7 @@ export default function LockerParcelApp() {
 
   const getLockerName = (type) => {
     switch(type) {
-      case 'mondial-relais': return 'Mondial Relais';
+      case 'mondial-relay': return 'Mondial Relay';
       case 'relais-colis': return 'Relais Colis';
       case 'pickup': return 'Pickup';
       case 'vinted-go': return 'Vinted GO';
@@ -227,7 +254,7 @@ export default function LockerParcelApp() {
 
   const getCodeFormatHint = () => {
     switch(lockerType) {
-      case 'mondial-relais': return 'Format: 6 caractères (ex: A1B2C3)';
+      case 'mondial-relay': return 'Format: 6 caractères (ex: A1B2C3)';
       case 'vinted-go': return 'Format: 4-20 caractères (ex: VT-1234-ABCD)';
       case 'relais-colis': return 'Format: 4-15 caractères (ex: RC123456)';
       case 'pickup': return 'Format: 4-15 caractères (ex: PK789012)';
@@ -330,7 +357,7 @@ export default function LockerParcelApp() {
 
           {/* Formulaire d'ajout */}
           <div className="space-y-3">
-            {/* Type de locker */}
+            {/* Type de locker avec logos */}
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-3">Type de locker :</p>
               <div className="grid grid-cols-2 gap-2">
@@ -338,12 +365,12 @@ export default function LockerParcelApp() {
                   <input
                     type="radio"
                     name="lockerType"
-                    value="mondial-relais"
-                    checked={lockerType === 'mondial-relais'}
+                    value="mondial-relay"
+                    checked={lockerType === 'mondial-relay'}
                     onChange={(e) => setLockerType(e.target.value)}
                     className="w-4 h-4 text-indigo-600"
                   />
-                  <span className="text-base">🟡 Mondial Relais</span>
+                  <img src={LOCKER_LOGOS['mondial-relay']} alt="Mondial Relay" className="h-6 object-contain" />
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
                   <input
@@ -354,7 +381,7 @@ export default function LockerParcelApp() {
                     onChange={(e) => setLockerType(e.target.value)}
                     className="w-4 h-4 text-indigo-600"
                   />
-                  <span className="text-base">🟣 Vinted GO</span>
+                  <img src={LOCKER_LOGOS['vinted-go']} alt="Vinted GO" className="h-6 object-contain" />
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
                   <input
@@ -365,7 +392,7 @@ export default function LockerParcelApp() {
                     onChange={(e) => setLockerType(e.target.value)}
                     className="w-4 h-4 text-indigo-600"
                   />
-                  <span className="text-base">🔵 Relais Colis</span>
+                  <img src={LOCKER_LOGOS['relais-colis']} alt="Relais Colis" className="h-6 object-contain" />
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
                   <input
@@ -376,7 +403,7 @@ export default function LockerParcelApp() {
                     onChange={(e) => setLockerType(e.target.value)}
                     className="w-4 h-4 text-indigo-600"
                   />
-                  <span className="text-base">🟢 Pickup</span>
+                  <img src={LOCKER_LOGOS['pickup']} alt="Pickup" className="h-6 object-contain" />
                 </label>
               </div>
               <p className="text-xs text-indigo-600 mt-2">{getCodeFormatHint()}</p>
@@ -392,9 +419,9 @@ export default function LockerParcelApp() {
             
             <input
               type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Emplacement (optionnel)"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Contenu du colis (ex: Catane, Azul...)"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
             />
 
@@ -424,65 +451,113 @@ export default function LockerParcelApp() {
             <p className="text-gray-500 text-center py-8">Aucun colis en attente</p>
           ) : (
             <div className="space-y-3">
-              {pendingParcels.map(parcel => (
-                <div
-                  key={parcel.id}
-                  className="border-2 border-gray-200 rounded-xl p-4 hover:border-indigo-300 transition"
-                >
-                  <div className="flex items-start gap-3">
-                    <button
-                      onClick={() => toggleCollected(parcel.id, parcel.collected)}
-                      className="mt-1 w-6 h-6 border-2 border-gray-300 rounded-lg flex items-center justify-center hover:border-indigo-500 flex-shrink-0"
-                    >
-                      {parcel.collected && (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="3">
-                          <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                      )}
-                    </button>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <select
-                          value={parcel.locker_type}
-                          onChange={(e) => changeLockerType(parcel.id, e.target.value)}
-                          className="text-xl bg-transparent border-none focus:outline-none cursor-pointer"
-                        >
-                          <option value="mondial-relais">🟡</option>
-                          <option value="vinted-go">🟣</option>
-                          <option value="relais-colis">🔵</option>
-                          <option value="pickup">🟢</option>
-                        </select>
-                        <div className="text-2xl font-bold text-indigo-600 break-all">
+              {pendingParcels.map(parcel => {
+                const remainingDays = getRemainingDays(parcel.date_added);
+                const isUrgent = remainingDays <= 1;
+                const philibertUrl = getPhilibertUrl(parcel.location);
+                
+                return (
+                  <div
+                    key={parcel.id}
+                    onClick={(e) => {
+                      if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+                        toggleCollected(parcel.id, parcel.collected);
+                      }
+                    }}
+                    className={`border-2 rounded-xl p-4 transition cursor-pointer ${
+                      isUrgent 
+                        ? 'border-yellow-300 bg-yellow-50 hover:border-yellow-400' 
+                        : 'border-gray-200 hover:border-indigo-300'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCollected(parcel.id, parcel.collected);
+                        }}
+                        className="mt-1 w-6 h-6 border-2 border-gray-300 rounded-lg flex items-center justify-center hover:border-indigo-500 flex-shrink-0"
+                      >
+                        {parcel.collected && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        )}
+                      </button>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <select
+                            value={parcel.locker_type}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              changeLockerType(parcel.id, e.target.value);
+                            }}
+                            className="bg-transparent border-none focus:outline-none cursor-pointer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="mondial-relay">Mondial Relay</option>
+                            <option value="vinted-go">Vinted GO</option>
+                            <option value="relais-colis">Relais Colis</option>
+                            <option value="pickup">Pickup</option>
+                          </select>
+                          <img src={LOCKER_LOGOS[parcel.locker_type]} alt="" className="h-5 object-contain inline" />
+                        </div>
+                        <div className="text-2xl font-bold text-indigo-600 break-all mb-2">
                           {parcel.code}
                         </div>
+                        <div className="text-sm text-gray-600 mb-1 flex items-center gap-2">
+                          {philibertUrl ? (
+                            <a 
+                              href={philibertUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
+                            >
+                              🎲 {parcel.location}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                              </svg>
+                            </a>
+                          ) : (
+                            <span>📦 {parcel.location}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-gray-400 flex items-center gap-1">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                              <line x1="16" y1="2" x2="16" y2="6"></line>
+                              <line x1="8" y1="2" x2="8" y2="6"></line>
+                              <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                            {formatDate(parcel.date_added)}
+                          </span>
+                          <span className={`opacity-60 ${isUrgent ? 'font-bold text-red-600 opacity-100' : ''}`}>
+                            {getRemainingDaysText(remainingDays)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600 mb-1">
-                        {getLockerName(parcel.locker_type)} • 📍 {parcel.location}
-                      </div>
-                      <div className="text-xs text-gray-400 flex items-center gap-1">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                          <line x1="16" y1="2" x2="16" y2="6"></line>
-                          <line x1="8" y1="2" x2="8" y2="6"></line>
-                          <line x1="3" y1="10" x2="21" y2="10"></line>
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteParcel(parcel.id);
+                        }}
+                        className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition flex-shrink-0"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                         </svg>
-                        {formatDate(parcel.date_added)}
-                      </div>
+                      </button>
                     </div>
-                    
-                    <button
-                      onClick={() => deleteParcel(parcel.id)}
-                      className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition flex-shrink-0"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6"></polyline>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                      </svg>
-                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -515,18 +590,13 @@ export default function LockerParcelApp() {
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xl">
-                          {parcel.locker_type === 'mondial-relais' && '🟡'}
-                          {parcel.locker_type === 'vinted-go' && '🟣'}
-                          {parcel.locker_type === 'relais-colis' && '🔵'}
-                          {parcel.locker_type === 'pickup' && '🟢'}
-                        </span>
+                        <img src={LOCKER_LOGOS[parcel.locker_type]} alt="" className="h-5 object-contain" />
                         <div className="text-xl font-bold text-gray-600 line-through break-all">
                           {parcel.code}
                         </div>
                       </div>
                       <div className="text-sm text-gray-500">
-                        {getLockerName(parcel.locker_type)} • 📍 {parcel.location}
+                        {getLockerName(parcel.locker_type)} • 📦 {parcel.location}
                       </div>
                     </div>
                     
