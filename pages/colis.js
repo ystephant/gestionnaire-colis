@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { useRouter } from 'next/router';
 
 // Initialiser Supabase
 const supabase = createClient(
@@ -16,6 +17,7 @@ const LOCKER_LOGOS = {
 };
 
 export default function LockerParcelApp() {
+  const router = useRouter();
   const [parcels, setParcels] = useState([]);
   const [codeInput, setCodeInput] = useState('');
   const [pickupLocation, setPickupLocation] = useState('hyper-u-locker');
@@ -357,6 +359,14 @@ export default function LockerParcelApp() {
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
+    <button
+      onClick={() => router.push('/')}
+      className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+    </button>
               <div className="bg-indigo-600 p-3 rounded-xl">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
