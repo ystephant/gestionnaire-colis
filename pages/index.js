@@ -226,9 +226,10 @@ export default function LockerParcelApp() {
 
   const getPhilibertUrl = (gameName) => {
     if (!gameName || gameName === 'Non spécifié') return null;
-    const searchQuery = encodeURIComponent(gameName);
-    return `https://www.philibertnet.com/fr/recherche?query=${searchQuery}`;
+    const searchQuery = encodeURIComponent(gameName.trim());
+    return `https://www.philibertnet.com/fr/recherche?controller=search&s=${searchQuery}`;
   };
+
 
   const pendingParcels = parcels.filter(p => !p.collected);
   const collectedParcels = parcels.filter(p => p.collected);
@@ -362,53 +363,26 @@ export default function LockerParcelApp() {
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-3">Type de locker :</p>
               <div className="grid grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="mondial-relay"
-                    checked={lockerType === 'mondial-relay'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['mondial-relay']} alt="Mondial Relay" className="h-6 object-contain" />
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="vinted-go"
-                    checked={lockerType === 'vinted-go'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['vinted-go']} alt="Vinted GO" className="h-6 object-contain" />
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="relais-colis"
-                    checked={lockerType === 'relais-colis'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['relais-colis']} alt="Relais Colis" className="h-6 object-contain" />
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="pickup"
-                    checked={lockerType === 'pickup'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['pickup']} alt="Pickup" className="h-6 object-contain" />
-                </label>
-              </div>
-              <p className="text-xs text-indigo-600 mt-2">{getCodeFormatHint()}</p>
-            </div>
+  {Object.keys(LOCKER_LOGOS).map((type) => (
+    <label
+      key={type}
+      className={`flex items-center gap-3 cursor-pointer bg-white p-3 rounded-lg border-2 transition ${
+        lockerType === type ? 'border-indigo-400' : 'border-gray-200 hover:border-indigo-300'
+      }`}
+    >
+      <input
+        type="radio"
+        name="lockerType"
+        value={type}
+        checked={lockerType === type}
+        onChange={(e) => setLockerType(e.target.value)}
+        className="w-4 h-4 text-indigo-600"
+      />
+      <img src={LOCKER_LOGOS[type]} alt={getLockerName(type)} className="h-6 object-contain" />
+      <span className="text-sm font-medium text-gray-700">{getLockerName(type)}</span>
+    </label>
+  ))}
+</div>
 
             <textarea
               value={codeInput}
