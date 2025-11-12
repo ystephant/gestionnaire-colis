@@ -38,6 +38,7 @@ export default function ReponsesPrefaites() {
   const [newResponseText, setNewResponseText] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
   const [draggedCategory, setDraggedCategory] = useState(null);
+  const [draggedResponse, setDraggedResponse] = useState(null);
 
   useEffect(() => {
     checkAuth();
@@ -86,6 +87,7 @@ export default function ReponsesPrefaites() {
         .from('reponses')
         .select('*')
         .eq('user_id', username)
+        .order('position', { ascending: true })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -101,12 +103,18 @@ export default function ReponsesPrefaites() {
     if (!newResponseText.trim()) return;
 
     try {
+      const categoryReponses = reponses.filter(r => r.category === category);
+      const maxPosition = categoryReponses.length > 0 
+        ? Math.max(...categoryReponses.map(r => r.position || 0))
+        : 0;
+
       const { data, error } = await supabase
         .from('reponses')
         .insert([{
           user_id: username,
           category: category,
-          text: newResponseText.trim()
+          text: newResponseText.trim(),
+          position: maxPosition + 1
         }])
         .select();
 
@@ -159,7 +167,7 @@ export default function ReponsesPrefaites() {
   const copierReponse = (text) => {
     navigator.clipboard.writeText(text);
     setCopyMessage('✓ Copié !');
-    setTimeout(() => setCopyMessage(''), 2000);
+    setTimeout(() => setCopyMessage(''), 3000);
   };
 
   const startEdit = (id, text) => {
@@ -167,17 +175,18 @@ export default function ReponsesPrefaites() {
     setEditText(text);
   };
 
-  const handleDragStart = (e, category) => {
+  // Glisser-déposer catégories
+  const handleCategoryDragStart = (e, category) => {
     setDraggedCategory(category);
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e) => {
+  const handleCategoryDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = (e, targetCategory) => {
+  const handleCategoryDrop = (e, targetCategory) => {
     e.preventDefault();
     
     if (!draggedCategory || draggedCategory.id === targetCategory.id) {
@@ -197,6 +206,70 @@ export default function ReponsesPrefaites() {
     setDraggedCategory(null);
   };
 
+  // Glisser-déposer réponses
+  const handleResponseDragStart = (e, response) => {
+    e.stopPropagation();
+    setDraggedResponse(response);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleResponseDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleResponseDrop = async (e, targetResponse) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedResponse || draggedResponse.id === targetResponse.id) {
+      setDraggedResponse(null);
+      return;
+    }
+
+    // Vérifier que les deux réponses sont dans la même catégorie
+    if (draggedResponse.category !== targetResponse.category) {
+      setDraggedResponse(null);
+      return;
+    }
+
+    try {
+      const categoryReponses = reponses.filter(r => r.category === draggedResponse.category);
+      const draggedIndex = categoryReponses.findIndex(r => r.id === draggedResponse.id);
+      const targetIndex = categoryReponses.findIndex(r => r.id === targetResponse.id);
+
+      const newOrder = [...categoryReponses];
+      newOrder.splice(draggedIndex, 1);
+      newOrder.splice(targetIndex, 0, draggedResponse);
+
+      // Mettre à jour les positions dans la base de données
+      const updates = newOrder.map((r, index) => 
+        supabase
+          .from('reponses')
+          .update({ position: index })
+          .eq('id', r.id)
+      );
+
+      await Promise.all(updates);
+
+      // Mettre à jour l'état local
+      const updatedReponses = reponses.map(r => {
+        const newPos = newOrder.findIndex(nr => nr.id === r.id);
+        if (newPos !== -1) {
+          return { ...r, position: newPos };
+        }
+        return r;
+      });
+
+      setReponses(updatedReponses);
+    } catch (error) {
+      console.error('Erreur de réorganisation:', error);
+    }
+
+    setDraggedResponse(null);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -208,6 +281,13 @@ export default function ReponsesPrefaites() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-slate-100 py-8 px-4">
       <div className="max-w-7xl mx-auto">
+        {/* Message de copie fixe */}
+        {copyMessage && (
+          <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-2xl font-bold text-lg z-50 animate-bounce">
+            {copyMessage}
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between">
@@ -227,30 +307,27 @@ export default function ReponsesPrefaites() {
               </div>
               <div>
                 <h1 className="text-3xl font-bold text-gray-800">Réponses Préfaites</h1>
-                <p className="text-sm text-gray-500">Cliquez sur une réponse pour la copier • Glissez-déposez pour réorganiser</p>
+                <p className="text-sm text-gray-500">Cliquez sur une réponse pour copier • Glissez-déposez pour réorganiser</p>
               </div>
             </div>
-            {copyMessage && (
-              <div className="bg-green-100 text-green-700 px-4 py-2 rounded-lg font-semibold animate-pulse">
-                {copyMessage}
-              </div>
-            )}
           </div>
         </div>
 
         {/* Lignes de catégories */}
         <div className="space-y-4">
           {categories.map(category => {
-            const categoryReponses = reponses.filter(r => r.category === category.id);
+            const categoryReponses = reponses
+              .filter(r => r.category === category.id)
+              .sort((a, b) => (a.position || 0) - (b.position || 0));
             const colors = COLORS[category.color];
 
             return (
               <div 
                 key={category.id}
                 draggable
-                onDragStart={(e) => handleDragStart(e, category)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, category)}
+                onDragStart={(e) => handleCategoryDragStart(e, category)}
+                onDragOver={handleCategoryDragOver}
+                onDrop={(e) => handleCategoryDrop(e, category)}
                 className={`bg-white rounded-xl shadow-lg p-4 cursor-move hover:shadow-xl transition ${
                   draggedCategory?.id === category.id ? 'opacity-50' : ''
                 }`}
@@ -282,123 +359,132 @@ export default function ReponsesPrefaites() {
                     </div>
                   </div>
 
-                  {/* Colonnes de réponses (droite) */}
-                  <div className="flex-1 flex gap-3 overflow-x-auto pb-2">
-                    {/* Formulaire d'ajout */}
-                    {addingCategory === category.id && (
-                      <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 w-72 flex-shrink-0`}>
-                        <textarea
-                          value={newResponseText}
-                          onChange={(e) => setNewResponseText(e.target.value)}
-                          placeholder="Tapez votre réponse..."
-                          rows="4"
-                          className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none"
-                          autoFocus
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => ajouterReponse(category.id)}
-                            className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg font-semibold hover:bg-indigo-700 transition text-xs"
-                          >
-                            OK
-                          </button>
-                          <button
-                            onClick={() => {
-                              setAddingCategory(null);
-                              setNewResponseText('');
-                            }}
-                            className="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg font-semibold hover:bg-gray-400 transition text-xs"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Réponses existantes */}
-                    {categoryReponses.map(reponse => (
-                      <div key={reponse.id} className="w-72 flex-shrink-0">
-                        {editingId === reponse.id ? (
-                          // Mode édition
-                          <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 h-full`}>
-                            <textarea
-                              value={editText}
-                              onChange={(e) => setEditText(e.target.value)}
-                              rows="4"
-                              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none"
-                              autoFocus
-                            />
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => modifierReponse(reponse.id)}
-                                className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg font-semibold hover:bg-indigo-700 transition text-xs"
-                              >
-                                OK
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setEditingId(null);
-                                  setEditText('');
-                                }}
-                                className="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg font-semibold hover:bg-gray-400 transition text-xs"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          // Mode affichage
-                          <div className="relative group h-full">
-                            <div
-                              onClick={() => copierReponse(reponse.text)}
-                              className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 cursor-pointer ${colors.hover} transition h-full min-h-[120px] flex items-center`}
+                  {/* Colonnes de réponses (droite) - avec scroll mobile */}
+                  <div className="flex-1 overflow-x-auto">
+                    <div className="flex gap-3 pb-2 min-w-min">
+                      {/* Formulaire d'ajout */}
+                      {addingCategory === category.id && (
+                        <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 w-72 flex-shrink-0`}>
+                          <textarea
+                            value={newResponseText}
+                            onChange={(e) => setNewResponseText(e.target.value)}
+                            placeholder="Tapez votre réponse..."
+                            rows="4"
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => ajouterReponse(category.id)}
+                              className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg font-semibold hover:bg-indigo-700 transition text-xs"
                             >
-                              <p className={`${colors.text} text-sm whitespace-pre-wrap break-words`}>
-                                {reponse.text}
-                              </p>
-                            </div>
-                            {/* Boutons d'action */}
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEdit(reponse.id, reponse.text);
-                                }}
-                                className="bg-white p-1.5 rounded-lg shadow-lg hover:bg-gray-100 transition"
-                                title="Modifier"
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                </svg>
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  supprimerReponse(reponse.id);
-                                }}
-                                className="bg-white p-1.5 rounded-lg shadow-lg hover:bg-red-100 transition"
-                                title="Supprimer"
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="red" strokeWidth="2">
-                                  <polyline points="3 6 5 6 21 6"></polyline>
-                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                </svg>
-                              </button>
-                            </div>
+                              OK
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAddingCategory(null);
+                                setNewResponseText('');
+                              }}
+                              className="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg font-semibold hover:bg-gray-400 transition text-xs"
+                            >
+                              ✕
+                            </button>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      )}
 
-                    {/* Message si vide */}
-                    {categoryReponses.length === 0 && addingCategory !== category.id && (
-                      <div className="w-72 flex-shrink-0 flex items-center justify-center">
-                        <p className="text-gray-400 text-sm italic">
-                          Aucune réponse
-                        </p>
-                      </div>
-                    )}
+                      {/* Réponses existantes */}
+                      {categoryReponses.map(reponse => (
+                        <div 
+                          key={reponse.id} 
+                          className="w-72 flex-shrink-0"
+                          draggable={editingId !== reponse.id}
+                          onDragStart={(e) => handleResponseDragStart(e, reponse)}
+                          onDragOver={handleResponseDragOver}
+                          onDrop={(e) => handleResponseDrop(e, reponse)}
+                        >
+                          {editingId === reponse.id ? (
+                            // Mode édition
+                            <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 h-full`}>
+                              <textarea
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                rows="4"
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none"
+                                autoFocus
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => modifierReponse(reponse.id)}
+                                  className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg font-semibold hover:bg-indigo-700 transition text-xs"
+                                >
+                                  OK
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingId(null);
+                                    setEditText('');
+                                  }}
+                                  className="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg font-semibold hover:bg-gray-400 transition text-xs"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            // Mode affichage
+                            <div className={`relative group h-full ${draggedResponse?.id === reponse.id ? 'opacity-50' : ''}`}>
+                              <div
+                                onClick={() => copierReponse(reponse.text)}
+                                className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 cursor-pointer ${colors.hover} transition h-full min-h-[120px] flex items-center`}
+                              >
+                                <p className={`${colors.text} text-sm whitespace-pre-wrap break-words`}>
+                                  {reponse.text}
+                                </p>
+                              </div>
+                              {/* Boutons d'action */}
+                              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-1">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startEdit(reponse.id, reponse.text);
+                                  }}
+                                  className="bg-white p-1.5 rounded-lg shadow-lg hover:bg-gray-100 transition"
+                                  title="Modifier"
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    supprimerReponse(reponse.id);
+                                  }}
+                                  className="bg-white p-1.5 rounded-lg shadow-lg hover:bg-red-100 transition"
+                                  title="Supprimer"
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="red" strokeWidth="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Message si vide */}
+                      {categoryReponses.length === 0 && addingCategory !== category.id && (
+                        <div className="w-72 flex-shrink-0 flex items-center justify-center">
+                          <p className="text-gray-400 text-sm italic">
+                            Aucune réponse
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
