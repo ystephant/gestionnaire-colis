@@ -19,6 +19,12 @@ export default function MenuPrincipal() {
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadUrgentParcels();
+    }
+  }, [isLoggedIn]);
+
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
@@ -28,6 +34,30 @@ export default function MenuPrincipal() {
       setIsLoggedIn(true);
     }
     setLoading(false);
+  };
+
+  const loadUrgentParcels = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('parcels')
+        .select('*')
+        .eq('user_id', username)
+        .eq('collected', false);
+
+      if (error) throw error;
+
+      const now = new Date();
+      const urgent = data.filter(parcel => {
+        const added = new Date(parcel.date_added);
+        const diffDays = Math.floor((now - added) / (1000 * 60 * 60 * 24));
+        const remainingDays = 5 - diffDays;
+        return remainingDays <= 2 && remainingDays >= 0;
+      });
+
+      setUrgentParcels(urgent.length);
+    } catch (error) {
+      console.error('Erreur de chargement:', error);
+    }
   };
 
   const handleLogin = () => {
@@ -144,6 +174,35 @@ export default function MenuPrincipal() {
             </button>
           </div>
         </div>
+
+        {/* Alerte colis urgents */}
+        {urgentParcels > 0 && (
+          <div className="bg-gradient-to-r from-red-500 to-orange-500 rounded-2xl shadow-xl p-6 mb-6 animate-pulse">
+            <div className="flex items-center gap-4 text-white">
+              <div className="bg-white bg-opacity-20 p-4 rounded-xl">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-2xl font-bold mb-1">
+                  ⚠️ {urgentParcels} colis urgent{urgentParcels > 1 ? 's' : ''} !
+                </h3>
+                <p className="text-white text-opacity-90">
+                  Il ne vous reste plus que 2 jours ou moins pour récupérer {urgentParcels > 1 ? 'ces colis' : 'ce colis'}
+                </p>
+              </div>
+              <button
+                onClick={() => router.push('/colis')}
+                className="bg-white text-red-600 px-6 py-3 rounded-xl font-bold hover:bg-red-50 transition"
+              >
+                Voir les colis →
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Cartes des applications */}
         <div className="grid md:grid-cols-3 gap-6">
