@@ -139,7 +139,7 @@ export default function MenuPrincipal() {
         </div>
 
         {/* Cartes des applications */}
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-3 gap-6">
           {/* Gestionnaire de Colis */}
           <div 
             onClick={() => router.push('/colis')}
@@ -153,12 +153,11 @@ export default function MenuPrincipal() {
               </div>
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Gestionnaire de Colis</h2>
               <p className="text-gray-600 mb-4">
-                Gérez vos colis de lockers : codes, lieux de récupération, et rappels automatiques
+                Gérez vos colis de lockers avec rappels automatiques
               </p>
               <div className="flex gap-2 flex-wrap justify-center text-sm">
                 <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full">📦 Suivi</span>
                 <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full">⏰ Rappels</span>
-                <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full">📍 Lockers</span>
               </div>
             </div>
           </div>
@@ -175,17 +174,37 @@ export default function MenuPrincipal() {
                   <polyline points="14 2 14 8 20 8"></polyline>
                   <line x1="16" y1="13" x2="8" y2="13"></line>
                   <line x1="16" y1="17" x2="8" y2="17"></line>
-                  <polyline points="10 9 9 9 8 9"></polyline>
                 </svg>
               </div>
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Générateur d'Annonces</h2>
               <p className="text-gray-600 mb-4">
-                Créez rapidement des descriptions détaillées pour vos annonces de jeux de société
+                Créez des descriptions détaillées pour vos annonces
               </p>
               <div className="flex gap-2 flex-wrap justify-center text-sm">
                 <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full">🎲 Jeux</span>
-                <span className="bg-teal-100 text-teal-700 px-3 py-1 rounded-full">📝 Automatique</span>
-                <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full">⚡ Rapide</span>
+                <span className="bg-teal-100 text-teal-700 px-3 py-1 rounded-full">⚡ Rapide</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Réponses Préfaites */}
+          <div 
+            onClick={() => router.push('/reponses')}
+            className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group"
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="bg-gradient-to-br from-pink-500 to-rose-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Réponses Préfaites</h2>
+              <p className="text-gray-600 mb-4">
+                Répondez rapidement aux acheteurs et vendeurs
+              </p>
+              <div className="flex gap-2 flex-wrap justify-center text-sm">
+                <span className="bg-pink-100 text-pink-700 px-3 py-1 rounded-full">💬 Messages</span>
+                <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full">🚀 Efficace</span>
               </div>
             </div>
           </div>
