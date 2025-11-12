@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 export default function MenuPrincipal() {
   const router = useRouter();
@@ -7,6 +13,7 @@ export default function MenuPrincipal() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(true);
+  const [urgentParcels, setUrgentParcels] = useState(0);
 
   useEffect(() => {
     checkAuth();
