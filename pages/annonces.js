@@ -350,9 +350,10 @@ export default function GenerateurAnnonces() {
             
             <textarea
               value={description}
-              readOnly
+              onChange={(e) => setDescription(e.target.value)}
               rows="20"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none bg-gray-50 font-mono text-sm resize-none"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none bg-white font-mono text-sm resize-none"
+              placeholder="La description générée apparaîtra ici. Vous pouvez la modifier manuellement..."
             />
 
             <button
