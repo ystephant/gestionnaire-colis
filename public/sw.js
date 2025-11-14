@@ -83,25 +83,34 @@ self.addEventListener('notificationclick', (event) => {
 
 // Écouter les messages du client
 self.addEventListener('message', (event) => {
+  console.log('📨 Message reçu dans SW:', event.data);
+  
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, options } = event.data;
     
+    console.log('🔔 Affichage notification:', title);
+    
     self.registration.showNotification(title, {
-      ...options,
+      body: options.body || '',
       icon: options.icon || '/icons/package-icon.png',
       badge: options.badge || '/icons/badge-icon.png',
       vibrate: options.vibrate || [200, 100, 200],
-      requireInteraction: false,
-      actions: [
+      requireInteraction: options.requireInteraction || false,
+      tag: options.tag || 'default',
+      actions: options.actions || [
         {
           action: 'view',
-          title: 'Voir les colis'
+          title: 'Voir'
         },
         {
           action: 'close',
           title: 'Fermer'
         }
       ]
+    }).then(() => {
+      console.log('✅ Notification affichée');
+    }).catch(err => {
+      console.error('❌ Erreur notification:', err);
     });
   }
 
