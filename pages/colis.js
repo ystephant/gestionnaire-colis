@@ -29,6 +29,8 @@ export default function LockerParcelApp() {
   const [isOnline, setIsOnline] = useState(true);
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [syncStatus, setSyncStatus] = useState('');
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   useEffect(() => {
     checkAuth();
@@ -358,7 +360,7 @@ export default function LockerParcelApp() {
         date_added: new Date().toISOString()
       }));
       
-      setParcels([...tempParcels, ...parcels]);
+      setParcels(prev => [...tempParcels, ...prev]);
       tempParcels.forEach(p => {
         addToOfflineQueue({ type: 'add', data: p });
       });
@@ -376,7 +378,9 @@ export default function LockerParcelApp() {
 
       if (error) throw error;
       
-      setParcels([...data, ...parcels]);
+      // Ne pas ajouter ici, le realtime le fera
+      // Pour éviter les doublons, on recharge la liste complète
+      await loadParcels();
       setCodeInput('');
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
@@ -475,8 +479,11 @@ export default function LockerParcelApp() {
   };
 
   const deleteParcel = async (id) => {
+    // Optimistic update
+    const parcelToDelete = parcels.find(p => p.id === id);
+    setParcels(prev => prev.filter(p => p.id !== id));
+
     if (!isOnline) {
-      setParcels(parcels.filter(p => p.id !== id));
       addToOfflineQueue({ type: 'delete', id });
       return;
     }
@@ -487,9 +494,17 @@ export default function LockerParcelApp() {
         .delete()
         .eq('id', id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erreur suppression:', error);
+        // Rollback en cas d'erreur
+        setParcels(prev => [...prev, parcelToDelete].sort((a, b) => 
+          a.collected === b.collected ? 0 : a.collected ? 1 : -1
+        ));
+        alert('Erreur lors de la suppression');
+        throw error;
+      }
 
-      setParcels(parcels.filter(parcel => parcel.id !== id));
+      console.log('✅ Colis supprimé:', id);
     } catch (error) {
       console.error('Erreur de suppression:', error);
     }
