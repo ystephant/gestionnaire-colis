@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/router';
+import { createClient } from '@supabase/supabase-js';
 
-// Initialiser Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// Logos des transporteurs (locaux)
+// Logos des transporteurs
 const LOCKER_LOGOS = {
   'mondial-relay': '/logos/mondial-relay.png',
   'vinted-go': '/logos/vinted-go.png',
@@ -26,16 +25,95 @@ export default function LockerParcelApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [collectedToday, setCollectedToday] = useState(0);
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlineQueue, setOfflineQueue] = useState([]);
+  const [syncStatus, setSyncStatus] = useState('');
 
   useEffect(() => {
     checkAuth();
+    
+    // Détecter connexion/déconnexion
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncStatus('🟢 En ligne');
+      syncOfflineChanges();
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncStatus('🔴 Hors ligne - Les modifications seront synchronisées');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    setIsOnline(navigator.onLine);
+    setSyncStatus(navigator.onLine ? '🟢 En ligne' : '🔴 Hors ligne');
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   useEffect(() => {
     if (isLoggedIn) {
       loadParcels();
+      if (isOnline) {
+        setupRealtimeSubscription();
+        requestNotificationPermission();
+      }
+      trackCollectedToday();
+      loadOfflineQueue();
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, isOnline]);
+
+  // Nettoyage
+  useEffect(() => {
+    return () => {
+      if (window.realtimeChannel) {
+        supabase.removeChannel(window.realtimeChannel);
+      }
+    };
+  }, []);
+
+  // Notification à la fermeture
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (collectedToday > 0) {
+        // Envoyer notification via Service Worker
+        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+          navigator.serviceWorker.ready.then(registration => {
+            registration.active.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              title: 'Colis récupérés aujourd\'hui',
+              options: {
+                body: `${collectedToday} colis récupéré${collectedToday > 1 ? 's' : ''} aujourd'hui 🎉`,
+                icon: '/icons/package-icon.png',
+                badge: '/icons/badge-icon.png',
+                tag: 'daily-summary',
+                requireInteraction: false,
+                vibrate: [200, 100, 200]
+              }
+            });
+          });
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    // Aussi sur visibilitychange (quand on change d'onglet)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && collectedToday > 0) {
+        handleBeforeUnload();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [collectedToday]);
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
@@ -46,32 +124,14 @@ export default function LockerParcelApp() {
       setPassword(savedPassword);
       setIsLoggedIn(true);
     } else {
-      setLoading(false);
+      router.push('/');
     }
-  };
-
-  const handleLogin = () => {
-    if (username.trim() && password.trim()) {
-      localStorage.setItem('username', username.trim());
-      localStorage.setItem('password', password.trim());
-      setIsLoggedIn(true);
-    } else {
-      alert('Veuillez remplir tous les champs');
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('username');
-    localStorage.removeItem('password');
-    setIsLoggedIn(false);
-    setUsername('');
-    setPassword('');
-    setParcels([]);
+    setLoading(false);
   };
 
   const loadParcels = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error} = await supabase
         .from('parcels')
         .select('*')
         .eq('user_id', username)
@@ -81,11 +141,145 @@ export default function LockerParcelApp() {
       if (error) throw error;
       
       setParcels(data || []);
+      // Sauvegarder en local pour mode offline
+      localStorage.setItem(`parcels_${username}`, JSON.stringify(data || []));
     } catch (error) {
       console.error('Erreur de chargement:', error);
+      // Charger depuis le cache local si erreur
+      const cached = localStorage.getItem(`parcels_${username}`);
+      if (cached) {
+        setParcels(JSON.parse(cached));
+        setSyncStatus('🟡 Données en cache');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  // Synchronisation en temps réel
+  const setupRealtimeSubscription = () => {
+    const channel = supabase
+      .channel(`parcels-${username}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'parcels',
+          filter: `user_id=eq.${username}`
+        },
+        (payload) => {
+          console.log('🔄 Changement temps réel:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            setParcels(prev => {
+              const updated = [payload.new, ...prev];
+              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setParcels(prev => {
+              const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
+              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setParcels(prev => {
+              const updated = prev.filter(p => p.id !== payload.old.id);
+              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Temps réel activé');
+          setSyncStatus('🟢 Synchronisé en temps réel');
+        }
+      });
+
+    window.realtimeChannel = channel;
+  };
+
+  // Demander permission notifications
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        console.log('✅ Notifications autorisées');
+      }
+    }
+  };
+
+  // Tracker colis récupérés aujourd'hui
+  const trackCollectedToday = async () => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { data, error } = await supabase
+        .from('parcels')
+        .select('*')
+        .eq('user_id', username)
+        .eq('collected', true)
+        .gte('date_added', today.toISOString());
+
+      if (error) throw error;
+      
+      setCollectedToday(data?.length || 0);
+    } catch (error) {
+      console.error('Erreur tracking:', error);
+    }
+  };
+
+  // Gestion mode offline
+  const loadOfflineQueue = () => {
+    const queue = localStorage.getItem(`offline_queue_${username}`);
+    if (queue) {
+      setOfflineQueue(JSON.parse(queue));
+    }
+  };
+
+  const saveOfflineQueue = (queue) => {
+    localStorage.setItem(`offline_queue_${username}`, JSON.stringify(queue));
+  };
+
+  const addToOfflineQueue = (action) => {
+    const newQueue = [...offlineQueue, { ...action, timestamp: Date.now() }];
+    setOfflineQueue(newQueue);
+    saveOfflineQueue(newQueue);
+  };
+
+  const syncOfflineChanges = async () => {
+    if (offlineQueue.length === 0) return;
+
+    setSyncStatus('🔄 Synchronisation...');
+    
+    for (const action of offlineQueue) {
+      try {
+        switch (action.type) {
+          case 'add':
+            await supabase.from('parcels').insert(action.data);
+            break;
+          case 'update':
+            await supabase.from('parcels').update(action.data).eq('id', action.id);
+            break;
+          case 'delete':
+            await supabase.from('parcels').delete().eq('id', action.id);
+            break;
+        }
+      } catch (error) {
+        console.error('Erreur sync:', error);
+      }
+    }
+
+    setOfflineQueue([]);
+    saveOfflineQueue([]);
+    setSyncStatus('✅ Synchronisé');
+    await loadParcels();
+    
+    setTimeout(() => setSyncStatus('🟢 En ligne'), 2000);
   };
 
   const extractParcelCodes = (text) => {
@@ -122,6 +316,24 @@ export default function LockerParcelApp() {
       user_id: username
     }));
 
+    if (!isOnline) {
+      // Mode offline : sauvegarder localement
+      const tempParcels = newParcels.map(p => ({
+        ...p,
+        id: `temp_${Date.now()}_${Math.random()}`,
+        date_added: new Date().toISOString()
+      }));
+      
+      setParcels([...tempParcels, ...parcels]);
+      tempParcels.forEach(p => {
+        addToOfflineQueue({ type: 'add', data: p });
+      });
+      
+      setCodeInput('');
+      setSyncStatus('💾 Sauvegardé hors ligne');
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('parcels')
@@ -139,6 +351,27 @@ export default function LockerParcelApp() {
   };
 
   const toggleCollected = async (id, currentStatus) => {
+    const optimisticUpdate = parcels.map(p => 
+      p.id === id ? { ...p, collected: !currentStatus } : p
+    );
+    setParcels(optimisticUpdate);
+
+    if (!currentStatus) {
+      setCollectedToday(prev => prev + 1);
+    } else {
+      setCollectedToday(prev => Math.max(0, prev - 1));
+    }
+
+    if (!isOnline) {
+      addToOfflineQueue({
+        type: 'update',
+        id,
+        data: { collected: !currentStatus }
+      });
+      setSyncStatus('💾 Modification hors ligne');
+      return;
+    }
+
     try {
       const now = new Date().toISOString();
       
@@ -151,14 +384,22 @@ export default function LockerParcelApp() {
         .eq('id', id);
 
       if (error) throw error;
-
-      loadParcels();
+      await loadParcels();
     } catch (error) {
       console.error('Erreur de mise à jour:', error);
+      // Rollback en cas d'erreur
+      setParcels(parcels);
     }
   };
 
   const changeLockerType = async (id, newType) => {
+    if (!isOnline) {
+      const updated = parcels.map(p => p.id === id ? { ...p, locker_type: newType } : p);
+      setParcels(updated);
+      addToOfflineQueue({ type: 'update', id, data: { locker_type: newType } });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('parcels')
@@ -176,6 +417,13 @@ export default function LockerParcelApp() {
   };
 
   const changePickupLocation = async (id, newLocation) => {
+    if (!isOnline) {
+      const updated = parcels.map(p => p.id === id ? { ...p, location: newLocation } : p);
+      setParcels(updated);
+      addToOfflineQueue({ type: 'update', id, data: { location: newLocation } });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('parcels')
@@ -193,6 +441,12 @@ export default function LockerParcelApp() {
   };
 
   const deleteParcel = async (id) => {
+    if (!isOnline) {
+      setParcels(parcels.filter(p => p.id !== id));
+      addToOfflineQueue({ type: 'delete', id });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('parcels')
@@ -210,9 +464,17 @@ export default function LockerParcelApp() {
   const deleteAllCollected = async () => {
     if (!confirm('Supprimer tous les colis récupérés ?')) return;
 
+    const collectedIds = collectedParcels.map(p => p.id);
+
+    if (!isOnline) {
+      setParcels(parcels.filter(p => !p.collected));
+      collectedIds.forEach(id => {
+        addToOfflineQueue({ type: 'delete', id });
+      });
+      return;
+    }
+
     try {
-      const collectedIds = collectedParcels.map(p => p.id);
-      
       const { error } = await supabase
         .from('parcels')
         .delete()
@@ -247,6 +509,7 @@ export default function LockerParcelApp() {
       case 'hyper-u-accueil': return '🏪 Hyper U - Accueil';
       case 'intermarche-locker': return '🛒 Intermarché - Locker';
       case 'intermarche-accueil': return '🛒 Intermarché - Accueil';
+      case 'rond-point-noyal': return '📍 Rond point Noyal - Locker';
       default: return location;
     }
   };
@@ -284,66 +547,6 @@ export default function LockerParcelApp() {
     }
   };
 
-  // Page de connexion
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-          <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="bg-indigo-600 p-3 rounded-xl">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Nom d'utilisateur
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && document.getElementById('password-input').focus()}
-                placeholder="Choisissez un nom d'utilisateur"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Mot de passe
-              </label>
-              <input
-                id="password-input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="Choisissez un mot de passe"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
-
-            <button
-              onClick={handleLogin}
-              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition"
-            >
-              Se connecter
-            </button>
-
-            <p className="text-sm text-gray-600 text-center mt-4">
-              Utilisez les mêmes identifiants sur tous vos appareils pour synchroniser vos colis
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -355,18 +558,32 @@ export default function LockerParcelApp() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-2xl mx-auto">
-        {/* Header avec bouton déconnexion */}
+        {/* Indicateur de statut de connexion */}
+        {syncStatus && (
+          <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+            isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+          }`}>
+            {syncStatus}
+            {offlineQueue.length > 0 && (
+              <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
+                {offlineQueue.length} en attente
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-    <button
-      onClick={() => router.push('/')}
-      className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"
-    >
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M19 12H5M12 19l-7-7 7-7"/>
-      </svg>
-    </button>
+              <button
+                onClick={() => router.push('/')}
+                className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
               <div className="bg-indigo-600 p-3 rounded-xl">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
@@ -378,16 +595,16 @@ export default function LockerParcelApp() {
               </div>
             </div>
             <button
-              onClick={handleLogout}
+              onClick={() => router.push('/')}
               className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
             >
-              Déconnexion
+              Retour
             </button>
           </div>
 
           {/* Formulaire d'ajout */}
           <div className="space-y-3">
-            {/* Type de locker avec logos */}
+            {/* Type de transporteur */}
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-3">Type de transporteur :</p>
               <div className="grid grid-cols-2 gap-2">
@@ -433,7 +650,7 @@ export default function LockerParcelApp() {
                     name="lockerType"
                     value="pickup"
                     checked={lockerType === 'pickup'}
-                    onChange={(e) => setLockerType(e.target.value)}
+                    onChange=(e) => setLockerType(e.target.value)}
                     className="w-4 h-4 text-indigo-600"
                   />
                   <img src={LOCKER_LOGOS['pickup']} alt="Pickup" className="h-6 object-contain" />
@@ -498,6 +715,17 @@ export default function LockerParcelApp() {
                     className="w-4 h-4 text-indigo-600"
                   />
                   <span>🛒 Intermarché - Accueil</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pickupLocation"
+                    value="rond-point-noyal"
+                    checked={pickupLocation === 'rond-point-noyal'}
+                    onChange={(e) => setPickupLocation(e.target.value)}
+                    className="w-4 h-4 text-indigo-600"
+                  />
+                  <span>📍 Rond point Noyal - Locker</span>
                 </label>
               </div>
             </div>
@@ -598,6 +826,7 @@ export default function LockerParcelApp() {
                             <option value="hyper-u-accueil">🏪 Hyper U - Accueil</option>
                             <option value="intermarche-locker">🛒 Intermarché - Locker</option>
                             <option value="intermarche-accueil">🛒 Intermarché - Accueil</option>
+                            <option value="rond-point-noyal">📍 Rond point Noyal - Locker</option>
                           </select>
                         </div>
                         
