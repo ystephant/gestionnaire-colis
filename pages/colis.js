@@ -173,6 +173,12 @@ export default function LockerParcelApp() {
           
           if (payload.eventType === 'INSERT') {
             setParcels(prev => {
+              // Vérifier si le colis n'existe pas déjà
+              const exists = prev.some(p => p.id === payload.new.id);
+              if (exists) {
+                console.log('⚠️ Doublon évité:', payload.new.id);
+                return prev;
+              }
               const updated = [payload.new, ...prev];
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
               return updated;
@@ -181,9 +187,16 @@ export default function LockerParcelApp() {
             setParcels(prev => {
               const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+              
+              // Notification si passage à "récupéré"
+              if (payload.new.collected && !payload.old?.collected) {
+                showNotification(`Colis ${payload.new.code} récupéré ! 🎉`);
+              }
+              
               return updated;
             });
           } else if (payload.eventType === 'DELETE') {
+            console.log('🗑️ Suppression détectée:', payload.old.id);
             setParcels(prev => {
               const updated = prev.filter(p => p.id !== payload.old.id);
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
@@ -196,10 +209,31 @@ export default function LockerParcelApp() {
         if (status === 'SUBSCRIBED') {
           console.log('✅ Temps réel activé');
           setSyncStatus('🟢 Synchronisé en temps réel');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Erreur canal Realtime');
+          setSyncStatus('⚠️ Erreur de synchronisation');
         }
       });
 
     window.realtimeChannel = channel;
+  };
+
+  // Afficher notification instantanée
+  const showNotification = (message) => {
+    if ('serviceWorker' in navigator && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        navigator.serviceWorker.ready.then(registration => {
+          registration.showNotification('Gestionnaire de Colis', {
+            body: message,
+            icon: '/icons/package-icon.png',
+            badge: '/icons/badge-icon.png',
+            vibrate: [200, 100, 200],
+            tag: 'parcel-update',
+            requireInteraction: false
+          });
+        });
+      }
+    }
   };
 
   // Demander permission notifications
