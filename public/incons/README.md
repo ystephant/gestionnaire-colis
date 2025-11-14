@@ -1,1 +1,0 @@
-Ici positionner les icones
