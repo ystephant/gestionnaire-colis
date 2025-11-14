@@ -650,7 +650,7 @@ export default function LockerParcelApp() {
                     name="lockerType"
                     value="pickup"
                     checked={lockerType === 'pickup'}
-                    onChange=(e) => setLockerType(e.target.value)}
+                    onChange={(e) => setLockerType(e.target.value)}
                     className="w-4 h-4 text-indigo-600"
                   />
                   <img src={LOCKER_LOGOS['pickup']} alt="Pickup" className="h-6 object-contain" />
