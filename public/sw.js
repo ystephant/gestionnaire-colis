@@ -1,5 +1,5 @@
 // Service Worker avancé pour notifications push
-const CACHE_NAME = 'colis-cache-v2';
+const CACHE_NAME = 'colis-cache-v3';
 const urlsToCache = [
   '/',
   '/colis',
