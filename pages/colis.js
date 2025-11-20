@@ -820,32 +820,43 @@ export default function LockerParcelApp() {
           </div>
         </div>
 
-        {/* 🆕 SECTION FILTRES */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-            </svg>
-            Filtrer mes colis
-          </h2>
+{/* 🆕 SECTION FILTRES INTELLIGENTS */}
+<div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+  <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+    </svg>
+    Filtrer mes colis
+  </h2>
 
-          {/* Filtres par type de locker */}
-          <div className="mb-4">
-            <p className="text-sm font-semibold text-gray-600 mb-2">Par transporteur :</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setFilterLockerType('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLockerType === 'all'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>📦 Tous</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLockerType('all')}
-                </span>
-              </button>
+  {/* Filtres par type de locker - SEULEMENT SI AU MOINS 2 TYPES DIFFÉRENTS */}
+  {(() => {
+    // Compter les types de locker utilisés
+    const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
+    
+    // N'afficher que si au moins 2 types différents
+    if (usedLockerTypes.length > 1) {
+      return (
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-gray-600 mb-2">Par transporteur :</p>
+          <div className="flex flex-wrap gap-2">
+            {/* Bouton "Tous" - toujours affiché si plusieurs types */}
+            <button
+              onClick={() => setFilterLockerType('all')}
+              className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                filterLockerType === 'all'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <span>📦 Tous</span>
+              <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                {getCountByLockerType('all')}
+              </span>
+            </button>
+
+            {/* Mondial Relay - seulement si utilisé */}
+            {usedLockerTypes.includes('mondial-relay') && (
               <button
                 onClick={() => setFilterLockerType('mondial-relay')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -859,6 +870,10 @@ export default function LockerParcelApp() {
                   {getCountByLockerType('mondial-relay')}
                 </span>
               </button>
+            )}
+
+            {/* Vinted GO - seulement si utilisé */}
+            {usedLockerTypes.includes('vinted-go') && (
               <button
                 onClick={() => setFilterLockerType('vinted-go')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -872,6 +887,10 @@ export default function LockerParcelApp() {
                   {getCountByLockerType('vinted-go')}
                 </span>
               </button>
+            )}
+
+            {/* Relais Colis - seulement si utilisé */}
+            {usedLockerTypes.includes('relais-colis') && (
               <button
                 onClick={() => setFilterLockerType('relais-colis')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -885,6 +904,10 @@ export default function LockerParcelApp() {
                   {getCountByLockerType('relais-colis')}
                 </span>
               </button>
+            )}
+
+            {/* Pickup - seulement si utilisé */}
+            {usedLockerTypes.includes('pickup') && (
               <button
                 onClick={() => setFilterLockerType('pickup')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -898,26 +921,42 @@ export default function LockerParcelApp() {
                   {getCountByLockerType('pickup')}
                 </span>
               </button>
-            </div>
+            )}
           </div>
+        </div>
+      );
+    }
+    return null;
+  })()}
 
-          {/* Filtres par lieu */}
-          <div>
-            <p className="text-sm font-semibold text-gray-600 mb-2">Par lieu :</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setFilterLocation('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLocation === 'all'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>📦 Tous les lieux</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLocation('all')}
-                </span>
-              </button>
+  {/* Filtres par lieu - SEULEMENT SI AU MOINS 2 LIEUX DIFFÉRENTS */}
+  {(() => {
+    // Compter les lieux utilisés
+    const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
+    
+    // N'afficher que si au moins 2 lieux différents
+    if (usedLocations.length > 1) {
+      return (
+        <div>
+          <p className="text-sm font-semibold text-gray-600 mb-2">Par lieu :</p>
+          <div className="flex flex-wrap gap-2">
+            {/* Bouton "Tous les lieux" - toujours affiché si plusieurs lieux */}
+            <button
+              onClick={() => setFilterLocation('all')}
+              className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                filterLocation === 'all'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <span>📦 Tous les lieux</span>
+              <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                {getCountByLocation('all')}
+              </span>
+            </button>
+
+            {/* Hyper U Locker - seulement si utilisé */}
+            {usedLocations.includes('hyper-u-locker') && (
               <button
                 onClick={() => setFilterLocation('hyper-u-locker')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -931,6 +970,10 @@ export default function LockerParcelApp() {
                   {getCountByLocation('hyper-u-locker')}
                 </span>
               </button>
+            )}
+
+            {/* Hyper U Accueil - seulement si utilisé */}
+            {usedLocations.includes('hyper-u-accueil') && (
               <button
                 onClick={() => setFilterLocation('hyper-u-accueil')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -944,6 +987,10 @@ export default function LockerParcelApp() {
                   {getCountByLocation('hyper-u-accueil')}
                 </span>
               </button>
+            )}
+
+            {/* Intermarché Locker - seulement si utilisé */}
+            {usedLocations.includes('intermarche-locker') && (
               <button
                 onClick={() => setFilterLocation('intermarche-locker')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -957,6 +1004,10 @@ export default function LockerParcelApp() {
                   {getCountByLocation('intermarche-locker')}
                 </span>
               </button>
+            )}
+
+            {/* Intermarché Accueil - seulement si utilisé */}
+            {usedLocations.includes('intermarche-accueil') && (
               <button
                 onClick={() => setFilterLocation('intermarche-accueil')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -970,6 +1021,10 @@ export default function LockerParcelApp() {
                   {getCountByLocation('intermarche-accueil')}
                 </span>
               </button>
+            )}
+
+            {/* Rond point Noyal - seulement si utilisé */}
+            {usedLocations.includes('rond-point-noyal') && (
               <button
                 onClick={() => setFilterLocation('rond-point-noyal')}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -983,28 +1038,49 @@ export default function LockerParcelApp() {
                   {getCountByLocation('rond-point-noyal')}
                 </span>
               </button>
-            </div>
+            )}
           </div>
-
-          {/* Indicateur de filtre actif */}
-          {(filterLockerType !== 'all' || filterLocation !== 'all') && (
-            <div className="mt-4 flex items-center justify-between bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800 font-medium">
-                🔍 Affichage de {filteredPendingParcels.length} colis sur {pendingParcels.length}
-              </p>
-              <button
-                onClick={() => {
-                  setFilterLockerType('all');
-                  setFilterLocation('all');
-                }}
-                className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
-              >
-                Réinitialiser
-              </button>
-            </div>
-          )}
         </div>
+      );
+    }
+    return null;
+  })()}
 
+  {/* Indicateur de filtre actif */}
+  {(filterLockerType !== 'all' || filterLocation !== 'all') && (
+    <div className="mt-4 flex items-center justify-between bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
+      <p className="text-sm text-blue-800 font-medium">
+        🔍 Affichage de {filteredPendingParcels.length} colis sur {pendingParcels.length}
+      </p>
+      <button
+        onClick={() => {
+          setFilterLockerType('all');
+          setFilterLocation('all');
+        }}
+        className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
+      >
+        Réinitialiser
+      </button>
+    </div>
+  )}
+
+  {/* Message si aucun filtre n'est nécessaire */}
+  {(() => {
+    const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
+    const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
+    
+    if (usedLockerTypes.length <= 1 && usedLocations.length <= 1) {
+      return (
+        <div className="text-center py-4">
+          <p className="text-gray-500 text-sm">
+            ✨ Aucun filtre nécessaire - Tous vos colis sont au même endroit !
+          </p>
+        </div>
+      );
+    }
+    return null;
+  })()}
+</div>
         {/* Colis en attente */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
