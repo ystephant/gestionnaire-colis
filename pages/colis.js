@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
+import { sendNotification } from '../lib/onesignal';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -326,99 +327,66 @@ export default function LockerParcelApp() {
     return codes ? [...new Set(codes)] : [];
   };
 
-  const addParcels = async () => {
-    const codes = extractParcelCodes(codeInput);
-    
-    if (codes.length === 0) {
-      alert('Aucun code de colis valide trouvé');
-      return;
-    }
+const addParcels = async () => {
+  const codes = extractParcelCodes(codeInput);
+  
+  if (codes.length === 0) {
+    alert('Aucun code de colis valide trouvé');
+    return;
+  }
 
-    const newParcels = codes.map(code => ({
-      code: code.toUpperCase(),
-      location: pickupLocation,
-      locker_type: lockerType,
-      collected: false,
-      user_id: username
+  const newParcels = codes.map(code => ({
+    code: code.toUpperCase(),
+    location: pickupLocation,
+    locker_type: lockerType,
+    collected: false,
+    user_id: username
+  }));
+
+  if (!isOnline) {
+    const tempParcels = newParcels.map(p => ({
+      ...p,
+      id: `temp_${Date.now()}_${Math.random()}`,
+      date_added: new Date().toISOString()
     }));
+    
+    setParcels(prev => [...tempParcels, ...prev]);
+    tempParcels.forEach(p => {
+      addToOfflineQueue({ type: 'add', data: p });
+    });
+    
+    setCodeInput('');
+    setSyncStatus('💾 Sauvegardé hors ligne');
+    return;
+  }
 
-    if (!isOnline) {
-      const tempParcels = newParcels.map(p => ({
-        ...p,
-        id: `temp_${Date.now()}_${Math.random()}`,
-        date_added: new Date().toISOString()
-      }));
-      
-      setParcels(prev => [...tempParcels, ...prev]);
-      tempParcels.forEach(p => {
-        addToOfflineQueue({ type: 'add', data: p });
-      });
-      
-      setCodeInput('');
-      setSyncStatus('💾 Sauvegardé hors ligne');
-      return;
-    }
+  try {
+    const { data, error } = await supabase
+      .from('parcels')
+      .insert(newParcels)
+      .select();
 
-    try {
-      const { data, error } = await supabase
-        .from('parcels')
-        .insert(newParcels)
-        .select();
-
-      if (error) throw error;
-      
-      await loadParcels();
-      setCodeInput('');
-      
-      setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
-    } catch (error) {
-      console.error('Erreur d\'ajout:', error);
-      alert('Erreur lors de l\'ajout des colis');
-    }
-  };
-
-  const toggleCollected = async (id, currentStatus) => {
-    const optimisticUpdate = parcels.map(p => 
-      p.id === id ? { ...p, collected: !currentStatus } : p
+    if (error) throw error;
+    
+    // 🔥 ENVOYER NOTIFICATION ONESIGNAL
+    await sendNotification(
+      username,
+      '📦 Nouveaux colis à récupérer',
+      `${data.length} colis ajouté${data.length > 1 ? 's' : ''} : ${data.map(p => p.code).join(', ')}`,
+      { action: 'new_parcel', count: data.length }
     );
-    setParcels(optimisticUpdate);
-
-    if (!currentStatus) {
-      setCollectedToday(prev => prev + 1);
-    } else {
-      setCollectedToday(prev => Math.max(0, prev - 1));
-    }
-
-    if (!isOnline) {
-      addToOfflineQueue({
-        type: 'update',
-        id,
-        data: { collected: !currentStatus }
-      });
-      setSyncStatus('💾 Modification hors ligne');
-      return;
-    }
-
-    try {
-      const now = new Date().toISOString();
-      
-      const { error } = await supabase
-        .from('parcels')
-        .update({ 
-          collected: !currentStatus,
-          date_added: !currentStatus ? now : parcels.find(p => p.id === id)?.date_added
-        })
-        .eq('id', id);
-
-      if (error) throw error;
-      await loadParcels();
-    } catch (error) {
-      console.error('Erreur de mise à jour:', error);
-      setParcels(parcels);
-    }
-  };
+    
+    await loadParcels();
+    setCodeInput('');
+    
+    setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  } catch (error) {
+    console.error('Erreur d\'ajout:', error);
+    alert('Erreur lors de l\'ajout des colis');
+  }
+};
 
   const changeLockerType = async (id, newType) => {
     if (!isOnline) {
