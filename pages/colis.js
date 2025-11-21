@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-import { sendNotification } from '../lib/onesignal';
+//import { sendNotification } from '../lib/onesignal';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -369,12 +369,53 @@ const addParcels = async () => {
     if (error) throw error;
     
     // 🔥 ENVOYER NOTIFICATION ONESIGNAL
-    await sendNotification(
-      username,
-      '📦 Nouveaux colis à récupérer',
-      `${data.length} colis ajouté${data.length > 1 ? 's' : ''} : ${data.map(p => p.code).join(', ')}`,
-      { action: 'new_parcel', count: data.length }
-    );
+    //await sendNotification(
+      //username,
+      //'📦 Nouveaux colis à récupérer',
+      //`${data.length} colis ajouté${data.length > 1 ? 's' : ''} : ${data.map(p => p.code).join(', ')}`,
+      //{ action: 'new_parcel', count: data.length }
+   // );
+
+    const toggleCollected = async (id, currentStatus) => {
+  const optimisticUpdate = parcels.map(p => 
+    p.id === id ? { ...p, collected: !currentStatus } : p
+  );
+  setParcels(optimisticUpdate);
+
+  if (!currentStatus) {
+    setCollectedToday(prev => prev + 1);
+  } else {
+    setCollectedToday(prev => Math.max(0, prev - 1));
+  }
+
+  if (!isOnline) {
+    addToOfflineQueue({
+      type: 'update',
+      id,
+      data: { collected: !currentStatus }
+    });
+    setSyncStatus('💾 Modification hors ligne');
+    return;
+  }
+
+  try {
+    const now = new Date().toISOString();
+    
+    const { error } = await supabase
+      .from('parcels')
+      .update({ 
+        collected: !currentStatus,
+        date_added: !currentStatus ? now : parcels.find(p => p.id === id)?.date_added
+      })
+      .eq('id', id);
+
+    if (error) throw error;
+    await loadParcels();
+  } catch (error) {
+    console.error('Erreur de mise à jour:', error);
+    setParcels(parcels);
+  }
+};
     
     await loadParcels();
     setCodeInput('');
