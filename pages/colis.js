@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-//import { sendNotification } from '../lib/onesignal';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// Logos des transporteurs
 const LOCKER_LOGOS = {
   'mondial-relay': '/logos/mondial-relay.png',
   'vinted-go': '/logos/vinted-go.png',
@@ -32,907 +30,332 @@ export default function LockerParcelApp() {
   const [syncStatus, setSyncStatus] = useState('');
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  
-  // 🆕 ÉTATS POUR LES FILTRES
   const [filterLockerType, setFilterLockerType] = useState('all');
   const [filterLocation, setFilterLocation] = useState('all');
 
   useEffect(() => {
     checkAuth();
-    
-    const handleOnline = () => {
-      setIsOnline(true);
-      setSyncStatus('🟢 En ligne');
-      syncOfflineChanges();
-    };
-    
-    const handleOffline = () => {
-      setIsOnline(false);
-      setSyncStatus('🔴 Hors ligne - Les modifications seront synchronisées');
-    };
-
+    const handleOnline = () => { setIsOnline(true); setSyncStatus('🟢 En ligne'); syncOfflineChanges(); };
+    const handleOffline = () => { setIsOnline(false); setSyncStatus('🔴 Hors ligne - Les modifications seront synchronisées'); };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
     setIsOnline(navigator.onLine);
     setSyncStatus(navigator.onLine ? '🟢 En ligne' : '🔴 Hors ligne');
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
   useEffect(() => {
     if (isLoggedIn) {
       loadParcels();
-      if (isOnline) {
-        setupRealtimeSubscription();
-        requestNotificationPermission();
-      }
+      if (isOnline) { setupRealtimeSubscription(); requestNotificationPermission(); }
       trackCollectedToday();
       loadOfflineQueue();
     }
   }, [isLoggedIn, isOnline]);
 
-  useEffect(() => {
-    return () => {
-      if (window.realtimeChannel) {
-        supabase.removeChannel(window.realtimeChannel);
-      }
-    };
-  }, []);
+  useEffect(() => { return () => { if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel); }; }, []);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (collectedToday > 0) {
-        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
-          navigator.serviceWorker.ready.then(registration => {
-            registration.active.postMessage({
-              type: 'SHOW_NOTIFICATION',
-              title: 'Colis récupérés aujourd\'hui',
-              options: {
-                body: `${collectedToday} colis récupéré${collectedToday > 1 ? 's' : ''} aujourd'hui 🎉`,
-                icon: '/icons/package-icon.png',
-                badge: '/icons/badge-icon.png',
-                tag: 'daily-summary',
-                requireInteraction: false,
-                vibrate: [200, 100, 200]
-              }
-            });
+      if (collectedToday > 0 && 'serviceWorker' in navigator && Notification.permission === 'granted') {
+        navigator.serviceWorker.ready.then(registration => {
+          registration.active.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            title: 'Colis récupérés aujourd\'hui',
+            options: { body: `${collectedToday} colis récupéré${collectedToday > 1 ? 's' : ''} aujourd'hui 🎉`, icon: '/icons/package-icon.png', badge: '/icons/badge-icon.png', tag: 'daily-summary', requireInteraction: false, vibrate: [200, 100, 200] }
           });
-        }
+        });
       }
     };
-
     window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden && collectedToday > 0) {
-        handleBeforeUnload();
-      }
-    });
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
+    document.addEventListener('visibilitychange', () => { if (document.hidden && collectedToday > 0) handleBeforeUnload(); });
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [collectedToday]);
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
-    
-    if (savedUsername && savedPassword) {
-      setUsername(savedUsername);
-      setPassword(savedPassword);
-      setIsLoggedIn(true);
-    } else {
-      router.push('/');
-    }
+    if (savedUsername && savedPassword) { setUsername(savedUsername); setPassword(savedPassword); setIsLoggedIn(true); }
+    else router.push('/');
     setLoading(false);
   };
 
   const loadParcels = async () => {
     try {
-      const { data, error} = await supabase
-        .from('parcels')
-        .select('*')
-        .eq('user_id', username)
-        .order('collected', { ascending: true })
-        .order('date_added', { ascending: false });
-
+      const { data, error} = await supabase.from('parcels').select('*').eq('user_id', username).order('collected', { ascending: true }).order('date_added', { ascending: false });
       if (error) throw error;
-      
       setParcels(data || []);
       localStorage.setItem(`parcels_${username}`, JSON.stringify(data || []));
     } catch (error) {
       console.error('Erreur de chargement:', error);
       const cached = localStorage.getItem(`parcels_${username}`);
-      if (cached) {
-        setParcels(JSON.parse(cached));
-        setSyncStatus('🟡 Données en cache');
-      }
-    } finally {
-      setLoading(false);
-    }
+      if (cached) { setParcels(JSON.parse(cached)); setSyncStatus('🟡 Données en cache'); }
+    } finally { setLoading(false); }
   };
 
   const setupRealtimeSubscription = () => {
-    const channel = supabase
-      .channel(`parcels-${username}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'parcels',
-          filter: `user_id=eq.${username}`
-        },
-        (payload) => {
-          console.log('🔄 Changement temps réel:', payload);
-          
-          if (payload.eventType === 'INSERT') {
-            setParcels(prev => {
-              const exists = prev.some(p => p.id === payload.new.id);
-              if (exists) {
-                console.log('⚠️ Doublon évité:', payload.new.id);
-                return prev;
-              }
-              const updated = [payload.new, ...prev];
-              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-              return updated;
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            setParcels(prev => {
-              const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
-              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-              
-              if (payload.new.collected && !payload.old?.collected) {
-                showNotification(`Colis ${payload.new.code} récupéré ! 🎉`);
-              }
-              
-              return updated;
-            });
-          } else if (payload.eventType === 'DELETE') {
-            console.log('🗑️ Suppression détectée:', payload.old.id);
-            setParcels(prev => {
-              const updated = prev.filter(p => p.id !== payload.old.id);
-              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-              return updated;
-            });
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Temps réel activé');
-          setSyncStatus('🟢 Synchronisé en temps réel');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Erreur canal Realtime');
-          setSyncStatus('⚠️ Erreur de synchronisation');
-        }
-      });
-
+    const channel = supabase.channel(`parcels-${username}`).on('postgres_changes', { event: '*', schema: 'public', table: 'parcels', filter: `user_id=eq.${username}` }, (payload) => {
+      console.log('🔄 Changement temps réel:', payload);
+      if (payload.eventType === 'INSERT') {
+        setParcels(prev => {
+          const exists = prev.some(p => p.id === payload.new.id);
+          if (exists) { console.log('⚠️ Doublon évité:', payload.new.id); return prev; }
+          const updated = [payload.new, ...prev];
+          localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+          return updated;
+        });
+      } else if (payload.eventType === 'UPDATE') {
+        setParcels(prev => {
+          const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
+          localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+          if (payload.new.collected && !payload.old?.collected) showNotification(`Colis ${payload.new.code} récupéré ! 🎉`);
+          return updated;
+        });
+      } else if (payload.eventType === 'DELETE') {
+        console.log('🗑️ Suppression détectée:', payload.old.id);
+        setParcels(prev => {
+          const updated = prev.filter(p => p.id !== payload.old.id);
+          localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }).subscribe((status) => {
+      if (status === 'SUBSCRIBED') { console.log('✅ Temps réel activé'); setSyncStatus('🟢 Synchronisé en temps réel'); }
+      else if (status === 'CHANNEL_ERROR') { console.error('❌ Erreur canal Realtime'); setSyncStatus('⚠️ Erreur de synchronisation'); }
+    });
     window.realtimeChannel = channel;
   };
 
   const showNotification = (message) => {
-    if ('serviceWorker' in navigator && 'Notification' in window) {
-      if (Notification.permission === 'granted') {
-        navigator.serviceWorker.ready.then(registration => {
-          registration.showNotification('Gestionnaire de Colis', {
-            body: message,
-            icon: '/icons/package-icon.png',
-            badge: '/icons/badge-icon.png',
-            vibrate: [200, 100, 200],
-            tag: 'parcel-update',
-            requireInteraction: false
-          });
-        });
-      }
+    if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
+      navigator.serviceWorker.ready.then(registration => {
+        registration.showNotification('Gestionnaire de Colis', { body: message, icon: '/icons/package-icon.png', badge: '/icons/badge-icon.png', vibrate: [200, 100, 200], tag: 'parcel-update', requireInteraction: false });
+      });
     }
   };
 
   const requestNotificationPermission = async () => {
     if ('Notification' in window && Notification.permission === 'default') {
       const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        console.log('✅ Notifications autorisées');
-      }
+      if (permission === 'granted') console.log('✅ Notifications autorisées');
     }
   };
 
   const trackCollectedToday = async () => {
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const { data, error } = await supabase
-        .from('parcels')
-        .select('*')
-        .eq('user_id', username)
-        .eq('collected', true)
-        .gte('date_added', today.toISOString());
-
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const { data, error } = await supabase.from('parcels').select('*').eq('user_id', username).eq('collected', true).gte('date_added', today.toISOString());
       if (error) throw error;
-      
       setCollectedToday(data?.length || 0);
-    } catch (error) {
-      console.error('Erreur tracking:', error);
-    }
+    } catch (error) { console.error('Erreur tracking:', error); }
   };
 
-  const loadOfflineQueue = () => {
-    const queue = localStorage.getItem(`offline_queue_${username}`);
-    if (queue) {
-      setOfflineQueue(JSON.parse(queue));
-    }
-  };
-
-  const saveOfflineQueue = (queue) => {
-    localStorage.setItem(`offline_queue_${username}`, JSON.stringify(queue));
-  };
-
-  const addToOfflineQueue = (action) => {
-    const newQueue = [...offlineQueue, { ...action, timestamp: Date.now() }];
-    setOfflineQueue(newQueue);
-    saveOfflineQueue(newQueue);
-  };
+  const loadOfflineQueue = () => { const queue = localStorage.getItem(`offline_queue_${username}`); if (queue) setOfflineQueue(JSON.parse(queue)); };
+  const saveOfflineQueue = (queue) => localStorage.setItem(`offline_queue_${username}`, JSON.stringify(queue));
+  const addToOfflineQueue = (action) => { const newQueue = [...offlineQueue, { ...action, timestamp: Date.now() }]; setOfflineQueue(newQueue); saveOfflineQueue(newQueue); };
 
   const syncOfflineChanges = async () => {
     if (offlineQueue.length === 0) return;
-
     setSyncStatus('🔄 Synchronisation...');
-    
     for (const action of offlineQueue) {
       try {
         switch (action.type) {
-          case 'add':
-            await supabase.from('parcels').insert(action.data);
-            break;
-          case 'update':
-            await supabase.from('parcels').update(action.data).eq('id', action.id);
-            break;
-          case 'delete':
-            await supabase.from('parcels').delete().eq('id', action.id);
-            break;
+          case 'add': await supabase.from('parcels').insert(action.data); break;
+          case 'update': await supabase.from('parcels').update(action.data).eq('id', action.id); break;
+          case 'delete': await supabase.from('parcels').delete().eq('id', action.id); break;
         }
-      } catch (error) {
-        console.error('Erreur sync:', error);
-      }
+      } catch (error) { console.error('Erreur sync:', error); }
     }
-
-    setOfflineQueue([]);
-    saveOfflineQueue([]);
-    setSyncStatus('✅ Synchronisé');
-    await loadParcels();
-    
+    setOfflineQueue([]); saveOfflineQueue([]); setSyncStatus('✅ Synchronisé'); await loadParcels();
     setTimeout(() => setSyncStatus('🟢 En ligne'), 2000);
   };
 
   const extractParcelCodes = (text) => {
     let codes = [];
-    
-    if (lockerType === 'mondial-relay') {
-      codes = text.match(/[A-Z0-9]{6}(?![A-Z0-9])/gi) || [];
-    } else if (lockerType === 'vinted-go') {
-      codes = text.split(/[\s,\n]+/).filter(code => 
-        code.length >= 4 && code.length <= 20 && /[A-Z0-9-]+/i.test(code)
-      );
-    } else {
-      codes = text.split(/[\s,\n]+/).filter(code => 
-        code.length >= 4 && code.length <= 15 && /[A-Z0-9]+/i.test(code)
-      );
-    }
-    
+    if (lockerType === 'mondial-relay') codes = text.match(/[A-Z0-9]{6}(?![A-Z0-9])/gi) || [];
+    else if (lockerType === 'vinted-go') codes = text.split(/[\s,\n]+/).filter(code => code.length >= 4 && code.length <= 20 && /[A-Z0-9-]+/i.test(code));
+    else codes = text.split(/[\s,\n]+/).filter(code => code.length >= 4 && code.length <= 15 && /[A-Z0-9]+/i.test(code));
     return codes ? [...new Set(codes)] : [];
   };
 
-const addParcels = async () => {
-  const codes = extractParcelCodes(codeInput);
-  
-  if (codes.length === 0) {
-    alert('Aucun code de colis valide trouvé');
-    return;
-  }
-
-  const newParcels = codes.map(code => ({
-    code: code.toUpperCase(),
-    location: pickupLocation,
-    locker_type: lockerType,
-    collected: false,
-    user_id: username
-  }));
-
-  if (!isOnline) {
-    const tempParcels = newParcels.map(p => ({
-      ...p,
-      id: `temp_${Date.now()}_${Math.random()}`,
-      date_added: new Date().toISOString()
-    }));
-    
-    setParcels(prev => [...tempParcels, ...prev]);
-    tempParcels.forEach(p => {
-      addToOfflineQueue({ type: 'add', data: p });
-    });
-    
-    setCodeInput('');
-    setSyncStatus('💾 Sauvegardé hors ligne');
-    return;
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from('parcels')
-      .insert(newParcels)
-      .select();
-
-    if (error) throw error;
-    
-    // 🔥 ENVOYER NOTIFICATION ONESIGNAL
-    //await sendNotification(
-      //username,
-      //'📦 Nouveaux colis à récupérer',
-      //`${data.length} colis ajouté${data.length > 1 ? 's' : ''} : ${data.map(p => p.code).join(', ')}`,
-      //{ action: 'new_parcel', count: data.length }
-   // );
-
-    const toggleCollected = async (id, currentStatus) => {
-  const optimisticUpdate = parcels.map(p => 
-    p.id === id ? { ...p, collected: !currentStatus } : p
-  );
-  setParcels(optimisticUpdate);
-
-  if (!currentStatus) {
-    setCollectedToday(prev => prev + 1);
-  } else {
-    setCollectedToday(prev => Math.max(0, prev - 1));
-  }
-
-  if (!isOnline) {
-    addToOfflineQueue({
-      type: 'update',
-      id,
-      data: { collected: !currentStatus }
-    });
-    setSyncStatus('💾 Modification hors ligne');
-    return;
-  }
-
-  try {
-    const now = new Date().toISOString();
-    
-    const { error } = await supabase
-      .from('parcels')
-      .update({ 
-        collected: !currentStatus,
-        date_added: !currentStatus ? now : parcels.find(p => p.id === id)?.date_added
-      })
-      .eq('id', id);
-
-    if (error) throw error;
-    await loadParcels();
-  } catch (error) {
-    console.error('Erreur de mise à jour:', error);
-    setParcels(parcels);
-  }
-};
-    
-    await loadParcels();
-    setCodeInput('');
-    
-    setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-  } catch (error) {
-    console.error('Erreur d\'ajout:', error);
-    alert('Erreur lors de l\'ajout des colis');
-  }
-};
-
-  const changeLockerType = async (id, newType) => {
+  const addParcels = async () => {
+    const codes = extractParcelCodes(codeInput);
+    if (codes.length === 0) { alert('Aucun code de colis valide trouvé'); return; }
+    const newParcels = codes.map(code => ({ code: code.toUpperCase(), location: pickupLocation, locker_type: lockerType, collected: false, user_id: username }));
     if (!isOnline) {
-      const updated = parcels.map(p => p.id === id ? { ...p, locker_type: newType } : p);
-      setParcels(updated);
-      addToOfflineQueue({ type: 'update', id, data: { locker_type: newType } });
+      const tempParcels = newParcels.map(p => ({ ...p, id: `temp_${Date.now()}_${Math.random()}`, date_added: new Date().toISOString() }));
+      setParcels(prev => [...tempParcels, ...prev]);
+      tempParcels.forEach(p => addToOfflineQueue({ type: 'add', data: p }));
+      setCodeInput(''); setSyncStatus('💾 Sauvegardé hors ligne');
       return;
     }
-
     try {
-      const { error } = await supabase
-        .from('parcels')
-        .update({ locker_type: newType })
-        .eq('id', id);
-
+      const { data, error } = await supabase.from('parcels').insert(newParcels).select();
       if (error) throw error;
+      await loadParcels(); setCodeInput('');
+      setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`); setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (error) { console.error('Erreur d\'ajout:', error); alert('Erreur lors de l\'ajout des colis'); }
+  };
 
-      setParcels(parcels.map(parcel =>
-        parcel.id === id ? { ...parcel, locker_type: newType } : parcel
-      ));
-    } catch (error) {
-      console.error('Erreur de mise à jour:', error);
-    }
+  const toggleCollected = async (id, currentStatus) => {
+    const optimisticUpdate = parcels.map(p => p.id === id ? { ...p, collected: !currentStatus } : p);
+    setParcels(optimisticUpdate);
+    if (!currentStatus) setCollectedToday(prev => prev + 1);
+    else setCollectedToday(prev => Math.max(0, prev - 1));
+    if (!isOnline) { addToOfflineQueue({ type: 'update', id, data: { collected: !currentStatus } }); setSyncStatus('💾 Modification hors ligne'); return; }
+    try {
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('parcels').update({ collected: !currentStatus, date_added: !currentStatus ? now : parcels.find(p => p.id === id)?.date_added }).eq('id', id);
+      if (error) throw error;
+      await loadParcels();
+    } catch (error) { console.error('Erreur de mise à jour:', error); setParcels(parcels); }
+  };
+
+  const changeLockerType = async (id, newType) => {
+    if (!isOnline) { const updated = parcels.map(p => p.id === id ? { ...p, locker_type: newType } : p); setParcels(updated); addToOfflineQueue({ type: 'update', id, data: { locker_type: newType } }); return; }
+    try {
+      const { error } = await supabase.from('parcels').update({ locker_type: newType }).eq('id', id);
+      if (error) throw error;
+      setParcels(parcels.map(parcel => parcel.id === id ? { ...parcel, locker_type: newType } : parcel));
+    } catch (error) { console.error('Erreur de mise à jour:', error); }
   };
 
   const changePickupLocation = async (id, newLocation) => {
-    if (!isOnline) {
-      const updated = parcels.map(p => p.id === id ? { ...p, location: newLocation } : p);
-      setParcels(updated);
-      addToOfflineQueue({ type: 'update', id, data: { location: newLocation } });
-      return;
-    }
-
+    if (!isOnline) { const updated = parcels.map(p => p.id === id ? { ...p, location: newLocation } : p); setParcels(updated); addToOfflineQueue({ type: 'update', id, data: { location: newLocation } }); return; }
     try {
-      const { error } = await supabase
-        .from('parcels')
-        .update({ location: newLocation })
-        .eq('id', id);
-
+      const { error } = await supabase.from('parcels').update({ location: newLocation }).eq('id', id);
       if (error) throw error;
-
-      setParcels(parcels.map(parcel =>
-        parcel.id === id ? { ...parcel, location: newLocation } : parcel
-      ));
-    } catch (error) {
-      console.error('Erreur de mise à jour:', error);
-    }
+      setParcels(parcels.map(parcel => parcel.id === id ? { ...parcel, location: newLocation } : parcel));
+    } catch (error) { console.error('Erreur de mise à jour:', error); }
   };
 
   const deleteParcel = async (id) => {
     const parcelToDelete = parcels.find(p => p.id === id);
     setParcels(prev => prev.filter(p => p.id !== id));
-
-    if (!isOnline) {
-      addToOfflineQueue({ type: 'delete', id });
-      return;
-    }
-
+    if (!isOnline) { addToOfflineQueue({ type: 'delete', id }); return; }
     try {
-      const { error } = await supabase
-        .from('parcels')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        console.error('Erreur suppression:', error);
-        setParcels(prev => [...prev, parcelToDelete].sort((a, b) => 
-          a.collected === b.collected ? 0 : a.collected ? 1 : -1
-        ));
-        alert('Erreur lors de la suppression');
-        throw error;
-      }
-
+      const { error } = await supabase.from('parcels').delete().eq('id', id);
+      if (error) { console.error('Erreur suppression:', error); setParcels(prev => [...prev, parcelToDelete].sort((a, b) => a.collected === b.collected ? 0 : a.collected ? 1 : -1)); alert('Erreur lors de la suppression'); throw error; }
       console.log('✅ Colis supprimé:', id);
-    } catch (error) {
-      console.error('Erreur de suppression:', error);
-    }
+    } catch (error) { console.error('Erreur de suppression:', error); }
   };
 
   const deleteAllCollected = async () => {
     if (!confirm('Supprimer tous les colis récupérés ?')) return;
-
     const collectedIds = collectedParcels.map(p => p.id);
-
-    if (!isOnline) {
-      setParcels(parcels.filter(p => !p.collected));
-      collectedIds.forEach(id => {
-        addToOfflineQueue({ type: 'delete', id });
-      });
-      return;
-    }
-
+    if (!isOnline) { setParcels(parcels.filter(p => !p.collected)); collectedIds.forEach(id => addToOfflineQueue({ type: 'delete', id })); return; }
     try {
-      const { error } = await supabase
-        .from('parcels')
-        .delete()
-        .in('id', collectedIds);
-
+      const { error } = await supabase.from('parcels').delete().in('id', collectedIds);
       if (error) throw error;
-
       setParcels(parcels.filter(parcel => !parcel.collected));
-      
-      setToastMessage(`✅ ${collectedIds.length} colis supprimés`);
-      setShowToast(true);
+      setToastMessage(`✅ ${collectedIds.length} colis supprimés`); setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
-    } catch (error) {
-      console.error('Erreur de suppression:', error);
-      alert('Erreur lors de la suppression');
-    }
+    } catch (error) { console.error('Erreur de suppression:', error); alert('Erreur lors de la suppression'); }
   };
 
-  const getRemainingDays = (dateAdded) => {
-    const added = new Date(dateAdded);
-    const now = new Date();
-    const diffTime = now - added;
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, 5 - diffDays);
-  };
-
-  const getRemainingDaysText = (remainingDays) => {
-    if (remainingDays === 0) return '⚠️ Dernier jour pour récupérer';
-    if (remainingDays === 1) return '⏰ Il te reste 1 jour';
-    return `📅 Il te reste ${remainingDays} jours`;
-  };
-
-  const getPickupLocationName = (location) => {
-    switch(location) {
-      case 'hyper-u-locker': return '🏪 Hyper U - Locker';
-      case 'hyper-u-accueil': return '🏪 Hyper U - Accueil';
-      case 'intermarche-locker': return '🛒 Intermarché - Locker';
-      case 'intermarche-accueil': return '🛒 Intermarché - Accueil';
-      case 'rond-point-noyal': return '📍 Rond point Noyal - Locker';
-      default: return location;
-    }
-  };
-
-  // 🆕 FONCTION DE FILTRAGE
-  const getFilteredParcels = (parcelsList) => {
-    let filtered = parcelsList;
-
-    // Filtre par type de locker
-    if (filterLockerType !== 'all') {
-      filtered = filtered.filter(p => p.locker_type === filterLockerType);
-    }
-
-    // Filtre par lieu
-    if (filterLocation !== 'all') {
-      filtered = filtered.filter(p => p.location === filterLocation);
-    }
-
-    return filtered;
-  };
-
-  // 🆕 COMPTEURS POUR LES BADGES
-  const getCountByLockerType = (type) => {
-    if (type === 'all') return pendingParcels.length;
-    return pendingParcels.filter(p => p.locker_type === type).length;
-  };
-
-  const getCountByLocation = (location) => {
-    if (location === 'all') return pendingParcels.length;
-    return pendingParcels.filter(p => p.location === location).length;
-  };
-
+  const getRemainingDays = (dateAdded) => { const added = new Date(dateAdded); const now = new Date(); const diffTime = now - added; const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); return Math.max(0, 5 - diffDays); };
+  const getRemainingDaysText = (remainingDays) => { if (remainingDays === 0) return '⚠️ Dernier jour pour récupérer'; if (remainingDays === 1) return '⏰ Il te reste 1 jour'; return `📅 Il te reste ${remainingDays} jours`; };
+  const getPickupLocationName = (location) => { switch(location) { case 'hyper-u-locker': return '🏪 Hyper U - Locker'; case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; case 'intermarche-locker': return '🛒 Intermarché - Locker'; case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; default: return location; } };
+  const getFilteredParcels = (parcelsList) => { let filtered = parcelsList; if (filterLockerType !== 'all') filtered = filtered.filter(p => p.locker_type === filterLockerType); if (filterLocation !== 'all') filtered = filtered.filter(p => p.location === filterLocation); return filtered; };
+  const getCountByLockerType = (type) => { if (type === 'all') return pendingParcels.length; return pendingParcels.filter(p => p.locker_type === type).length; };
+  const getCountByLocation = (location) => { if (location === 'all') return pendingParcels.length; return pendingParcels.filter(p => p.location === location).length; };
   const pendingParcels = parcels.filter(p => !p.collected);
   const collectedParcels = parcels.filter(p => p.collected);
-  
-  // 🆕 APPLIQUER LES FILTRES
   const filteredPendingParcels = getFilteredParcels(pendingParcels);
+  const formatDate = (dateString) => { const date = new Date(dateString); const now = new Date(); const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24)); if (diffDays === 0) return "Aujourd'hui"; if (diffDays === 1) return "Hier"; return `Il y a ${diffDays} jours`; };
+  const getLockerName = (type) => { switch(type) { case 'mondial-relay': return 'Mondial Relay'; case 'relais-colis': return 'Relais Colis'; case 'pickup': return 'Pickup'; case 'vinted-go': return 'Vinted GO'; default: return 'Autre'; } };
+  const getCodeFormatHint = () => { switch(lockerType) { case 'mondial-relay': return 'Format: 6 caractères (ex: A1B2C3)'; case 'vinted-go': return 'Format: 4-20 caractères (ex: VT-1234-ABCD)'; case 'relais-colis': return 'Format: 4-15 caractères (ex: RC123456)'; case 'pickup': return 'Format: 4-15 caractères (ex: PK789012)'; default: return ''; } };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return "Aujourd'hui";
-    if (diffDays === 1) return "Hier";
-    return `Il y a ${diffDays} jours`;
-  };
-
-  const getLockerName = (type) => {
-    switch(type) {
-      case 'mondial-relay': return 'Mondial Relay';
-      case 'relais-colis': return 'Relais Colis';
-      case 'pickup': return 'Pickup';
-      case 'vinted-go': return 'Vinted GO';
-      default: return 'Autre';
-    }
-  };
-
-  const getCodeFormatHint = () => {
-    switch(lockerType) {
-      case 'mondial-relay': return 'Format: 6 caractères (ex: A1B2C3)';
-      case 'vinted-go': return 'Format: 4-20 caractères (ex: VT-1234-ABCD)';
-      case 'relais-colis': return 'Format: 4-15 caractères (ex: RC123456)';
-      case 'pickup': return 'Format: 4-15 caractères (ex: PK789012)';
-      default: return '';
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-xl text-indigo-600">Chargement...</div>
-      </div>
-    );
-  }
+  if (loading) return (<div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center"><div className="text-xl text-indigo-600">Chargement...</div></div>);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-2xl mx-auto">
-        {/* Toast */}
-        {showToast && (
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
-            {toastMessage}
-          </div>
-        )}
-
-        {/* Indicateur de statut */}
-        {syncStatus && (
-          <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
-            isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-          }`}>
-            {syncStatus}
-            {offlineQueue.length > 0 && (
-              <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
-                {offlineQueue.length} en attente
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Header */}
+        {showToast && (<div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">{toastMessage}</div>)}
+        {syncStatus && (<div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{syncStatus}{offlineQueue.length > 0 && (<span className="ml-2 bg-white px-2 py-1 rounded text-xs">{offlineQueue.length} en attente</span>)}</div>)}
+        
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => router.push('/')}
-                className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-              </button>
-              <div className="bg-indigo-600 p-3 rounded-xl">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
-                <p className="text-sm text-gray-500">Connecté: {username}</p>
-              </div>
+              <button onClick={() => router.push('/')} className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+              <div className="bg-indigo-600 p-3 rounded-xl"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>
+              <div><h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1><p className="text-sm text-gray-500">Connecté: {username}</p></div>
             </div>
-            <button
-              onClick={() => router.push('/')}
-              className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
-            >
-              Retour
-            </button>
+            <button onClick={() => router.push('/')} className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition">Retour</button>
           </div>
 
-          {/* Formulaire d'ajout */}
           <div className="space-y-3">
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-3">Type de transporteur :</p>
               <div className="grid grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="mondial-relay"
-                    checked={lockerType === 'mondial-relay'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['mondial-relay']} alt="Mondial Relay" className="h-6 object-contain" />
-                  <span className="text-sm font-medium">Mondial Relay</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="vinted-go"
-                    checked={lockerType === 'vinted-go'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['vinted-go']} alt="Vinted GO" className="h-6 object-contain" />
-                  <span className="text-sm font-medium">Vinted GO</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="relais-colis"
-                    checked={lockerType === 'relais-colis'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['relais-colis']} alt="Relais Colis" className="h-6 object-contain" />
-                  <span className="text-sm font-medium">Relais Colis</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                  <input
-                    type="radio"
-                    name="lockerType"
-                    value="pickup"
-                    checked={lockerType === 'pickup'}
-                    onChange={(e) => setLockerType(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <img src={LOCKER_LOGOS['pickup']} alt="Pickup" className="h-6 object-contain" />
-                  <span className="text-sm font-medium">Pickup</span>
-                </label>
+                {['mondial-relay', 'vinted-go', 'relais-colis', 'pickup'].map(type => (
+                  <label key={type} className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
+                    <input type="radio" name="lockerType" value={type} checked={lockerType === type} onChange={(e) => setLockerType(e.target.value)} className="w-4 h-4 text-indigo-600" />
+                    <img src={LOCKER_LOGOS[type]} alt={type} className="h-6 object-contain" />
+                    <span className="text-sm font-medium">{getLockerName(type)}</span>
+                  </label>
+                ))}
               </div>
               <p className="text-xs text-indigo-600 mt-2">{getCodeFormatHint()}</p>
             </div>
 
-            <textarea
-              value={codeInput}
-              onChange={(e) => setCodeInput(e.target.value)}
-              placeholder={`Collez vos codes ici\n${getCodeFormatHint()}`}
-              rows="4"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none"
-            />
+            <textarea value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder={`Collez vos codes ici\n${getCodeFormatHint()}`} rows="4" className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none" />
             
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-3">Lieu de récupération du colis :</p>
               <div className="space-y-2">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="pickupLocation"
-                    value="hyper-u-locker"
-                    checked={pickupLocation === 'hyper-u-locker'}
-                    onChange={(e) => setPickupLocation(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <span>🏪 Hyper U - Locker</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="pickupLocation"
-                    value="hyper-u-accueil"
-                    checked={pickupLocation === 'hyper-u-accueil'}
-                    onChange={(e) => setPickupLocation(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <span>🏪 Hyper U - Accueil</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="pickupLocation"
-                    value="intermarche-locker"
-                    checked={pickupLocation === 'intermarche-locker'}
-                    onChange={(e) => setPickupLocation(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <span>🛒 Intermarché - Locker</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="pickupLocation"
-                    value="intermarche-accueil"
-                    checked={pickupLocation === 'intermarche-accueil'}
-                    onChange={(e) => setPickupLocation(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <span>🛒 Intermarché - Accueil</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="pickupLocation"
-                    value="rond-point-noyal"
-                    checked={pickupLocation === 'rond-point-noyal'}
-                    onChange={(e) => setPickupLocation(e.target.value)}
-                    className="w-4 h-4 text-indigo-600"
-                  />
-                  <span>📍 Rond point Noyal - Locker</span>
-                </label>
+                {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
+                  <label key={loc} className="flex items-center gap-3 cursor-pointer">
+                    <input type="radio" name="pickupLocation" value={loc} checked={pickupLocation === loc} onChange={(e) => setPickupLocation(e.target.value)} className="w-4 h-4 text-indigo-600" />
+                    <span>{getPickupLocationName(loc)}</span>
+                  </label>
+                ))}
               </div>
             </div>
 
-            <button
-              onClick={addParcels}
-              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
+            <button onClick={addParcels} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               Ajouter les colis
             </button>
           </div>
         </div>
 
-{/* 🆕 SECTION FILTRES INTELLIGENTS */}
-<div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-  <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-    </svg>
-    Filtrer mes colis
-  </h2>
-
-  {/* Filtres par type de locker - SEULEMENT SI AU MOINS 2 TYPES DIFFÉRENTS */}
-  {(() => {
-    // Compter les types de locker utilisés
-    const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
-    
-    // N'afficher que si au moins 2 types différents
-    if (usedLockerTypes.length > 1) {
-      return (
-        <div className="mb-4">
-          <p className="text-sm font-semibold text-gray-600 mb-2">Par transporteur :</p>
-          <div className="flex flex-wrap gap-2">
-            {/* Bouton "Tous" - toujours affiché si plusieurs types */}
-            <button
-              onClick={() => setFilterLockerType('all')}
-              className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                filterLockerType === 'all'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <span>📦 Tous</span>
-              <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                {getCountByLockerType('all')}
-              </span>
-            </button>
-
-            {/* Mondial Relay - seulement si utilisé */}
-            {usedLockerTypes.includes('mondial-relay') && (
-              <button
-                onClick={() => setFilterLockerType('mondial-relay')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLockerType === 'mondial-relay'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>🌍 Mondial Relay</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLockerType('mondial-relay')}
-                </span>
-              </button>
-            )}
-
-            {/* Vinted GO - seulement si utilisé */}
-            {usedLockerTypes.includes('vinted-go') && (
-              <button
-                onClick={() => setFilterLockerType('vinted-go')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLockerType === 'vinted-go'
-                    ? 'bg-teal-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>👕 Vinted GO</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLockerType('vinted-go')}
-                </span>
-              </button>
-            )}
-
-            {/* Relais Colis - seulement si utilisé */}
-            {usedLockerTypes.includes('relais-colis') && (
-              <button
-                onClick={() => setFilterLockerType('relais-colis')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLockerType === 'relais-colis'
-                    ? 'bg-green-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>📮 Relais Colis</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLockerType('relais-colis')}
-                </span>
-              </button>
-            )}
-
-            {/* Pickup - seulement si utilisé */}
-            {usedLockerTypes.includes('pickup') && (
-              <button
-                onClick={() => setFilterLockerType('pickup')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLockerType === 'pickup'
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>🎁 Pickup</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLockerType('pickup')}
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
+        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filtrer mes colis</h2>
+          
+          {(() => {
+            const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
+            if (usedLockerTypes.length > 1) {
+              return (
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-gray-600 mb-2">Par transporteur :</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setFilterLockerType('all')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                      <span>📦 Tous</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('all')}</span>
+                    </button>
+                    {usedLockerTypes.includes('mondial-relay') && (
+                      <button onClick={() => setFilterLockerType('mondial-relay')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'mondial-relay' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                        <span>🌍 Mondial Relay</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('mondial-relay')}</span>
+                      </button>
+                    )}
+                    {usedLockerTypes.includes('vinted-go') && (
+                      <button onClick={() => setFilterLockerType('vinted-go')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'vinted-go' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                        <span>👕 Vinted GO</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('vinted-go')}</span>
+                      </button>
+                    )}
+                    {usedLockerTypes.includes('relais-colis') && (
+                      <button onClick={() => setFilterLockerType('relais-colis')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'relais-colis' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                        <span>📮 Relais Colis</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('relais-colis')}</span>
+                      </button>
+                    )}
+                    {usedLockerTypes.includes('pickup') && (
+                      <button onClick={() => setFilterLockerType('pickup')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'pickup' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                        <span>🎁 Pickup</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('pickup')}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
       );
     }
     return null;
