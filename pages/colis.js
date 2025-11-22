@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
+import { initOneSignal } from '../lib/onesignal';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -32,6 +33,7 @@ export default function LockerParcelApp() {
   const [toastMessage, setToastMessage] = useState('');
   const [filterLockerType, setFilterLockerType] = useState('all');
   const [filterLocation, setFilterLocation] = useState('all');
+  const [oneSignalReady, setOneSignalReady] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -45,91 +47,138 @@ export default function LockerParcelApp() {
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && username) {
+      // Initialiser OneSignal
+      initOneSignal(username).then((success) => {
+        if (success) {
+          console.log('✅ OneSignal initialisé pour:', username);
+          setOneSignalReady(true);
+        }
+      });
+
       loadParcels();
-      if (isOnline) { setupRealtimeSubscription(); requestNotificationPermission(); }
+      if (isOnline) { 
+        setupRealtimeSubscription(); 
+        requestNotificationPermission(); 
+      }
       trackCollectedToday();
       loadOfflineQueue();
     }
-  }, [isLoggedIn, isOnline]);
+  }, [isLoggedIn, isOnline, username]);
 
-  useEffect(() => { return () => { if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel); }; }, []);
-
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (collectedToday > 0 && 'serviceWorker' in navigator && Notification.permission === 'granted') {
-        navigator.serviceWorker.ready.then(registration => {
-          registration.active.postMessage({
-            type: 'SHOW_NOTIFICATION',
-            title: 'Colis récupérés aujourd\'hui',
-            options: { body: `${collectedToday} colis récupéré${collectedToday > 1 ? 's' : ''} aujourd'hui 🎉`, icon: '/icons/package-icon.png', badge: '/icons/badge-icon.png', tag: 'daily-summary', requireInteraction: false, vibrate: [200, 100, 200] }
-          });
-        });
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', () => { if (document.hidden && collectedToday > 0) handleBeforeUnload(); });
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [collectedToday]);
+  useEffect(() => { 
+    return () => { 
+      if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel); 
+    }; 
+  }, []);
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
-    if (savedUsername && savedPassword) { setUsername(savedUsername); setPassword(savedPassword); setIsLoggedIn(true); }
-    else router.push('/');
+    if (savedUsername && savedPassword) { 
+      setUsername(savedUsername); 
+      setPassword(savedPassword); 
+      setIsLoggedIn(true); 
+    } else {
+      router.push('/');
+    }
     setLoading(false);
   };
 
   const loadParcels = async () => {
     try {
-      const { data, error} = await supabase.from('parcels').select('*').eq('user_id', username).order('collected', { ascending: true }).order('date_added', { ascending: false });
+      const { data, error} = await supabase
+        .from('parcels')
+        .select('*')
+        .eq('user_id', username)
+        .order('collected', { ascending: true })
+        .order('date_added', { ascending: false });
+      
       if (error) throw error;
       setParcels(data || []);
       localStorage.setItem(`parcels_${username}`, JSON.stringify(data || []));
     } catch (error) {
       console.error('Erreur de chargement:', error);
       const cached = localStorage.getItem(`parcels_${username}`);
-      if (cached) { setParcels(JSON.parse(cached)); setSyncStatus('🟡 Données en cache'); }
-    } finally { setLoading(false); }
+      if (cached) { 
+        setParcels(JSON.parse(cached)); 
+        setSyncStatus('🟡 Données en cache'); 
+      }
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const setupRealtimeSubscription = () => {
-    const channel = supabase.channel(`parcels-${username}`).on('postgres_changes', { event: '*', schema: 'public', table: 'parcels', filter: `user_id=eq.${username}` }, (payload) => {
-      console.log('🔄 Changement temps réel:', payload);
-      if (payload.eventType === 'INSERT') {
-        setParcels(prev => {
-          const exists = prev.some(p => p.id === payload.new.id);
-          if (exists) { console.log('⚠️ Doublon évité:', payload.new.id); return prev; }
-          const updated = [payload.new, ...prev];
-          localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-          return updated;
-        });
-      } else if (payload.eventType === 'UPDATE') {
-        setParcels(prev => {
-          const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
-          localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-          if (payload.new.collected && !payload.old?.collected) showNotification(`Colis ${payload.new.code} récupéré ! 🎉`);
-          return updated;
-        });
-      } else if (payload.eventType === 'DELETE') {
-        console.log('🗑️ Suppression détectée:', payload.old.id);
-        setParcels(prev => {
-          const updated = prev.filter(p => p.id !== payload.old.id);
-          localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-          return updated;
-        });
-      }
-    }).subscribe((status) => {
-      if (status === 'SUBSCRIBED') { console.log('✅ Temps réel activé'); setSyncStatus('🟢 Synchronisé en temps réel'); }
-      else if (status === 'CHANNEL_ERROR') { console.error('❌ Erreur canal Realtime'); setSyncStatus('⚠️ Erreur de synchronisation'); }
-    });
+    const channel = supabase
+      .channel(`parcels-${username}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'parcels', 
+          filter: `user_id=eq.${username}` 
+        }, 
+        (payload) => {
+          console.log('🔄 Changement temps réel:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            setParcels(prev => {
+              const exists = prev.some(p => p.id === payload.new.id);
+              if (exists) { 
+                console.log('⚠️ Doublon évité:', payload.new.id); 
+                return prev; 
+              }
+              const updated = [payload.new, ...prev];
+              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setParcels(prev => {
+              const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
+              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+              
+              // Notification si récupéré par quelqu'un d'autre
+              if (payload.new.collected && !payload.old?.collected) {
+                showNotification(`Colis ${payload.new.code} récupéré ! 🎉`);
+              }
+              
+              return updated;
+            });
+          } else if (payload.eventType === 'DELETE') {
+            console.log('🗑️ Suppression détectée:', payload.old.id);
+            setParcels(prev => {
+              const updated = prev.filter(p => p.id !== payload.old.id);
+              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') { 
+          console.log('✅ Temps réel activé'); 
+          setSyncStatus('🟢 Synchronisé en temps réel'); 
+        } else if (status === 'CHANNEL_ERROR') { 
+          console.error('❌ Erreur canal Realtime'); 
+          setSyncStatus('⚠️ Erreur de synchronisation'); 
+        }
+      });
+    
     window.realtimeChannel = channel;
   };
 
   const showNotification = (message) => {
     if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
       navigator.serviceWorker.ready.then(registration => {
-        registration.showNotification('Gestionnaire de Colis', { body: message, icon: '/icons/package-icon.png', badge: '/icons/badge-icon.png', vibrate: [200, 100, 200], tag: 'parcel-update', requireInteraction: false });
+        registration.showNotification('Gestionnaire de Colis', { 
+          body: message, 
+          icon: '/icons/package-icon.png', 
+          badge: '/icons/badge-icon.png', 
+          vibrate: [200, 100, 200], 
+          tag: 'parcel-update', 
+          requireInteraction: false 
+        });
       });
     }
   };
@@ -143,146 +192,448 @@ export default function LockerParcelApp() {
 
   const trackCollectedToday = async () => {
     try {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const { data, error } = await supabase.from('parcels').select('*').eq('user_id', username).eq('collected', true).gte('date_added', today.toISOString());
+      const today = new Date(); 
+      today.setHours(0, 0, 0, 0);
+      const { data, error } = await supabase
+        .from('parcels')
+        .select('*')
+        .eq('user_id', username)
+        .eq('collected', true)
+        .gte('date_added', today.toISOString());
+      
       if (error) throw error;
       setCollectedToday(data?.length || 0);
-    } catch (error) { console.error('Erreur tracking:', error); }
+    } catch (error) { 
+      console.error('Erreur tracking:', error); 
+    }
   };
 
-  const loadOfflineQueue = () => { const queue = localStorage.getItem(`offline_queue_${username}`); if (queue) setOfflineQueue(JSON.parse(queue)); };
+  const loadOfflineQueue = () => { 
+    const queue = localStorage.getItem(`offline_queue_${username}`); 
+    if (queue) setOfflineQueue(JSON.parse(queue)); 
+  };
+  
   const saveOfflineQueue = (queue) => localStorage.setItem(`offline_queue_${username}`, JSON.stringify(queue));
-  const addToOfflineQueue = (action) => { const newQueue = [...offlineQueue, { ...action, timestamp: Date.now() }]; setOfflineQueue(newQueue); saveOfflineQueue(newQueue); };
+  
+  const addToOfflineQueue = (action) => { 
+    const newQueue = [...offlineQueue, { ...action, timestamp: Date.now() }]; 
+    setOfflineQueue(newQueue); 
+    saveOfflineQueue(newQueue); 
+  };
 
   const syncOfflineChanges = async () => {
     if (offlineQueue.length === 0) return;
     setSyncStatus('🔄 Synchronisation...');
+    
     for (const action of offlineQueue) {
       try {
         switch (action.type) {
-          case 'add': await supabase.from('parcels').insert(action.data); break;
-          case 'update': await supabase.from('parcels').update(action.data).eq('id', action.id); break;
-          case 'delete': await supabase.from('parcels').delete().eq('id', action.id); break;
+          case 'add': 
+            await supabase.from('parcels').insert(action.data); 
+            break;
+          case 'update': 
+            await supabase.from('parcels').update(action.data).eq('id', action.id); 
+            break;
+          case 'delete': 
+            await supabase.from('parcels').delete().eq('id', action.id); 
+            break;
         }
-      } catch (error) { console.error('Erreur sync:', error); }
+      } catch (error) { 
+        console.error('Erreur sync:', error); 
+      }
     }
-    setOfflineQueue([]); saveOfflineQueue([]); setSyncStatus('✅ Synchronisé'); await loadParcels();
+    
+    setOfflineQueue([]); 
+    saveOfflineQueue([]); 
+    setSyncStatus('✅ Synchronisé'); 
+    await loadParcels();
     setTimeout(() => setSyncStatus('🟢 En ligne'), 2000);
   };
 
   const extractParcelCodes = (text) => {
     let codes = [];
-    if (lockerType === 'mondial-relay') codes = text.match(/[A-Z0-9]{6}(?![A-Z0-9])/gi) || [];
-    else if (lockerType === 'vinted-go') codes = text.split(/[\s,\n]+/).filter(code => code.length >= 4 && code.length <= 20 && /[A-Z0-9-]+/i.test(code));
-    else codes = text.split(/[\s,\n]+/).filter(code => code.length >= 4 && code.length <= 15 && /[A-Z0-9]+/i.test(code));
+    if (lockerType === 'mondial-relay') {
+      codes = text.match(/[A-Z0-9]{6}(?![A-Z0-9])/gi) || [];
+    } else if (lockerType === 'vinted-go') {
+      codes = text.split(/[\s,\n]+/).filter(code => 
+        code.length >= 4 && code.length <= 20 && /[A-Z0-9-]+/i.test(code)
+      );
+    } else {
+      codes = text.split(/[\s,\n]+/).filter(code => 
+        code.length >= 4 && code.length <= 15 && /[A-Z0-9]+/i.test(code)
+      );
+    }
     return codes ? [...new Set(codes)] : [];
   };
 
   const addParcels = async () => {
     const codes = extractParcelCodes(codeInput);
-    if (codes.length === 0) { alert('Aucun code de colis valide trouvé'); return; }
-    const newParcels = codes.map(code => ({ code: code.toUpperCase(), location: pickupLocation, locker_type: lockerType, collected: false, user_id: username }));
+    if (codes.length === 0) { 
+      alert('Aucun code de colis valide trouvé'); 
+      return; 
+    }
+
+    const newParcels = codes.map(code => ({ 
+      code: code.toUpperCase(), 
+      location: pickupLocation, 
+      locker_type: lockerType, 
+      collected: false, 
+      user_id: username 
+    }));
+
     if (!isOnline) {
-      const tempParcels = newParcels.map(p => ({ ...p, id: `temp_${Date.now()}_${Math.random()}`, date_added: new Date().toISOString() }));
+      const tempParcels = newParcels.map(p => ({ 
+        ...p, 
+        id: `temp_${Date.now()}_${Math.random()}`, 
+        date_added: new Date().toISOString() 
+      }));
       setParcels(prev => [...tempParcels, ...prev]);
       tempParcels.forEach(p => addToOfflineQueue({ type: 'add', data: p }));
-      setCodeInput(''); setSyncStatus('💾 Sauvegardé hors ligne');
+      setCodeInput(''); 
+      setSyncStatus('💾 Sauvegardé hors ligne');
       return;
     }
+
     try {
-      const { data, error } = await supabase.from('parcels').insert(newParcels).select();
+      const { data, error } = await supabase
+        .from('parcels')
+        .insert(newParcels)
+        .select();
+      
       if (error) throw error;
-      await loadParcels(); setCodeInput('');
-      setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`); setShowToast(true);
+
+      // 🔔 NOTIFICATION : Envoyer une notification OneSignal
+      if (oneSignalReady) {
+        try {
+          await fetch('/api/notify-colis-added', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: username,
+              colisCodes: codes,
+              location: pickupLocation,
+              lockerType: lockerType
+            })
+          });
+          console.log('✅ Notification ajout envoyée');
+        } catch (notifError) {
+          console.error('⚠️ Erreur notification:', notifError);
+        }
+      }
+
+      await loadParcels(); 
+      setCodeInput('');
+      setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`); 
+      setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
-    } catch (error) { console.error('Erreur d\'ajout:', error); alert('Erreur lors de l\'ajout des colis'); }
+    } catch (error) { 
+      console.error('Erreur d\'ajout:', error); 
+      alert('Erreur lors de l\'ajout des colis'); 
+    }
   };
 
   const toggleCollected = async (id, currentStatus) => {
-    const optimisticUpdate = parcels.map(p => p.id === id ? { ...p, collected: !currentStatus } : p);
+    const parcel = parcels.find(p => p.id === id);
+    const optimisticUpdate = parcels.map(p => 
+      p.id === id ? { ...p, collected: !currentStatus } : p
+    );
     setParcels(optimisticUpdate);
-    if (!currentStatus) setCollectedToday(prev => prev + 1);
-    else setCollectedToday(prev => Math.max(0, prev - 1));
-    if (!isOnline) { addToOfflineQueue({ type: 'update', id, data: { collected: !currentStatus } }); setSyncStatus('💾 Modification hors ligne'); return; }
+
+    if (!currentStatus) {
+      setCollectedToday(prev => prev + 1);
+    } else {
+      setCollectedToday(prev => Math.max(0, prev - 1));
+    }
+
+    if (!isOnline) { 
+      addToOfflineQueue({ type: 'update', id, data: { collected: !currentStatus } }); 
+      setSyncStatus('💾 Modification hors ligne'); 
+      return; 
+    }
+
     try {
       const now = new Date().toISOString();
-      const { error } = await supabase.from('parcels').update({ collected: !currentStatus, date_added: !currentStatus ? now : parcels.find(p => p.id === id)?.date_added }).eq('id', id);
+      const { error } = await supabase
+        .from('parcels')
+        .update({ 
+          collected: !currentStatus, 
+          date_added: !currentStatus ? now : parcels.find(p => p.id === id)?.date_added 
+        })
+        .eq('id', id);
+      
       if (error) throw error;
+
+      // 🔔 NOTIFICATION : Envoyer une notification si récupéré
+      if (!currentStatus && oneSignalReady && parcel) {
+        try {
+          await fetch('/api/notify-colis-collected', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: username,
+              colisCode: parcel.code,
+              collectedBy: username
+            })
+          });
+          console.log('✅ Notification récupération envoyée');
+        } catch (notifError) {
+          console.error('⚠️ Erreur notification:', notifError);
+        }
+      }
+
       await loadParcels();
-    } catch (error) { console.error('Erreur de mise à jour:', error); setParcels(parcels); }
+    } catch (error) { 
+      console.error('Erreur de mise à jour:', error); 
+      setParcels(parcels); 
+    }
   };
 
   const changeLockerType = async (id, newType) => {
-    if (!isOnline) { const updated = parcels.map(p => p.id === id ? { ...p, locker_type: newType } : p); setParcels(updated); addToOfflineQueue({ type: 'update', id, data: { locker_type: newType } }); return; }
+    if (!isOnline) { 
+      const updated = parcels.map(p => p.id === id ? { ...p, locker_type: newType } : p); 
+      setParcels(updated); 
+      addToOfflineQueue({ type: 'update', id, data: { locker_type: newType } }); 
+      return; 
+    }
+
     try {
-      const { error } = await supabase.from('parcels').update({ locker_type: newType }).eq('id', id);
+      const { error } = await supabase
+        .from('parcels')
+        .update({ locker_type: newType })
+        .eq('id', id);
+      
       if (error) throw error;
-      setParcels(parcels.map(parcel => parcel.id === id ? { ...parcel, locker_type: newType } : parcel));
-    } catch (error) { console.error('Erreur de mise à jour:', error); }
+      setParcels(parcels.map(parcel => 
+        parcel.id === id ? { ...parcel, locker_type: newType } : parcel
+      ));
+    } catch (error) { 
+      console.error('Erreur de mise à jour:', error); 
+    }
   };
 
   const changePickupLocation = async (id, newLocation) => {
-    if (!isOnline) { const updated = parcels.map(p => p.id === id ? { ...p, location: newLocation } : p); setParcels(updated); addToOfflineQueue({ type: 'update', id, data: { location: newLocation } }); return; }
+    if (!isOnline) { 
+      const updated = parcels.map(p => p.id === id ? { ...p, location: newLocation } : p); 
+      setParcels(updated); 
+      addToOfflineQueue({ type: 'update', id, data: { location: newLocation } }); 
+      return; 
+    }
+
     try {
-      const { error } = await supabase.from('parcels').update({ location: newLocation }).eq('id', id);
+      const { error } = await supabase
+        .from('parcels')
+        .update({ location: newLocation })
+        .eq('id', id);
+      
       if (error) throw error;
-      setParcels(parcels.map(parcel => parcel.id === id ? { ...parcel, location: newLocation } : parcel));
-    } catch (error) { console.error('Erreur de mise à jour:', error); }
+      setParcels(parcels.map(parcel => 
+        parcel.id === id ? { ...parcel, location: newLocation } : parcel
+      ));
+    } catch (error) { 
+      console.error('Erreur de mise à jour:', error); 
+    }
   };
 
   const deleteParcel = async (id) => {
     const parcelToDelete = parcels.find(p => p.id === id);
     setParcels(prev => prev.filter(p => p.id !== id));
-    if (!isOnline) { addToOfflineQueue({ type: 'delete', id }); return; }
+
+    if (!isOnline) { 
+      addToOfflineQueue({ type: 'delete', id }); 
+      return; 
+    }
+
     try {
-      const { error } = await supabase.from('parcels').delete().eq('id', id);
-      if (error) { console.error('Erreur suppression:', error); setParcels(prev => [...prev, parcelToDelete].sort((a, b) => a.collected === b.collected ? 0 : a.collected ? 1 : -1)); alert('Erreur lors de la suppression'); throw error; }
+      const { error } = await supabase
+        .from('parcels')
+        .delete()
+        .eq('id', id);
+      
+      if (error) { 
+        console.error('Erreur suppression:', error); 
+        setParcels(prev => [...prev, parcelToDelete].sort((a, b) => 
+          a.collected === b.collected ? 0 : a.collected ? 1 : -1
+        )); 
+        alert('Erreur lors de la suppression'); 
+        throw error; 
+      }
       console.log('✅ Colis supprimé:', id);
-    } catch (error) { console.error('Erreur de suppression:', error); }
+    } catch (error) { 
+      console.error('Erreur de suppression:', error); 
+    }
   };
 
   const deleteAllCollected = async () => {
     if (!confirm('Supprimer tous les colis récupérés ?')) return;
+    
     const collectedIds = collectedParcels.map(p => p.id);
-    if (!isOnline) { setParcels(parcels.filter(p => !p.collected)); collectedIds.forEach(id => addToOfflineQueue({ type: 'delete', id })); return; }
+
+    if (!isOnline) { 
+      setParcels(parcels.filter(p => !p.collected)); 
+      collectedIds.forEach(id => addToOfflineQueue({ type: 'delete', id })); 
+      return; 
+    }
+
     try {
-      const { error } = await supabase.from('parcels').delete().in('id', collectedIds);
+      const { error } = await supabase
+        .from('parcels')
+        .delete()
+        .in('id', collectedIds);
+      
       if (error) throw error;
       setParcels(parcels.filter(parcel => !parcel.collected));
-      setToastMessage(`✅ ${collectedIds.length} colis supprimés`); setShowToast(true);
+      setToastMessage(`✅ ${collectedIds.length} colis supprimés`); 
+      setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
-    } catch (error) { console.error('Erreur de suppression:', error); alert('Erreur lors de la suppression'); }
+    } catch (error) { 
+      console.error('Erreur de suppression:', error); 
+      alert('Erreur lors de la suppression'); 
+    }
   };
 
-  const getRemainingDays = (dateAdded) => { const added = new Date(dateAdded); const now = new Date(); const diffTime = now - added; const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); return Math.max(0, 5 - diffDays); };
-  const getRemainingDaysText = (remainingDays) => { if (remainingDays === 0) return '⚠️ Dernier jour pour récupérer'; if (remainingDays === 1) return '⏰ Il te reste 1 jour'; return `📅 Il te reste ${remainingDays} jours`; };
-  const getPickupLocationName = (location) => { switch(location) { case 'hyper-u-locker': return '🏪 Hyper U - Locker'; case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; case 'intermarche-locker': return '🛒 Intermarché - Locker'; case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; default: return location; } };
-  const getFilteredParcels = (parcelsList) => { let filtered = parcelsList; if (filterLockerType !== 'all') filtered = filtered.filter(p => p.locker_type === filterLockerType); if (filterLocation !== 'all') filtered = filtered.filter(p => p.location === filterLocation); return filtered; };
-  const getCountByLockerType = (type) => { if (type === 'all') return pendingParcels.length; return pendingParcels.filter(p => p.locker_type === type).length; };
-  const getCountByLocation = (location) => { if (location === 'all') return pendingParcels.length; return pendingParcels.filter(p => p.location === location).length; };
+  const getRemainingDays = (dateAdded) => { 
+    const added = new Date(dateAdded); 
+    const now = new Date(); 
+    const diffTime = now - added; 
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
+    return Math.max(0, 5 - diffDays); 
+  };
+
+  const getRemainingDaysText = (remainingDays) => { 
+    if (remainingDays === 0) return '⚠️ Dernier jour pour récupérer'; 
+    if (remainingDays === 1) return '⏰ Il te reste 1 jour'; 
+    return `📅 Il te reste ${remainingDays} jours`; 
+  };
+
+  const getPickupLocationName = (location) => { 
+    switch(location) { 
+      case 'hyper-u-locker': return '🏪 Hyper U - Locker'; 
+      case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; 
+      case 'intermarche-locker': return '🛒 Intermarché - Locker'; 
+      case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; 
+      case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; 
+      default: return location; 
+    } 
+  };
+
+  const getFilteredParcels = (parcelsList) => { 
+    let filtered = parcelsList; 
+    if (filterLockerType !== 'all') {
+      filtered = filtered.filter(p => p.locker_type === filterLockerType); 
+    }
+    if (filterLocation !== 'all') {
+      filtered = filtered.filter(p => p.location === filterLocation); 
+    }
+    return filtered; 
+  };
+
+  const getCountByLockerType = (type) => { 
+    if (type === 'all') return pendingParcels.length; 
+    return pendingParcels.filter(p => p.locker_type === type).length; 
+  };
+
+  const getCountByLocation = (location) => { 
+    if (location === 'all') return pendingParcels.length; 
+    return pendingParcels.filter(p => p.location === location).length; 
+  };
+
   const pendingParcels = parcels.filter(p => !p.collected);
   const collectedParcels = parcels.filter(p => p.collected);
   const filteredPendingParcels = getFilteredParcels(pendingParcels);
-  const formatDate = (dateString) => { const date = new Date(dateString); const now = new Date(); const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24)); if (diffDays === 0) return "Aujourd'hui"; if (diffDays === 1) return "Hier"; return `Il y a ${diffDays} jours`; };
-  const getLockerName = (type) => { switch(type) { case 'mondial-relay': return 'Mondial Relay'; case 'relais-colis': return 'Relais Colis'; case 'pickup': return 'Pickup'; case 'vinted-go': return 'Vinted GO'; default: return 'Autre'; } };
-  const getCodeFormatHint = () => { switch(lockerType) { case 'mondial-relay': return 'Format: 6 caractères (ex: A1B2C3)'; case 'vinted-go': return 'Format: 4-20 caractères (ex: VT-1234-ABCD)'; case 'relais-colis': return 'Format: 4-15 caractères (ex: RC123456)'; case 'pickup': return 'Format: 4-15 caractères (ex: PK789012)'; default: return ''; } };
 
-  if (loading) return (<div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center"><div className="text-xl text-indigo-600">Chargement...</div></div>);
+  const formatDate = (dateString) => { 
+    const date = new Date(dateString); 
+    const now = new Date(); 
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24)); 
+    if (diffDays === 0) return "Aujourd'hui"; 
+    if (diffDays === 1) return "Hier"; 
+    return `Il y a ${diffDays} jours`; 
+  };
+
+  const getLockerName = (type) => { 
+    switch(type) { 
+      case 'mondial-relay': return 'Mondial Relay'; 
+      case 'relais-colis': return 'Relais Colis'; 
+      case 'pickup': return 'Pickup'; 
+      case 'vinted-go': return 'Vinted GO'; 
+      default: return 'Autre'; 
+    } 
+  };
+
+  const getCodeFormatHint = () => { 
+    switch(lockerType) { 
+      case 'mondial-relay': return 'Format: 6 caractères (ex: A1B2C3)'; 
+      case 'vinted-go': return 'Format: 4-20 caractères (ex: VT-1234-ABCD)'; 
+      case 'relais-colis': return 'Format: 4-15 caractères (ex: RC123456)'; 
+      case 'pickup': return 'Format: 4-15 caractères (ex: PK789012)'; 
+      default: return ''; 
+    } 
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-xl text-indigo-600">Chargement...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-2xl mx-auto">
-        {showToast && (<div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">{toastMessage}</div>)}
-        {syncStatus && (<div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{syncStatus}{offlineQueue.length > 0 && (<span className="ml-2 bg-white px-2 py-1 rounded text-xs">{offlineQueue.length} en attente</span>)}</div>)}
+        {showToast && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+            {toastMessage}
+          </div>
+        )}
+        
+        {syncStatus && (
+          <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+            isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+          }`}>
+            {syncStatus}
+            {offlineQueue.length > 0 && (
+              <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
+                {offlineQueue.length} en attente
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* OneSignal Status */}
+        {oneSignalReady && (
+          <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
+            🔔 Notifications actives
+          </div>
+        )}
         
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <button onClick={() => router.push('/')} className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
-              <div className="bg-indigo-600 p-3 rounded-xl"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>
-              <div><h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1><p className="text-sm text-gray-500">Connecté: {username}</p></div>
+              <button 
+                onClick={() => router.push('/')} 
+                className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <div className="bg-indigo-600 p-3 rounded-xl">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
+                <p className="text-sm text-gray-500">Connecté: {username}</p>
+              </div>
             </div>
-            <button onClick={() => router.push('/')} className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition">Retour</button>
+            <button 
+              onClick={() => router.push('/')} 
+              className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
+            >
+              Retour
+            </button>
           </div>
 
           <div className="space-y-3">
@@ -291,7 +642,14 @@ export default function LockerParcelApp() {
               <div className="grid grid-cols-2 gap-2">
                 {['mondial-relay', 'vinted-go', 'relais-colis', 'pickup'].map(type => (
                   <label key={type} className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
-                    <input type="radio" name="lockerType" value={type} checked={lockerType === type} onChange={(e) => setLockerType(e.target.value)} className="w-4 h-4 text-indigo-600" />
+                    <input 
+                      type="radio" 
+                      name="lockerType" 
+                      value={type} 
+                      checked={lockerType === type} 
+                      onChange={(e) => setLockerType(e.target.value)} 
+                      className="w-4 h-4 text-indigo-600" 
+                    />
                     <img src={LOCKER_LOGOS[type]} alt={type} className="h-6 object-contain" />
                     <span className="text-sm font-medium">{getLockerName(type)}</span>
                   </label>
@@ -300,29 +658,54 @@ export default function LockerParcelApp() {
               <p className="text-xs text-indigo-600 mt-2">{getCodeFormatHint()}</p>
             </div>
 
-            <textarea value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder={`Collez vos codes ici\n${getCodeFormatHint()}`} rows="4" className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none" />
+            <textarea 
+              value={codeInput} 
+              onChange={(e) => setCodeInput(e.target.value)} 
+              placeholder={`Collez vos codes ici\n${getCodeFormatHint()}`} 
+              rows="4" 
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none" 
+            />
             
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-3">Lieu de récupération du colis :</p>
               <div className="space-y-2">
                 {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
                   <label key={loc} className="flex items-center gap-3 cursor-pointer">
-                    <input type="radio" name="pickupLocation" value={loc} checked={pickupLocation === loc} onChange={(e) => setPickupLocation(e.target.value)} className="w-4 h-4 text-indigo-600" />
+                    <input 
+                      type="radio" 
+                      name="pickupLocation" 
+                      value={loc} 
+                      checked={pickupLocation === loc} 
+                      onChange={(e) => setPickupLocation(e.target.value)} 
+                      className="w-4 h-4 text-indigo-600" 
+                    />
                     <span>{getPickupLocationName(loc)}</span>
                   </label>
                 ))}
               </div>
             </div>
 
-            <button onClick={addParcels} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <button 
+              onClick={addParcels} 
+              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
               Ajouter les colis
             </button>
           </div>
         </div>
 
+        {/* Filtres */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filtrer mes colis</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            Filtrer mes colis
+          </h2>
           
           {(() => {
             const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
@@ -331,188 +714,206 @@ export default function LockerParcelApp() {
                 <div className="mb-4">
                   <p className="text-sm font-semibold text-gray-600 mb-2">Par transporteur :</p>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setFilterLockerType('all')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                      <span>📦 Tous</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('all')}</span>
+                    <button 
+                      onClick={() => setFilterLockerType('all')} 
+                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                        filterLockerType === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <span>📦 Tous</span>
+                      <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                        {getCountByLockerType('all')}
+                      </span>
                     </button>
                     {usedLockerTypes.includes('mondial-relay') && (
-                      <button onClick={() => setFilterLockerType('mondial-relay')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'mondial-relay' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                        <span>🌍 Mondial Relay</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('mondial-relay')}</span>
+                      <button 
+                        onClick={() => setFilterLockerType('mondial-relay')} 
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLockerType === 'mondial-relay' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>🌐 Mondial Relay</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLockerType('mondial-relay')}
+                        </span>
                       </button>
                     )}
                     {usedLockerTypes.includes('vinted-go') && (
-                      <button onClick={() => setFilterLockerType('vinted-go')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'vinted-go' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                        <span>👕 Vinted GO</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('vinted-go')}</span>
+                      <button 
+                        onClick={() => setFilterLockerType('vinted-go')} 
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLockerType === 'vinted-go' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>👕 Vinted GO</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLockerType('vinted-go')}
+                        </span>
                       </button>
                     )}
                     {usedLockerTypes.includes('relais-colis') && (
-                      <button onClick={() => setFilterLockerType('relais-colis')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'relais-colis' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                        <span>📮 Relais Colis</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('relais-colis')}</span>
+                      <button 
+                        onClick={() => setFilterLockerType('relais-colis')} 
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLockerType === 'relais-colis' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>📮 Relais Colis</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLockerType('relais-colis')}
+                        </span>
                       </button>
                     )}
                     {usedLockerTypes.includes('pickup') && (
-                      <button onClick={() => setFilterLockerType('pickup')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLockerType === 'pickup' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                        <span>🎁 Pickup</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('pickup')}</span>
+                      <button 
+                        onClick={() => setFilterLockerType('pickup')} 
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLockerType === 'pickup' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>🎁 Pickup</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLockerType('pickup')}
+                        </span>
                       </button>
                     )}
                   </div>
                 </div>
-      );
-    }
-    return null;
-  })()}
+              );
+            }
+            return null;
+          })()}
 
-  {/* Filtres par lieu - SEULEMENT SI AU MOINS 2 LIEUX DIFFÉRENTS */}
-  {(() => {
-    // Compter les lieux utilisés
-    const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
-    
-    // N'afficher que si au moins 2 lieux différents
-    if (usedLocations.length > 1) {
-      return (
-        <div>
-          <p className="text-sm font-semibold text-gray-600 mb-2">Par lieu :</p>
-          <div className="flex flex-wrap gap-2">
-            {/* Bouton "Tous les lieux" - toujours affiché si plusieurs lieux */}
-            <button
-              onClick={() => setFilterLocation('all')}
-              className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                filterLocation === 'all'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <span>📦 Tous les lieux</span>
-              <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                {getCountByLocation('all')}
-              </span>
-            </button>
+          {(() => {
+            const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
+            
+            if (usedLocations.length > 1) {
+              return (
+                <div>
+                  <p className="text-sm font-semibold text-gray-600 mb-2">Par lieu :</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setFilterLocation('all')}
+                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                        filterLocation === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <span>📦 Tous les lieux</span>
+                      <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                        {getCountByLocation('all')}
+                      </span>
+                    </button>
 
-            {/* Hyper U Locker - seulement si utilisé */}
-            {usedLocations.includes('hyper-u-locker') && (
+                    {usedLocations.includes('hyper-u-locker') && (
+                      <button
+                        onClick={() => setFilterLocation('hyper-u-locker')}
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLocation === 'hyper-u-locker' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>🏪 Hyper U Locker</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLocation('hyper-u-locker')}
+                        </span>
+                      </button>
+                    )}
+
+                    {usedLocations.includes('hyper-u-accueil') && (
+                      <button
+                        onClick={() => setFilterLocation('hyper-u-accueil')}
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLocation === 'hyper-u-accueil' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>🏪 Hyper U Accueil</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLocation('hyper-u-accueil')}
+                        </span>
+                      </button>
+                    )}
+
+                    {usedLocations.includes('intermarche-locker') && (
+                      <button
+                        onClick={() => setFilterLocation('intermarche-locker')}
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLocation === 'intermarche-locker' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>🛒 Intermarché Locker</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLocation('intermarche-locker')}
+                        </span>
+                      </button>
+                    )}
+
+                    {usedLocations.includes('intermarche-accueil') && (
+                      <button
+                        onClick={() => setFilterLocation('intermarche-accueil')}
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLocation === 'intermarche-accueil' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>🛒 Intermarché Accueil</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLocation('intermarche-accueil')}
+                        </span>
+                      </button>
+                    )}
+
+                    {usedLocations.includes('rond-point-noyal') && (
+                      <button
+                        onClick={() => setFilterLocation('rond-point-noyal')}
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>📍 Rond point Noyal</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {getCountByLocation('rond-point-noyal')}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          {(filterLockerType !== 'all' || filterLocation !== 'all') && (
+            <div className="mt-4 flex items-center justify-between bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800 font-medium">
+                🔍 Affichage de {filteredPendingParcels.length} colis sur {pendingParcels.length}
+              </p>
               <button
-                onClick={() => setFilterLocation('hyper-u-locker')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLocation === 'hyper-u-locker'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={() => {
+                  setFilterLockerType('all');
+                  setFilterLocation('all');
+                }}
+                className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
               >
-                <span>🏪 Hyper U Locker</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLocation('hyper-u-locker')}
-                </span>
+                Réinitialiser
               </button>
-            )}
+            </div>
+          )}
 
-            {/* Hyper U Accueil - seulement si utilisé */}
-            {usedLocations.includes('hyper-u-accueil') && (
-              <button
-                onClick={() => setFilterLocation('hyper-u-accueil')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLocation === 'hyper-u-accueil'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>🏪 Hyper U Accueil</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLocation('hyper-u-accueil')}
-                </span>
-              </button>
-            )}
-
-            {/* Intermarché Locker - seulement si utilisé */}
-            {usedLocations.includes('intermarche-locker') && (
-              <button
-                onClick={() => setFilterLocation('intermarche-locker')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLocation === 'intermarche-locker'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>🛒 Intermarché Locker</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLocation('intermarche-locker')}
-                </span>
-              </button>
-            )}
-
-            {/* Intermarché Accueil - seulement si utilisé */}
-            {usedLocations.includes('intermarche-accueil') && (
-              <button
-                onClick={() => setFilterLocation('intermarche-accueil')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLocation === 'intermarche-accueil'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>🛒 Intermarché Accueil</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLocation('intermarche-accueil')}
-                </span>
-              </button>
-            )}
-
-            {/* Rond point Noyal - seulement si utilisé */}
-            {usedLocations.includes('rond-point-noyal') && (
-              <button
-                onClick={() => setFilterLocation('rond-point-noyal')}
-                className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  filterLocation === 'rond-point-noyal'
-                    ? 'bg-yellow-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span>📍 Rond point Noyal</span>
-                <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                  {getCountByLocation('rond-point-noyal')}
-                </span>
-              </button>
-            )}
-          </div>
+          {(() => {
+            const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
+            const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
+            
+            if (usedLockerTypes.length <= 1 && usedLocations.length <= 1) {
+              return (
+                <div className="text-center py-4">
+                  <p className="text-gray-500 text-sm">
+                    ✨ Aucun filtre nécessaire - Tous vos colis sont au même endroit !
+                  </p>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
-      );
-    }
-    return null;
-  })()}
 
-  {/* Indicateur de filtre actif */}
-  {(filterLockerType !== 'all' || filterLocation !== 'all') && (
-    <div className="mt-4 flex items-center justify-between bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
-      <p className="text-sm text-blue-800 font-medium">
-        🔍 Affichage de {filteredPendingParcels.length} colis sur {pendingParcels.length}
-      </p>
-      <button
-        onClick={() => {
-          setFilterLockerType('all');
-          setFilterLocation('all');
-        }}
-        className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
-      >
-        Réinitialiser
-      </button>
-    </div>
-  )}
-
-  {/* Message si aucun filtre n'est nécessaire */}
-  {(() => {
-    const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
-    const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
-    
-    if (usedLockerTypes.length <= 1 && usedLocations.length <= 1) {
-      return (
-        <div className="text-center py-4">
-          <p className="text-gray-500 text-sm">
-            ✨ Aucun filtre nécessaire - Tous vos colis sont au même endroit !
-          </p>
-        </div>
-      );
-    }
-    return null;
-  })()}
-</div>
         {/* Colis en attente */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
