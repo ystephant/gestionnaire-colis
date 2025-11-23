@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
-import { initOneSignal } from '../lib/onesignal';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,13 +47,15 @@ export default function LockerParcelApp() {
 
   useEffect(() => {
     if (isLoggedIn && username) {
-      // Initialiser OneSignal
-      initOneSignal(username).then((success) => {
-        if (success) {
-          console.log('✅ OneSignal initialisé pour:', username);
+      // Initialiser OneSignal avec la nouvelle API
+      if (typeof window !== 'undefined' && window.OneSignal) {
+        window.OneSignal.login(username).then(() => {
+          console.log('✅ OneSignal connecté pour:', username);
           setOneSignalReady(true);
-        }
-      });
+        }).catch(err => {
+          console.error('❌ Erreur connexion OneSignal:', err);
+        });
+      }
 
       loadParcels();
       if (isOnline) { 
@@ -302,7 +303,7 @@ export default function LockerParcelApp() {
       
       if (error) throw error;
 
-      // 🔔 NOTIFICATION : Envoyer une notification OneSignal
+      // 🔔 NOTIFICATION : Envoyer notification à TOUS les appareils
       if (oneSignalReady) {
         try {
           await fetch('/api/notify-colis-added', {
@@ -315,7 +316,7 @@ export default function LockerParcelApp() {
               lockerType: lockerType
             })
           });
-          console.log('✅ Notification ajout envoyée');
+          console.log('✅ Notification envoyée à tous les appareils');
         } catch (notifError) {
           console.error('⚠️ Erreur notification:', notifError);
         }
@@ -363,7 +364,7 @@ export default function LockerParcelApp() {
       
       if (error) throw error;
 
-      // 🔔 NOTIFICATION : Envoyer une notification si récupéré
+      // 🔔 NOTIFICATION : Envoyer notification à TOUS les appareils
       if (!currentStatus && oneSignalReady && parcel) {
         try {
           await fetch('/api/notify-colis-collected', {
@@ -371,11 +372,10 @@ export default function LockerParcelApp() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               userId: username,
-              colisCode: parcel.code,
-              collectedBy: username
+              colisCode: parcel.code
             })
           });
-          console.log('✅ Notification récupération envoyée');
+          console.log('✅ Notification récupération envoyée à tous les appareils');
         } catch (notifError) {
           console.error('⚠️ Erreur notification:', notifError);
         }
