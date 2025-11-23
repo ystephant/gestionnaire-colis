@@ -19,24 +19,12 @@ export default function App({ Component, pageProps }) {
     };
 
     initializeOneSignal();
-
-    // Enregistrer le Service Worker pour les notifications
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js')
-        .then((registration) => {
-          console.log('✅ Service Worker enregistré');
-        })
-        .catch((error) => {
-          console.error('❌ Erreur Service Worker:', error);
-        });
-    }
   }, []);
 
   return <Component {...pageProps} />;
 }
 
-// Fonction d'initialisation OneSignal (CORRIGÉE)
+// Fonction d'initialisation OneSignal
 async function initOneSignal(userId) {
   try {
     // Attendre que OneSignal soit complètement chargé
@@ -51,11 +39,8 @@ async function initOneSignal(userId) {
       allowLocalhostAsSecureOrigin: true,
       notifyButton: {
         enable: false,
-      },
-      serviceWorkerParam: {
-        scope: '/'
-      },
-      serviceWorkerPath: '/OneSignalSDKWorker.js'
+      }
+      // OneSignal gère automatiquement le Service Worker
     });
 
     console.log('✅ OneSignal initialisé');
