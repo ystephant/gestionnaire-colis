@@ -36,28 +36,13 @@ export default function App({ Component, pageProps }) {
   return <Component {...pageProps} />;
 }
 
-// Fonction d'initialisation OneSignal
+// Fonction d'initialisation OneSignal (CORRIGÉE)
 async function initOneSignal(userId) {
   try {
     // Attendre que OneSignal soit complètement chargé
     if (typeof window.OneSignal === 'undefined') {
       console.error('❌ OneSignal non disponible');
       return false;
-    }
-
-    // Vérifier si déjà initialisé
-    const isInitialized = await window.OneSignal.User?.PushSubscription?.optedIn;
-    
-    if (isInitialized !== undefined) {
-      console.log('✅ OneSignal déjà initialisé');
-      
-      // Juste mettre à jour l'External ID
-      if (userId) {
-        await window.OneSignal.login(userId);
-        console.log('✅ User ID mis à jour:', userId);
-      }
-      
-      return true;
     }
 
     // Initialiser OneSignal
@@ -75,16 +60,17 @@ async function initOneSignal(userId) {
 
     console.log('✅ OneSignal initialisé');
 
-    // Définir l'External ID avec la nouvelle API
-    if (userId) {
+    // Demander la permission AVANT de faire le login
+    const permission = await window.OneSignal.Notifications.requestPermission();
+    
+    if (permission) {
+      console.log('✅ Permissions notifications accordées');
+      
+      // MAINTENANT on peut faire le login
       await window.OneSignal.login(userId);
       console.log('✅ User ID défini:', userId);
-    }
-
-    // Demander la permission
-    const permission = await window.OneSignal.Notifications.permission;
-    if (!permission) {
-      await window.OneSignal.Notifications.requestPermission();
+    } else {
+      console.log('⚠️ Permissions notifications refusées');
     }
 
     return true;
