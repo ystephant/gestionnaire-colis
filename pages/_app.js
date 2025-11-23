@@ -4,14 +4,21 @@ import '../styles/globals.css';
 
 export default function App({ Component, pageProps }) {
   useEffect(() => {
-    // Initialiser OneSignal uniquement côté client
-    if (typeof window !== 'undefined') {
-      const username = localStorage.getItem('username');
-      
-      if (username) {
-        initOneSignal(username);
+    // Attendre que OneSignal soit chargé
+    const initializeOneSignal = () => {
+      if (typeof window !== 'undefined' && window.OneSignal) {
+        const username = localStorage.getItem('username');
+        
+        if (username) {
+          initOneSignal(username);
+        }
+      } else {
+        // Réessayer après 100ms si OneSignal n'est pas encore chargé
+        setTimeout(initializeOneSignal, 100);
       }
-    }
+    };
+
+    initializeOneSignal();
 
     // Enregistrer le Service Worker pour les notifications
     if ('serviceWorker' in navigator) {
@@ -29,12 +36,12 @@ export default function App({ Component, pageProps }) {
   return <Component {...pageProps} />;
 }
 
-// Fonction d'initialisation OneSignal (CORRIGÉE)
+// Fonction d'initialisation OneSignal
 async function initOneSignal(userId) {
   try {
-    // Vérifier si OneSignal existe
+    // Attendre que OneSignal soit complètement chargé
     if (typeof window.OneSignal === 'undefined') {
-      console.error('❌ OneSignal non chargé');
+      console.error('❌ OneSignal non disponible');
       return false;
     }
 
