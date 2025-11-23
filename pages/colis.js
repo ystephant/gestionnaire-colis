@@ -47,14 +47,11 @@ export default function LockerParcelApp() {
 
   useEffect(() => {
     if (isLoggedIn && username) {
-      // Initialiser OneSignal avec la nouvelle API
+      // OneSignal est déjà initialisé dans _app.js, 
+      // juste marquer comme prêt
       if (typeof window !== 'undefined' && window.OneSignal) {
-        window.OneSignal.login(username).then(() => {
-          console.log('✅ OneSignal connecté pour:', username);
-          setOneSignalReady(true);
-        }).catch(err => {
-          console.error('❌ Erreur connexion OneSignal:', err);
-        });
+        setOneSignalReady(true);
+        console.log('✅ OneSignal prêt');
       }
 
       loadParcels();
