@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
+import { useTheme } from '../lib/ThemeContext';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -17,16 +18,35 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const COLORS = {
-  blue: { bg: 'bg-blue-100', hover: 'hover:bg-blue-200', text: 'text-blue-900', button: 'bg-blue-500 hover:bg-blue-600', border: 'border-blue-300' },
-  red: { bg: 'bg-red-100', hover: 'hover:bg-red-200', text: 'text-red-900', button: 'bg-red-500 hover:bg-red-600', border: 'border-red-300' },
-  green: { bg: 'bg-green-100', hover: 'hover:bg-green-200', text: 'text-green-900', button: 'bg-green-500 hover:bg-green-600', border: 'border-green-300' },
-  yellow: { bg: 'bg-yellow-100', hover: 'hover:bg-yellow-200', text: 'text-yellow-900', button: 'bg-yellow-500 hover:bg-yellow-600', border: 'border-yellow-300' },
-  purple: { bg: 'bg-purple-100', hover: 'hover:bg-purple-200', text: 'text-purple-900', button: 'bg-purple-500 hover:bg-purple-600', border: 'border-purple-300' },
-  orange: { bg: 'bg-orange-100', hover: 'hover:bg-orange-200', text: 'text-orange-900', button: 'bg-orange-500 hover:bg-orange-600', border: 'border-orange-300' }
+  blue: { 
+    light: { bg: 'bg-blue-100', hover: 'hover:bg-blue-200', text: 'text-blue-900', button: 'bg-blue-500 hover:bg-blue-600', border: 'border-blue-300' },
+    dark: { bg: 'bg-blue-900', hover: 'hover:bg-blue-800', text: 'text-blue-100', button: 'bg-blue-600 hover:bg-blue-700', border: 'border-blue-700' }
+  },
+  red: { 
+    light: { bg: 'bg-red-100', hover: 'hover:bg-red-200', text: 'text-red-900', button: 'bg-red-500 hover:bg-red-600', border: 'border-red-300' },
+    dark: { bg: 'bg-red-900', hover: 'hover:bg-red-800', text: 'text-red-100', button: 'bg-red-600 hover:bg-red-700', border: 'border-red-700' }
+  },
+  green: { 
+    light: { bg: 'bg-green-100', hover: 'hover:bg-green-200', text: 'text-green-900', button: 'bg-green-500 hover:bg-green-600', border: 'border-green-300' },
+    dark: { bg: 'bg-green-900', hover: 'hover:bg-green-800', text: 'text-green-100', button: 'bg-green-600 hover:bg-green-700', border: 'border-green-700' }
+  },
+  yellow: { 
+    light: { bg: 'bg-yellow-100', hover: 'hover:bg-yellow-200', text: 'text-yellow-900', button: 'bg-yellow-500 hover:bg-yellow-600', border: 'border-yellow-300' },
+    dark: { bg: 'bg-yellow-900', hover: 'hover:bg-yellow-800', text: 'text-yellow-100', button: 'bg-yellow-600 hover:bg-yellow-700', border: 'border-yellow-700' }
+  },
+  purple: { 
+    light: { bg: 'bg-purple-100', hover: 'hover:bg-purple-200', text: 'text-purple-900', button: 'bg-purple-500 hover:bg-purple-600', border: 'border-purple-300' },
+    dark: { bg: 'bg-purple-900', hover: 'hover:bg-purple-800', text: 'text-purple-100', button: 'bg-purple-600 hover:bg-purple-700', border: 'border-purple-700' }
+  },
+  orange: { 
+    light: { bg: 'bg-orange-100', hover: 'hover:bg-orange-200', text: 'text-orange-900', button: 'bg-orange-500 hover:bg-orange-600', border: 'border-orange-300' },
+    dark: { bg: 'bg-orange-900', hover: 'hover:bg-orange-800', text: 'text-orange-100', button: 'bg-orange-600 hover:bg-orange-700', border: 'border-orange-700' }
+  }
 };
 
 export default function ReponsesPrefaites() {
   const router = useRouter();
+  const { darkMode, toggleDarkMode } = useTheme(); // Utilisation du contexte
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(true);
@@ -175,7 +195,6 @@ export default function ReponsesPrefaites() {
     setEditText(text);
   };
 
-  // Glisser-déposer catégories
   const handleCategoryDragStart = (e, category) => {
     setDraggedCategory(category);
     e.dataTransfer.effectAllowed = 'move';
@@ -206,7 +225,6 @@ export default function ReponsesPrefaites() {
     setDraggedCategory(null);
   };
 
-  // Glisser-déposer réponses
   const handleResponseDragStart = (e, response) => {
     e.stopPropagation();
     setDraggedResponse(response);
@@ -228,7 +246,6 @@ export default function ReponsesPrefaites() {
       return;
     }
 
-    // Vérifier que les deux réponses sont dans la même catégorie
     if (draggedResponse.category !== targetResponse.category) {
       setDraggedResponse(null);
       return;
@@ -243,7 +260,6 @@ export default function ReponsesPrefaites() {
       newOrder.splice(draggedIndex, 1);
       newOrder.splice(targetIndex, 0, draggedResponse);
 
-      // Mettre à jour les positions dans la base de données
       const updates = newOrder.map((r, index) => 
         supabase
           .from('reponses')
@@ -253,7 +269,6 @@ export default function ReponsesPrefaites() {
 
       await Promise.all(updates);
 
-      // Mettre à jour l'état local
       const updatedReponses = reponses.map(r => {
         const newPos = newOrder.findIndex(nr => nr.id === r.id);
         if (newPos !== -1) {
@@ -270,18 +285,19 @@ export default function ReponsesPrefaites() {
     setDraggedResponse(null);
   };
 
+  const theme = darkMode ? 'dark' : 'light';
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-xl text-indigo-600">Chargement...</div>
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center`}>
+        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-slate-100 py-8 px-4">
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-gray-50 to-slate-100'} py-8 px-4 transition-colors duration-300`}>
       <div className="max-w-7xl mx-auto">
-        {/* Message de copie fixe */}
         {copyMessage && (
           <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-2xl font-bold text-lg z-50 animate-bounce">
             {copyMessage}
@@ -289,12 +305,12 @@ export default function ReponsesPrefaites() {
         )}
 
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/')}
-                className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"
+                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -306,10 +322,39 @@ export default function ReponsesPrefaites() {
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">Réponses Préfaites</h1>
-                <p className="text-sm text-gray-500">Cliquez sur une réponse pour copier • Glissez-déposez pour réorganiser</p>
+                <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Réponses Préfaites</h1>
+                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Cliquez sur une réponse pour copier • Glissez-déposez pour réorganiser</p>
               </div>
             </div>
+            
+            {/* Toggle Dark Mode */}
+            <button
+              onClick={toggleDarkMode}
+              className={`p-3 rounded-xl transition-all duration-300 ${
+                darkMode 
+                  ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              }`}
+              title={darkMode ? 'Mode clair' : 'Mode sombre'}
+            >
+              {darkMode ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
+            </button>
           </div>
         </div>
 
@@ -319,7 +364,7 @@ export default function ReponsesPrefaites() {
             const categoryReponses = reponses
               .filter(r => r.category === category.id)
               .sort((a, b) => (a.position || 0) - (b.position || 0));
-            const colors = COLORS[category.color];
+            const colors = COLORS[category.color][theme];
 
             return (
               <div 
@@ -328,14 +373,14 @@ export default function ReponsesPrefaites() {
                 onDragStart={(e) => handleCategoryDragStart(e, category)}
                 onDragOver={handleCategoryDragOver}
                 onDrop={(e) => handleCategoryDrop(e, category)}
-                className={`bg-white rounded-xl shadow-lg p-4 cursor-move hover:shadow-xl transition ${
+                className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-4 cursor-move hover:shadow-xl transition-all duration-300 ${
                   draggedCategory?.id === category.id ? 'opacity-50' : ''
                 }`}
               >
                 <div className="flex items-start gap-4">
-                  {/* Colonne titre (gauche) */}
+                  {/* Colonne titre */}
                   <div className="w-64 flex-shrink-0">
-                    <div className={`${colors.bg} rounded-lg p-4 h-full`}>
+                    <div className={`${colors.bg} rounded-lg p-4 h-full transition-colors duration-300`}>
                       <div className="flex items-center gap-2 mb-3">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -359,18 +404,22 @@ export default function ReponsesPrefaites() {
                     </div>
                   </div>
 
-                  {/* Colonnes de réponses (droite) - avec scroll mobile */}
+                  {/* Colonnes de réponses */}
                   <div className="flex-1 overflow-x-auto">
                     <div className="flex gap-3 pb-2 min-w-min">
                       {/* Formulaire d'ajout */}
                       {addingCategory === category.id && (
-                        <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 w-72 flex-shrink-0`}>
+                        <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 w-72 flex-shrink-0 transition-colors duration-300`}>
                           <textarea
                             value={newResponseText}
                             onChange={(e) => setNewResponseText(e.target.value)}
                             placeholder="Tapez votre réponse..."
                             rows="4"
-                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none"
+                            className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none transition-colors duration-300 ${
+                              darkMode 
+                                ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                                : 'bg-white border-gray-200 text-gray-900'
+                            }`}
                             autoFocus
                           />
                           <div className="flex gap-2">
@@ -385,7 +434,11 @@ export default function ReponsesPrefaites() {
                                 setAddingCategory(null);
                                 setNewResponseText('');
                               }}
-                              className="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg font-semibold hover:bg-gray-400 transition text-xs"
+                              className={`flex-1 py-1.5 rounded-lg font-semibold transition text-xs ${
+                                darkMode 
+                                  ? 'bg-gray-600 text-gray-200 hover:bg-gray-500' 
+                                  : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                              }`}
                             >
                               ✕
                             </button>
@@ -404,13 +457,16 @@ export default function ReponsesPrefaites() {
                           onDrop={(e) => handleResponseDrop(e, reponse)}
                         >
                           {editingId === reponse.id ? (
-                            // Mode édition
-                            <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 h-full`}>
+                            <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 h-full transition-colors duration-300`}>
                               <textarea
                                 value={editText}
                                 onChange={(e) => setEditText(e.target.value)}
                                 rows="4"
-                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none"
+                                className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm mb-2 resize-none transition-colors duration-300 ${
+                                  darkMode 
+                                    ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                                    : 'bg-white border-gray-200 text-gray-900'
+                                }`}
                                 autoFocus
                               />
                               <div className="flex gap-2">
@@ -425,31 +481,37 @@ export default function ReponsesPrefaites() {
                                     setEditingId(null);
                                     setEditText('');
                                   }}
-                                  className="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg font-semibold hover:bg-gray-400 transition text-xs"
+                                  className={`flex-1 py-1.5 rounded-lg font-semibold transition text-xs ${
+                                    darkMode 
+                                      ? 'bg-gray-600 text-gray-200 hover:bg-gray-500' 
+                                      : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                                  }`}
                                 >
                                   ✕
                                 </button>
                               </div>
                             </div>
                           ) : (
-                            // Mode affichage
                             <div className={`relative group h-full ${draggedResponse?.id === reponse.id ? 'opacity-50' : ''}`}>
                               <div
                                 onClick={() => copierReponse(reponse.text)}
-                                className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 cursor-pointer ${colors.hover} transition h-full min-h-[120px] flex items-center`}
+                                className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 cursor-pointer ${colors.hover} transition-all duration-300 h-full min-h-[120px] flex items-center`}
                               >
                                 <p className={`${colors.text} text-sm whitespace-pre-wrap break-words`}>
                                   {reponse.text}
                                 </p>
                               </div>
-                              {/* Boutons d'action */}
                               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-1">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     startEdit(reponse.id, reponse.text);
                                   }}
-                                  className="bg-white p-1.5 rounded-lg shadow-lg hover:bg-gray-100 transition"
+                                  className={`p-1.5 rounded-lg shadow-lg transition ${
+                                    darkMode 
+                                      ? 'bg-gray-700 hover:bg-gray-600' 
+                                      : 'bg-white hover:bg-gray-100'
+                                  }`}
                                   title="Modifier"
                                 >
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -462,7 +524,11 @@ export default function ReponsesPrefaites() {
                                     e.stopPropagation();
                                     supprimerReponse(reponse.id);
                                   }}
-                                  className="bg-white p-1.5 rounded-lg shadow-lg hover:bg-red-100 transition"
+                                  className={`p-1.5 rounded-lg shadow-lg transition ${
+                                    darkMode 
+                                      ? 'bg-gray-700 hover:bg-red-900' 
+                                      : 'bg-white hover:bg-red-100'
+                                  }`}
                                   title="Supprimer"
                                 >
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="red" strokeWidth="2">
@@ -476,10 +542,9 @@ export default function ReponsesPrefaites() {
                         </div>
                       ))}
 
-                      {/* Message si vide */}
                       {categoryReponses.length === 0 && addingCategory !== category.id && (
                         <div className="w-72 flex-shrink-0 flex items-center justify-center">
-                          <p className="text-gray-400 text-sm italic">
+                          <p className={`text-sm italic ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                             Aucune réponse
                           </p>
                         </div>
