@@ -1,80 +1,43 @@
-// pages/_app.js
-import { useEffect } from 'react';
-import '../styles/globals.css';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export default function App({ Component, pageProps }) {
+const ThemeContext = createContext();
+
+export function ThemeProvider({ children }) {
+  const [darkMode, setDarkMode] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
-    console.log('🔍 _app.js chargé');
-    
-    // Attendre que OneSignal soit chargé
-    const initializeOneSignal = () => {
-      console.log('🔍 Tentative d\'initialisation OneSignal...');
-      
-      if (typeof window !== 'undefined' && window.OneSignal) {
-        console.log('✅ OneSignal SDK détecté');
-        const username = localStorage.getItem('username');
-        console.log('🔍 Username:', username);
-        
-        if (username) {
-          initOneSignal(username);
-        } else {
-          console.log('⚠️ Pas de username dans localStorage');
-        }
-      } else {
-        console.log('⏳ OneSignal pas encore chargé, réessai...');
-        // Réessayer après 100ms si OneSignal n'est pas encore chargé
-        setTimeout(initializeOneSignal, 100);
-      }
-    };
-
-    // Démarrer l'initialisation après un court délai
-    setTimeout(initializeOneSignal, 500);
+    setMounted(true);
+    const saved = localStorage.getItem('darkMode');
+    if (saved) {
+      setDarkMode(JSON.parse(saved));
+    }
   }, []);
 
-  return <Component {...pageProps} />;
-}
+  const toggleDarkMode = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem('darkMode', JSON.stringify(newMode));
+  };
 
-// Fonction d'initialisation OneSignal
-async function initOneSignal(userId) {
-  try {
-    console.log('🚀 Début initialisation OneSignal pour:', userId);
-    
-    // Attendre que OneSignal soit complètement chargé
-    if (typeof window.OneSignal === 'undefined') {
-      console.error('❌ OneSignal non disponible');
-      return false;
-    }
-
-    // Initialiser OneSignal
-    console.log('📡 Appel OneSignal.init()...');
-    await window.OneSignal.init({
-      appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
-      allowLocalhostAsSecureOrigin: true,
-      notifyButton: {
-        enable: false,
-      }
-    });
-
-    console.log('✅ OneSignal initialisé');
-
-    // Demander la permission AVANT de faire le login
-    console.log('🔔 Demande de permission...');
-    const permission = await window.OneSignal.Notifications.requestPermission();
-    
-    if (permission) {
-      console.log('✅ Permissions notifications accordées');
-      
-      // MAINTENANT on peut faire le login
-      console.log('🔑 Login avec userId:', userId);
-      await window.OneSignal.login(userId);
-      console.log('✅ User ID défini:', userId);
-    } else {
-      console.log('⚠️ Permissions notifications refusées');
-    }
-
-    return true;
-  } catch (error) {
-    console.error('❌ Erreur OneSignal:', error);
-    return false;
+  // Éviter le flash de contenu non stylé lors du chargement
+  if (!mounted) {
+    return <>{children}</>;
   }
+
+  return (
+    <ThemeContext.Provider value={{ darkMode, toggleDarkMode }}>
+      <div className={darkMode ? 'dark' : ''}>
+        {children}
+      </div>
+    </ThemeContext.Provider>
+  );
 }
+
+export const useTheme = () => {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    throw new Error('useTheme doit être utilisé dans un ThemeProvider');
+  }
+  return context;
+};
