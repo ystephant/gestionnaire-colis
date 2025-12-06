@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
+import { useTheme } from '../lib/ThemeContext';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,6 +10,7 @@ const supabase = createClient(
 
 export default function MenuPrincipal() {
   const router = useRouter();
+  const { darkMode, toggleDarkMode } = useTheme();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -81,8 +83,8 @@ export default function MenuPrincipal() {
   // Page de connexion
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center p-4 transition-colors duration-300`}>
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 w-full max-w-md transition-colors duration-300`}>
           <div className="flex items-center justify-center gap-3 mb-8">
             <div className="bg-indigo-600 p-3 rounded-xl">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
@@ -90,12 +92,12 @@ export default function MenuPrincipal() {
                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
               </svg>
             </div>
-            <h1 className="text-3xl font-bold text-gray-800">Mes Outils</h1>
+            <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                 Nom d'utilisateur
               </label>
               <input
@@ -104,12 +106,16 @@ export default function MenuPrincipal() {
                 onChange={(e) => setUsername(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && document.getElementById('password-input').focus()}
                 placeholder="Choisissez un nom d'utilisateur"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none transition-colors duration-300 ${
+                  darkMode 
+                    ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                    : 'bg-white border-gray-200 text-gray-900'
+                }`}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                 Mot de passe
               </label>
               <input
@@ -119,7 +125,11 @@ export default function MenuPrincipal() {
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
                 placeholder="Choisissez un mot de passe"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none transition-colors duration-300 ${
+                  darkMode 
+                    ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                    : 'bg-white border-gray-200 text-gray-900'
+                }`}
               />
             </div>
 
@@ -130,9 +140,40 @@ export default function MenuPrincipal() {
               Se connecter
             </button>
 
-            <p className="text-sm text-gray-600 text-center mt-4">
+            <p className={`text-sm text-center mt-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
               Utilisez les mêmes identifiants sur tous vos appareils
             </p>
+          </div>
+
+          {/* Toggle Dark Mode sur page de connexion */}
+          <div className="mt-6 flex justify-center">
+            <button
+              onClick={toggleDarkMode}
+              className={`p-3 rounded-xl transition-all duration-300 ${
+                darkMode 
+                  ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              }`}
+              title={darkMode ? 'Mode clair' : 'Mode sombre'}
+            >
+              {darkMode ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -141,18 +182,18 @@ export default function MenuPrincipal() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-xl text-indigo-600">Chargement...</div>
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center transition-colors duration-300`}>
+        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
       </div>
     );
   }
 
   // Menu principal
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="bg-indigo-600 p-3 rounded-xl">
@@ -162,16 +203,52 @@ export default function MenuPrincipal() {
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">Mes Outils</h1>
-                <p className="text-sm text-gray-500">Connecté: {username}</p>
+                <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
+                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Connecté: {username}</p>
               </div>
             </div>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
-            >
-              Déconnexion
-            </button>
+            
+            <div className="flex items-center gap-2">
+              {/* Toggle Dark Mode */}
+              <button
+                onClick={toggleDarkMode}
+                className={`p-3 rounded-xl transition-all duration-300 ${
+                  darkMode 
+                    ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+                title={darkMode ? 'Mode clair' : 'Mode sombre'}
+              >
+                {darkMode ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                )}
+              </button>
+              
+              <button
+                onClick={handleLogout}
+                className={`text-sm px-4 py-2 rounded-lg transition ${
+                  darkMode 
+                    ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
+                    : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
+                }`}
+              >
+                Déconnexion
+              </button>
+            </div>
           </div>
         </div>
 
@@ -209,7 +286,7 @@ export default function MenuPrincipal() {
           {/* Gestionnaire de Colis */}
           <div 
             onClick={() => router.push('/colis')}
-            className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group"
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
           >
             <div className="flex flex-col items-center text-center">
               <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
@@ -217,8 +294,8 @@ export default function MenuPrincipal() {
                   <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Gestionnaire de Colis</h2>
-              <p className="text-gray-600 mb-4">
+              <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Gestionnaire de Colis</h2>
+              <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                 Gérez vos colis de lockers avec rappels automatiques
               </p>
               <div className="flex gap-2 flex-wrap justify-center text-sm">
@@ -231,7 +308,7 @@ export default function MenuPrincipal() {
           {/* Générateur d'Annonces */}
           <div 
             onClick={() => router.push('/annonces')}
-            className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group"
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
           >
             <div className="flex flex-col items-center text-center">
               <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
@@ -242,8 +319,8 @@ export default function MenuPrincipal() {
                   <line x1="16" y1="17" x2="8" y2="17"></line>
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Générateur d'Annonces</h2>
-              <p className="text-gray-600 mb-4">
+              <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Générateur d'Annonces</h2>
+              <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                 Créez des descriptions détaillées pour vos annonces
               </p>
               <div className="flex gap-2 flex-wrap justify-center text-sm">
@@ -256,7 +333,7 @@ export default function MenuPrincipal() {
           {/* Réponses Préfaites */}
           <div 
             onClick={() => router.push('/reponses')}
-            className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group"
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
           >
             <div className="flex flex-col items-center text-center">
               <div className="bg-gradient-to-br from-pink-500 to-rose-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
@@ -264,8 +341,8 @@ export default function MenuPrincipal() {
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Réponses Préfaites</h2>
-              <p className="text-gray-600 mb-4">
+              <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Réponses Préfaites</h2>
+              <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                 Répondez rapidement aux acheteurs et vendeurs
               </p>
               <div className="flex gap-2 flex-wrap justify-center text-sm">
@@ -277,8 +354,10 @@ export default function MenuPrincipal() {
         </div>
 
         {/* Info */}
-        <div className="mt-8 bg-white bg-opacity-60 rounded-xl p-4 text-center">
-          <p className="text-sm text-gray-600">
+        <div className={`mt-8 rounded-xl p-4 text-center transition-colors duration-300 ${
+          darkMode ? 'bg-gray-800 bg-opacity-60' : 'bg-white bg-opacity-60'
+        }`}>
+          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
             💡 Vos données sont synchronisées entre tous vos appareils
           </p>
         </div>
