@@ -1,43 +1,33 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import '../styles/globals.css';
+import React, { useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { ThemeProvider } from '../lib/ThemeContext';
 
-const ThemeContext = createContext();
-
-export function ThemeProvider({ children }) {
-  const [darkMode, setDarkMode] = useState(false);
-  const [mounted, setMounted] = useState(false);
+export default function MyApp({ Component, pageProps }) {
+  const router = useRouter();
 
   useEffect(() => {
-    setMounted(true);
-    const saved = localStorage.getItem('darkMode');
-    if (saved) {
-      setDarkMode(JSON.parse(saved));
-    }
-  }, []);
+    // Vérifier l'authentification pour les pages protégées
+    const checkAuth = () => {
+      const publicPaths = ['/'];
+      const currentPath = router.pathname;
+      
+      if (!publicPaths.includes(currentPath)) {
+        const username = localStorage.getItem('username');
+        const password = localStorage.getItem('password');
+        
+        if (!username || !password) {
+          router.push('/');
+        }
+      }
+    };
 
-  const toggleDarkMode = () => {
-    const newMode = !darkMode;
-    setDarkMode(newMode);
-    localStorage.setItem('darkMode', JSON.stringify(newMode));
-  };
-
-  // Éviter le flash de contenu non stylé lors du chargement
-  if (!mounted) {
-    return <>{children}</>;
-  }
+    checkAuth();
+  }, [router.pathname]);
 
   return (
-    <ThemeContext.Provider value={{ darkMode, toggleDarkMode }}>
-      <div className={darkMode ? 'dark' : ''}>
-        {children}
-      </div>
-    </ThemeContext.Provider>
+    <ThemeProvider>
+      <Component {...pageProps} />
+    </ThemeProvider>
   );
 }
-
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme doit être utilisé dans un ThemeProvider');
-  }
-  return context;
-};
