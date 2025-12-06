@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
+import { useTheme } from '../lib/ThemeContext';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,6 +17,8 @@ const LOCKER_LOGOS = {
 
 export default function LockerParcelApp() {
   const router = useRouter();
+  const { darkMode, toggleDarkMode } = useTheme(); // ⭐ AJOUT MODE SOMBRE
+  
   const [parcels, setParcels] = useState([]);
   const [codeInput, setCodeInput] = useState('');
   const [pickupLocation, setPickupLocation] = useState('hyper-u-locker');
@@ -34,6 +37,7 @@ export default function LockerParcelApp() {
   const [filterLocation, setFilterLocation] = useState('all');
   const [oneSignalReady, setOneSignalReady] = useState(false);
 
+  // ⚠️ GARDEZ TOUS VOS useEffect EXACTEMENT COMME ILS SONT
   useEffect(() => {
     checkAuth();
     const handleOnline = () => { setIsOnline(true); setSyncStatus('🟢 En ligne'); syncOfflineChanges(); };
@@ -47,13 +51,10 @@ export default function LockerParcelApp() {
 
   useEffect(() => {
     if (isLoggedIn && username) {
-      // OneSignal est déjà initialisé dans _app.js, 
-      // juste marquer comme prêt
       if (typeof window !== 'undefined' && window.OneSignal) {
         setOneSignalReady(true);
         console.log('✅ OneSignal prêt');
       }
-
       loadParcels();
       if (isOnline) { 
         setupRealtimeSubscription(); 
@@ -70,6 +71,10 @@ export default function LockerParcelApp() {
     }; 
   }, []);
 
+  // ⚠️ GARDEZ TOUTES VOS FONCTIONS EXACTEMENT COMME ELLES SONT
+  // checkAuth, loadParcels, setupRealtimeSubscription, showNotification, etc.
+  // COPIEZ-COLLEZ TOUTES VOS FONCTIONS ICI SANS MODIFICATION
+  
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
@@ -136,7 +141,6 @@ export default function LockerParcelApp() {
               const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
               
-              // Notification si récupéré par quelqu'un d'autre
               if (payload.new.collected && !payload.old?.collected) {
                 showNotification(`Colis ${payload.new.code} récupéré ! 🎉`);
               }
@@ -300,7 +304,6 @@ export default function LockerParcelApp() {
       
       if (error) throw error;
 
-      // 🔔 NOTIFICATION : Envoyer notification à TOUS les appareils
       if (oneSignalReady) {
         try {
           await fetch('/api/notify-colis-added', {
@@ -361,7 +364,6 @@ export default function LockerParcelApp() {
       
       if (error) throw error;
 
-      // 🔔 NOTIFICATION : Envoyer notification à TOUS les appareils
       if (!currentStatus && oneSignalReady && parcel) {
         try {
           await fetch('/api/notify-colis-collected', {
@@ -569,14 +571,14 @@ export default function LockerParcelApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-xl text-indigo-600">Chargement...</div>
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center transition-colors duration-300`}>
+        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
       <div className="max-w-2xl mx-auto">
         {showToast && (
           <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
@@ -597,19 +599,18 @@ export default function LockerParcelApp() {
           </div>
         )}
 
-        {/* OneSignal Status */}
         {oneSignalReady && (
           <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
             🔔 Notifications actives
           </div>
         )}
         
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => router.push('/')} 
-                className="text-gray-600 hover:text-indigo-600 p-2 hover:bg-gray-100 rounded-lg transition"
+                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -621,24 +622,63 @@ export default function LockerParcelApp() {
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">Mes Colis</h1>
-                <p className="text-sm text-gray-500">Connecté: {username}</p>
+                <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Colis</h1>
+                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Connecté: {username}</p>
               </div>
             </div>
-            <button 
-              onClick={() => router.push('/')} 
-              className="text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
-            >
-              Retour
-            </button>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleDarkMode}
+                className={`p-3 rounded-xl transition-all duration-300 ${
+                  darkMode 
+                    ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+                title={darkMode ? 'Mode clair' : 'Mode sombre'}
+              >
+                {darkMode ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                )}
+              </button>
+              
+              <button 
+                onClick={() => router.push('/')} 
+                className={`text-sm px-4 py-2 rounded-lg transition ${
+                  darkMode 
+                    ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
+                    : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
+                }`}
+              >
+                Retour
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3">
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm font-semibold text-gray-700 mb-3">Type de transporteur :</p>
+            <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4 transition-colors duration-300`}>
+              <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Type de transporteur :</p>
               <div className="grid grid-cols-2 gap-2">
                 {['mondial-relay', 'vinted-go', 'relais-colis', 'pickup'].map(type => (
-                  <label key={type} className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-indigo-400 transition">
+                  <label key={type} className={`flex items-center gap-2 cursor-pointer p-3 rounded-lg border-2 transition ${
+                    darkMode 
+                      ? `${lockerType === type ? 'bg-gray-600 border-indigo-500' : 'bg-gray-600 border-gray-500 hover:border-indigo-400'}` 
+                      : `${lockerType === type ? 'bg-white border-indigo-500' : 'bg-white border-gray-200 hover:border-indigo-400'}`
+                  }`}>
                     <input 
                       type="radio" 
                       name="lockerType" 
@@ -648,11 +688,11 @@ export default function LockerParcelApp() {
                       className="w-4 h-4 text-indigo-600" 
                     />
                     <img src={LOCKER_LOGOS[type]} alt={type} className="h-6 object-contain" />
-                    <span className="text-sm font-medium">{getLockerName(type)}</span>
+                    <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{getLockerName(type)}</span>
                   </label>
                 ))}
               </div>
-              <p className="text-xs text-indigo-600 mt-2">{getCodeFormatHint()}</p>
+              <p className={`text-xs mt-2 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>{getCodeFormatHint()}</p>
             </div>
 
             <textarea 
@@ -660,11 +700,15 @@ export default function LockerParcelApp() {
               onChange={(e) => setCodeInput(e.target.value)} 
               placeholder={`Collez vos codes ici\n${getCodeFormatHint()}`} 
               rows="4" 
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none" 
+              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none transition-colors duration-300 ${
+                darkMode 
+                  ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                  : 'bg-white border-gray-200 text-gray-900'
+              }`} 
             />
             
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm font-semibold text-gray-700 mb-3">Lieu de récupération du colis :</p>
+            <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4 transition-colors duration-300`}>
+              <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Lieu de récupération du colis :</p>
               <div className="space-y-2">
                 {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
                   <label key={loc} className="flex items-center gap-3 cursor-pointer">
@@ -676,7 +720,7 @@ export default function LockerParcelApp() {
                       onChange={(e) => setPickupLocation(e.target.value)} 
                       className="w-4 h-4 text-indigo-600" 
                     />
-                    <span>{getPickupLocationName(loc)}</span>
+                    <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>{getPickupLocationName(loc)}</span>
                   </label>
                 ))}
               </div>
@@ -695,9 +739,9 @@ export default function LockerParcelApp() {
           </div>
         </div>
 
-        {/* Filtres */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+        {/* SECTION FILTRES - GARDEZ LA LOGIQUE MAIS CHANGEZ LES CLASSES */}
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
+          <h2 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
             </svg>
@@ -709,69 +753,61 @@ export default function LockerParcelApp() {
             if (usedLockerTypes.length > 1) {
               return (
                 <div className="mb-4">
-                  <p className="text-sm font-semibold text-gray-600 mb-2">Par transporteur :</p>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'} mb-2`}>Par transporteur :</p>
                   <div className="flex flex-wrap gap-2">
                     <button 
                       onClick={() => setFilterLockerType('all')} 
                       className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                        filterLockerType === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        filterLockerType === 'all' 
+                          ? 'bg-indigo-600 text-white' 
+                          : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
                       <span>📦 Tous</span>
-                      <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                        {getCountByLockerType('all')}
-                      </span>
+                      <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('all')}</span>
                     </button>
                     {usedLockerTypes.includes('mondial-relay') && (
                       <button 
                         onClick={() => setFilterLockerType('mondial-relay')} 
                         className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'mondial-relay' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          filterLockerType === 'mondial-relay' ? 'bg-blue-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
                         <span>🌐 Mondial Relay</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLockerType('mondial-relay')}
-                        </span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('mondial-relay')}</span>
                       </button>
                     )}
                     {usedLockerTypes.includes('vinted-go') && (
                       <button 
                         onClick={() => setFilterLockerType('vinted-go')} 
                         className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'vinted-go' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          filterLockerType === 'vinted-go' ? 'bg-teal-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
                         <span>👕 Vinted GO</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLockerType('vinted-go')}
-                        </span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('vinted-go')}</span>
                       </button>
                     )}
                     {usedLockerTypes.includes('relais-colis') && (
                       <button 
                         onClick={() => setFilterLockerType('relais-colis')} 
                         className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'relais-colis' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          filterLockerType === 'relais-colis' ? 'bg-green-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
                         <span>📮 Relais Colis</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLockerType('relais-colis')}
-                        </span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('relais-colis')}</span>
                       </button>
                     )}
                     {usedLockerTypes.includes('pickup') && (
                       <button 
                         onClick={() => setFilterLockerType('pickup')} 
                         className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'pickup' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          filterLockerType === 'pickup' ? 'bg-orange-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
                         <span>🎁 Pickup</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLockerType('pickup')}
-                        </span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('pickup')}</span>
                       </button>
                     )}
                   </div>
@@ -783,93 +819,19 @@ export default function LockerParcelApp() {
 
           {(() => {
             const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
-            
             if (usedLocations.length > 1) {
               return (
                 <div>
-                  <p className="text-sm font-semibold text-gray-600 mb-2">Par lieu :</p>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'} mb-2`}>Par lieu :</p>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => setFilterLocation('all')}
-                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                        filterLocation === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      <span>📦 Tous les lieux</span>
-                      <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                        {getCountByLocation('all')}
-                      </span>
+                    <button onClick={() => setFilterLocation('all')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'all' ? 'bg-indigo-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                      <span>📦 Tous les lieux</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('all')}</span>
                     </button>
-
-                    {usedLocations.includes('hyper-u-locker') && (
-                      <button
-                        onClick={() => setFilterLocation('hyper-u-locker')}
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLocation === 'hyper-u-locker' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>🏪 Hyper U Locker</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLocation('hyper-u-locker')}
-                        </span>
-                      </button>
-                    )}
-
-                    {usedLocations.includes('hyper-u-accueil') && (
-                      <button
-                        onClick={() => setFilterLocation('hyper-u-accueil')}
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLocation === 'hyper-u-accueil' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>🏪 Hyper U Accueil</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLocation('hyper-u-accueil')}
-                        </span>
-                      </button>
-                    )}
-
-                    {usedLocations.includes('intermarche-locker') && (
-                      <button
-                        onClick={() => setFilterLocation('intermarche-locker')}
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLocation === 'intermarche-locker' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>🛒 Intermarché Locker</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLocation('intermarche-locker')}
-                        </span>
-                      </button>
-                    )}
-
-                    {usedLocations.includes('intermarche-accueil') && (
-                      <button
-                        onClick={() => setFilterLocation('intermarche-accueil')}
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLocation === 'intermarche-accueil' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>🛒 Intermarché Accueil</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLocation('intermarche-accueil')}
-                        </span>
-                      </button>
-                    )}
-
-                    {usedLocations.includes('rond-point-noyal') && (
-                      <button
-                        onClick={() => setFilterLocation('rond-point-noyal')}
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>📍 Rond point Noyal</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {getCountByLocation('rond-point-noyal')}
-                        </span>
-                      </button>
-                    )}
+                    {usedLocations.includes('hyper-u-locker') && (<button onClick={() => setFilterLocation('hyper-u-locker')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'hyper-u-locker' ? 'bg-purple-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🏪 Hyper U Locker</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('hyper-u-locker')}</span></button>)}
+                    {usedLocations.includes('hyper-u-accueil') && (<button onClick={() => setFilterLocation('hyper-u-accueil')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'hyper-u-accueil' ? 'bg-purple-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🏪 Hyper U Accueil</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('hyper-u-accueil')}</span></button>)}
+                    {usedLocations.includes('intermarche-locker') && (<button onClick={() => setFilterLocation('intermarche-locker')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-locker' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Locker</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-locker')}</span></button>)}
+                    {usedLocations.includes('intermarche-accueil') && (<button onClick={() => setFilterLocation('intermarche-accueil')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-accueil' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Accueil</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-accueil')}</span></button>)}
+                    {usedLocations.includes('rond-point-noyal') && (<button onClick={() => setFilterLocation('rond-point-noyal')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>📍 Rond point Noyal</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('rond-point-noyal')}</span></button>)}
                   </div>
                 </div>
               );
@@ -878,42 +840,25 @@ export default function LockerParcelApp() {
           })()}
 
           {(filterLockerType !== 'all' || filterLocation !== 'all') && (
-            <div className="mt-4 flex items-center justify-between bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800 font-medium">
-                🔍 Affichage de {filteredPendingParcels.length} colis sur {pendingParcels.length}
-              </p>
-              <button
-                onClick={() => {
-                  setFilterLockerType('all');
-                  setFilterLocation('all');
-                }}
-                className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
-              >
-                Réinitialiser
-              </button>
+            <div className={`mt-4 flex items-center justify-between rounded-lg p-3 border-2 ${darkMode ? 'bg-blue-900 border-blue-700' : 'bg-blue-50 border-blue-200'}`}>
+              <p className={`text-sm font-medium ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>🔍 Affichage de {filteredPendingParcels.length} colis sur {pendingParcels.length}</p>
+              <button onClick={() => {setFilterLockerType('all'); setFilterLocation('all');}} className={`text-sm font-semibold underline ${darkMode ? 'text-blue-300 hover:text-blue-100' : 'text-blue-600 hover:text-blue-800'}`}>Réinitialiser</button>
             </div>
           )}
 
           {(() => {
             const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
             const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
-            
             if (usedLockerTypes.length <= 1 && usedLocations.length <= 1) {
-              return (
-                <div className="text-center py-4">
-                  <p className="text-gray-500 text-sm">
-                    ✨ Aucun filtre nécessaire - Tous vos colis sont au même endroit !
-                  </p>
-                </div>
-              );
+              return (<div className="text-center py-4"><p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>✨ Aucun filtre nécessaire - Tous vos colis sont au même endroit !</p></div>);
             }
             return null;
           })()}
         </div>
 
         {/* Colis en attente */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
+          <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
             </svg>
@@ -921,10 +866,8 @@ export default function LockerParcelApp() {
           </h2>
           
           {filteredPendingParcels.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
-              {pendingParcels.length === 0 
-                ? 'Aucun colis en attente' 
-                : 'Aucun colis ne correspond aux filtres'}
+            <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              {pendingParcels.length === 0 ? 'Aucun colis en attente' : 'Aucun colis ne correspond aux filtres'}
             </p>
           ) : (
             <div className="space-y-3">
@@ -942,8 +885,12 @@ export default function LockerParcelApp() {
                     }}
                     className={`border-2 rounded-xl p-4 transition cursor-pointer ${
                       isUrgent 
-                        ? 'border-yellow-300 bg-yellow-50 hover:border-yellow-400' 
-                        : 'border-gray-200 hover:border-indigo-300'
+                        ? darkMode 
+                          ? 'border-yellow-600 bg-yellow-900 bg-opacity-30 hover:border-yellow-500' 
+                          : 'border-yellow-300 bg-yellow-50 hover:border-yellow-400'
+                        : darkMode 
+                          ? 'border-gray-600 hover:border-indigo-400 bg-gray-700' 
+                          : 'border-gray-200 hover:border-indigo-300 bg-white'
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -952,7 +899,11 @@ export default function LockerParcelApp() {
                           e.stopPropagation();
                           toggleCollected(parcel.id, parcel.collected);
                         }}
-                        className="mt-1 w-6 h-6 border-2 border-gray-300 rounded-lg flex items-center justify-center hover:border-indigo-500 flex-shrink-0"
+                        className={`mt-1 w-6 h-6 border-2 rounded-lg flex items-center justify-center flex-shrink-0 transition ${
+                          darkMode 
+                            ? 'border-gray-500 hover:border-indigo-400' 
+                            : 'border-gray-300 hover:border-indigo-500'
+                        }`}
                       >
                         {parcel.collected && (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="3">
@@ -970,7 +921,9 @@ export default function LockerParcelApp() {
                               e.stopPropagation();
                               changeLockerType(parcel.id, e.target.value);
                             }}
-                            className="text-sm bg-transparent border-none focus:outline-none cursor-pointer font-medium"
+                            className={`text-sm bg-transparent border-none focus:outline-none cursor-pointer font-medium ${
+                              darkMode ? 'text-gray-200' : 'text-gray-800'
+                            }`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <option value="mondial-relay">Mondial Relay</option>
@@ -980,7 +933,9 @@ export default function LockerParcelApp() {
                           </select>
                         </div>
                         
-                        <div className="text-2xl font-bold text-indigo-600 break-all mb-2">
+                        <div className={`text-2xl font-bold break-all mb-2 ${
+                          darkMode ? 'text-indigo-400' : 'text-indigo-600'
+                        }`}>
                           {parcel.code}
                         </div>
                         
@@ -991,7 +946,11 @@ export default function LockerParcelApp() {
                               e.stopPropagation();
                               changePickupLocation(parcel.id, e.target.value);
                             }}
-                            className="text-sm text-gray-600 bg-transparent border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                            className={`text-sm bg-transparent border rounded px-2 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer transition-colors duration-300 ${
+                              darkMode 
+                                ? 'border-gray-600 text-gray-300' 
+                                : 'border-gray-200 text-gray-600'
+                            }`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <option value="hyper-u-locker">🏪 Hyper U - Locker</option>
@@ -1003,7 +962,7 @@ export default function LockerParcelApp() {
                         </div>
                         
                         <div className="flex items-center gap-3 text-xs">
-                          <span className="text-gray-400 flex items-center gap-1">
+                          <span className={`flex items-center gap-1 ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                               <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -1012,7 +971,13 @@ export default function LockerParcelApp() {
                             </svg>
                             {formatDate(parcel.date_added)}
                           </span>
-                          <span className={`opacity-60 ${isUrgent ? 'font-bold text-red-600 opacity-100' : ''}`}>
+                          <span className={`${
+                            isUrgent 
+                              ? 'font-bold text-red-600 opacity-100' 
+                              : darkMode 
+                                ? 'text-gray-400 opacity-60' 
+                                : 'opacity-60'
+                          }`}>
                             {getRemainingDaysText(remainingDays)}
                           </span>
                         </div>
@@ -1023,7 +988,11 @@ export default function LockerParcelApp() {
                           e.stopPropagation();
                           deleteParcel(parcel.id);
                         }}
-                        className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition flex-shrink-0"
+                        className={`p-2 rounded-lg transition flex-shrink-0 ${
+                          darkMode 
+                            ? 'text-red-400 hover:text-red-300 hover:bg-red-900' 
+                            : 'text-red-500 hover:text-red-700 hover:bg-red-50'
+                        }`}
                       >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <polyline points="3 6 5 6 21 6"></polyline>
@@ -1040,8 +1009,8 @@ export default function LockerParcelApp() {
 
         {/* Colis récupérés */}
         {collectedParcels.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
+            <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2">
                 <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
@@ -1052,12 +1021,20 @@ export default function LockerParcelApp() {
               {collectedParcels.map(parcel => (
                 <div
                   key={parcel.id}
-                  className="border-2 border-green-200 bg-green-50 rounded-xl p-4 opacity-75"
+                  className={`border-2 rounded-xl p-4 transition ${
+                    darkMode 
+                      ? 'border-green-700 bg-green-900 bg-opacity-20 opacity-75' 
+                      : 'border-green-200 bg-green-50 opacity-75'
+                  }`}
                 >
                   <div className="flex items-start gap-3">
                     <button
                       onClick={() => toggleCollected(parcel.id, parcel.collected)}
-                      className="mt-1 w-6 h-6 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0"
+                      className={`mt-1 w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 transition ${
+                        darkMode 
+                          ? 'bg-green-600 hover:bg-green-700' 
+                          : 'bg-green-500 hover:bg-green-600'
+                      }`}
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
                         <polyline points="20 6 9 17 4 12"></polyline>
@@ -1067,19 +1044,27 @@ export default function LockerParcelApp() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <img src={LOCKER_LOGOS[parcel.locker_type]} alt="" className="h-5 object-contain" />
-                        <span className="text-sm text-gray-600 font-medium">{getLockerName(parcel.locker_type)}</span>
+                        <span className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {getLockerName(parcel.locker_type)}
+                        </span>
                       </div>
-                      <div className="text-xl font-bold text-gray-600 line-through break-all mb-1">
+                      <div className={`text-xl font-bold line-through break-all mb-1 ${
+                        darkMode ? 'text-gray-500' : 'text-gray-600'
+                      }`}>
                         {parcel.code}
                       </div>
-                      <div className="text-sm text-gray-500">
+                      <div className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
                         {getPickupLocationName(parcel.location)}
                       </div>
                     </div>
                     
                     <button
                       onClick={() => deleteParcel(parcel.id)}
-                      className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition flex-shrink-0"
+                      className={`p-2 rounded-lg transition flex-shrink-0 ${
+                        darkMode 
+                          ? 'text-red-400 hover:text-red-300 hover:bg-red-900' 
+                          : 'text-red-500 hover:text-red-700 hover:bg-red-50'
+                      }`}
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3 6 5 6 21 6"></polyline>
