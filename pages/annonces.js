@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { useTheme } from '../lib/ThemeContext';
 
 export default function GenerateurAnnonces() {
   const router = useRouter();
+  const { darkMode, toggleDarkMode } = useTheme();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -124,22 +126,22 @@ export default function GenerateurAnnonces() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-xl text-indigo-600">Chargement...</div>
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center`}>
+        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 py-8 px-4">
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-emerald-50 to-teal-100'} py-8 px-4 transition-colors duration-300`}>
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/')}
-                className="text-gray-600 hover:text-emerald-600 p-2 hover:bg-gray-100 rounded-lg transition"
+                className={`${darkMode ? 'text-gray-400 hover:text-emerald-400 hover:bg-gray-700' : 'text-gray-600 hover:text-emerald-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -153,16 +155,45 @@ export default function GenerateurAnnonces() {
                   <line x1="16" y1="17" x2="8" y2="17"></line>
                 </svg>
               </div>
-              <h1 className="text-3xl font-bold text-gray-800">Générateur d'Annonces</h1>
+              <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Générateur d'Annonces</h1>
             </div>
+
+            {/* Toggle Dark Mode */}
+            <button
+              onClick={toggleDarkMode}
+              className={`p-3 rounded-xl transition-all duration-300 ${
+                darkMode 
+                  ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              }`}
+              title={darkMode ? 'Mode clair' : 'Mode sombre'}
+            >
+              {darkMode ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
+            </button>
           </div>
         </div>
 
         {/* Contenu principal */}
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Colonne gauche - Formulaire */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">Paramètres</h2>
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
+            <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>Paramètres</h2>
             
             <div className="space-y-4">
               {/* Cases à cocher */}
@@ -174,7 +205,7 @@ export default function GenerateurAnnonces() {
                     onChange={(e) => setPrefixSociete(e.target.checked)}
                     className="w-4 h-4 text-emerald-600"
                   />
-                  <span className="text-sm font-medium">Jeux de société</span>
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Jeux de société</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -183,7 +214,7 @@ export default function GenerateurAnnonces() {
                     onChange={(e) => setReglesFr(e.target.checked)}
                     className="w-4 h-4 text-emerald-600"
                   />
-                  <span className="text-sm font-medium">Règles du jeu en français</span>
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Règles du jeu en français</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -192,7 +223,7 @@ export default function GenerateurAnnonces() {
                     onChange={(e) => setAspectSecondaire(e.target.checked)}
                     className="w-4 h-4 text-emerald-600"
                   />
-                  <span className="text-sm font-medium">Ajouter un aspect extérieur secondaire</span>
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Ajouter un aspect extérieur secondaire</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -201,7 +232,7 @@ export default function GenerateurAnnonces() {
                     onChange={(e) => setVintedInfo(e.target.checked)}
                     className="w-4 h-4 text-emerald-600"
                   />
-                  <span className="text-sm font-medium">Inclure infos Vinted</span>
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Inclure infos Vinted</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -210,7 +241,7 @@ export default function GenerateurAnnonces() {
                     onChange={(e) => setNoHand(e.target.checked)}
                     className="w-4 h-4 text-emerald-600"
                   />
-                  <span className="text-sm font-medium">Pas de remise en main propre</span>
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Pas de remise en main propre</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -219,13 +250,13 @@ export default function GenerateurAnnonces() {
                     onChange={(e) => setPreferShipping(e.target.checked)}
                     className="w-4 h-4 text-emerald-600"
                   />
-                  <span className="text-sm font-medium">Privilégier les expéditions</span>
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Privilégier les expéditions</span>
                 </label>
               </div>
 
               {/* Nom du jeu */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Nom du jeu :
                 </label>
                 <input
@@ -233,19 +264,27 @@ export default function GenerateurAnnonces() {
                   value={nomJeu}
                   onChange={(e) => setNomJeu(e.target.value)}
                   placeholder="Ex: Catane, Azul..."
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
                 />
               </div>
 
               {/* État du matériel */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   État du matériel :
                 </label>
                 <select
                   value={etatMateriel}
                   onChange={(e) => setEtatMateriel(e.target.value)}
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
                 >
                   {etatOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
@@ -253,13 +292,17 @@ export default function GenerateurAnnonces() {
 
               {/* Sous blister */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Sous blister :
                 </label>
                 <select
                   value={blister}
                   onChange={(e) => setBlister(e.target.value)}
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
                 >
                   <option value="Non">Non</option>
                   <option value="Oui - Neuf sous blister">Oui - Neuf sous blister</option>
@@ -268,13 +311,17 @@ export default function GenerateurAnnonces() {
 
               {/* Contenu */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Contenu :
                 </label>
                 <select
                   value={complet}
                   onChange={(e) => setComplet(e.target.value)}
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
                 >
                   <option value="Complet">Complet</option>
                   <option value="Incomplet">Incomplet</option>
@@ -284,14 +331,18 @@ export default function GenerateurAnnonces() {
               {/* Éléments manquants (si incomplet) */}
               {complet === 'Incomplet' && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                     Éléments manquants dans le jeu :
                   </label>
                   <textarea
                     value={elementsManquants}
                     onChange={(e) => setElementsManquants(e.target.value)}
                     rows="3"
-                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none bg-yellow-50"
+                    className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                      darkMode 
+                        ? 'bg-yellow-900 border-yellow-700 text-gray-100 placeholder-gray-400' 
+                        : 'bg-yellow-50 border-gray-200 text-gray-900'
+                    }`}
                     placeholder="Décrivez les éléments manquants..."
                   />
                 </div>
@@ -299,13 +350,17 @@ export default function GenerateurAnnonces() {
 
               {/* Aspect extérieur */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Aspect extérieur (boîte) :
                 </label>
                 <select
                   value={rayures}
                   onChange={(e) => setRayures(e.target.value)}
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
                 >
                   {rayuresOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
@@ -314,13 +369,17 @@ export default function GenerateurAnnonces() {
               {/* Aspect secondaire */}
               {aspectSecondaire && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                     Aspect extérieur secondaire (boîte) :
                   </label>
                   <select
                     value={rayures2}
                     onChange={(e) => setRayures2(e.target.value)}
-                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+                    className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
                   >
                     {rayuresOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
@@ -329,13 +388,17 @@ export default function GenerateurAnnonces() {
 
               {/* Vendu en lot */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Vendu en lot :
                 </label>
                 <select
                   value={lot}
                   onChange={(e) => setLot(e.target.value)}
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
                 >
                   <option value="Non">Non</option>
                   <option value="Oui">Oui</option>
@@ -345,14 +408,18 @@ export default function GenerateurAnnonces() {
           </div>
 
           {/* Colonne droite - Résultat */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">Description générée</h2>
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
+            <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>Description générée</h2>
             
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows="20"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none bg-white font-mono text-sm resize-none"
+              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none font-mono text-sm resize-none transition-colors duration-300 ${
+                darkMode 
+                  ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                  : 'bg-white border-gray-200 text-gray-900'
+              }`}
               placeholder="La description générée apparaîtra ici. Vous pouvez la modifier manuellement..."
             />
 
