@@ -62,7 +62,8 @@ export default function MenuPrincipal() {
     }
   };
 
-  const handleLogin = () => {
+  const handleLogin = (e) => {
+    if (e) e.preventDefault();
     if (username.trim() && password.trim()) {
       localStorage.setItem('username', username.trim());
       localStorage.setItem('password', password.trim());
@@ -95,7 +96,7 @@ export default function MenuPrincipal() {
             <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
           </div>
 
-          <div className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                 Nom d'utilisateur
@@ -104,7 +105,6 @@ export default function MenuPrincipal() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && document.getElementById('password-input').focus()}
                 placeholder="Choisissez un nom d'utilisateur"
                 className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none transition-colors duration-300 ${
                   darkMode 
@@ -123,7 +123,6 @@ export default function MenuPrincipal() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
                 placeholder="Choisissez un mot de passe"
                 className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none transition-colors duration-300 ${
                   darkMode 
@@ -134,7 +133,7 @@ export default function MenuPrincipal() {
             </div>
 
             <button
-              onClick={handleLogin}
+              type="submit"
               className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition"
             >
               Se connecter
@@ -143,7 +142,7 @@ export default function MenuPrincipal() {
             <p className={`text-sm text-center mt-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
               Utilisez les mêmes identifiants sur tous vos appareils
             </p>
-          </div>
+          </form>
 
           {/* Toggle Dark Mode sur page de connexion */}
           <div className="mt-6 flex justify-center">
