@@ -1,18 +1,37 @@
-// pages/api/notify-colis-added.js
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { userId, colisCodes, location, lockerType } = req.body;
-
-  if (!userId || !colisCodes || colisCodes.length === 0) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-
   try {
-    // Envoyer la notification à l'utilisateur
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
+    const { userId, colisCodes, location, lockerType } = req.body;
+
+    // Vérifier que les données sont présentes
+    if (!userId || !colisCodes || !colisCodes.length) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const locationNames = {
+      'hyper-u-locker': 'Hyper U - Locker',
+      'hyper-u-accueil': 'Hyper U - Accueil',
+      'intermarche-locker': 'Intermarché - Locker',
+      'intermarche-accueil': 'Intermarché - Accueil',
+      'rond-point-noyal': 'Rond point Noyal - Locker'
+    };
+
+    const lockerNames = {
+      'mondial-relay': 'Mondial Relay',
+      'vinted-go': 'Vinted GO',
+      'relais-colis': 'Relais Colis',
+      'pickup': 'Pickup'
+    };
+
+    const message = colisCodes.length > 1
+      ? `📦 ${colisCodes.length} nouveaux colis ajoutés à ${locationNames[location] || location}`
+      : `📦 Nouveau colis ${colisCodes[0]} ajouté à ${locationNames[location] || location}`;
+
+    // Envoyer la notification via OneSignal REST API
+    const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -20,36 +39,30 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         app_id: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
-        include_external_user_ids: [userId],
-        headings: { 
-          en: `📦 ${colisCodes.length} nouveau${colisCodes.length > 1 ? 'x' : ''} colis !` 
-        },
-        contents: { 
-          en: `${colisCodes.length} colis ajouté${colisCodes.length > 1 ? 's' : ''} - ${location}` 
-        },
+        filters: [
+          { field: 'tag', key: 'user_id', relation: '=', value: userId }
+        ],
+        headings: { en: 'Nouveaux colis !' },
+        contents: { en: message },
         data: {
           type: 'colis_added',
-          colisCodes: colisCodes,
-          location: location,
-          lockerType: lockerType
+          userId: userId,
+          codes: colisCodes
         },
-        web_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestionnaire-colis.vercel.app'}/colis`,
-        chrome_web_icon: `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestionnaire-colis.vercel.app'}/icons/package-icon.png`,
-        chrome_web_badge: `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestionnaire-colis.vercel.app'}/icons/badge-icon.png`
+        url: 'https://gestionnaire-colis.vercel.app/colis'
       })
     });
 
-    const result = await response.json();
+    const data = await response.json();
 
-    if (result.errors) {
-      console.error('❌ Erreur OneSignal:', result.errors);
-      return res.status(400).json({ error: result.errors });
+    if (!response.ok) {
+      console.error('Erreur OneSignal:', data);
+      return res.status(500).json({ error: 'Erreur OneSignal', details: data });
     }
 
-    console.log('✅ Notification ajout envoyée:', result);
-    res.status(200).json({ success: true, data: result });
+    return res.status(200).json({ success: true, data });
   } catch (error) {
-    console.error('❌ Erreur API:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Erreur serveur:', error);
+    return res.status(500).json({ error: error.message });
   }
 }
