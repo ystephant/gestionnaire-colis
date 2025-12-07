@@ -7,6 +7,8 @@
   "background_color": "#ffffff",
   "theme_color": "#4f46e5",
   "orientation": "portrait-primary",
+  "gcm_sender_id": "482941778795"
+  "gcm_sender_id_comment": "Do not change the GCM Sender ID",
   "icons": [
     {
       "src": "/icons/icon-192.png",
