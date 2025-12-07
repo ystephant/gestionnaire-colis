@@ -1,11 +1,10 @@
-// pages/_document.js
 import { Html, Head, Main, NextScript } from 'next/document';
 
 export default function Document() {
   return (
     <Html lang="fr">
       <Head>
-        {/* Charger le SDK OneSignal */}
+        <link rel="manifest" href="/manifest.json" />
         <script 
           src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" 
           defer
