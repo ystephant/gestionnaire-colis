@@ -55,4 +55,4 @@ export default async function handler(req, res) {
 Sur votre dashboard Vercel, ajoutez ces variables :
 ```
 NEXT_PUBLIC_ONESIGNAL_APP_ID=24c0cb48-bcea-4953-934c-8d41632f3f16
-ONESIGNAL_REST_API_KEY=votre-rest-api-key
+ONESIGNAL_REST_API_KEY=itowpqwq4e5aviwnoxsh3frle
