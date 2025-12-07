@@ -1,4 +1,3 @@
-// pages/api/notify-colis-added.js
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -13,14 +12,12 @@ export default async function handler(req, res) {
 
     console.log('📥 Requête reçue:', { userId, colisCodes, location, lockerType });
 
-    // Vérification des champs obligatoires
     if (!userId || !colisCodes || !Array.isArray(colisCodes) || colisCodes.length === 0) {
       console.error('❌ Données manquantes');
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Vérification des variables d'environnement
-    if (!process.env.ONESIGNAL_REST_API_KEY || !process.env.ONESIGNAL_APP_ID) {
+    if (!process.env.ONESIGNAL_REST_API_KEY || !process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID) {
       console.error('❌ Variables d\'environnement manquantes');
       return res.status(500).json({ error: 'Server configuration error' });
     }
@@ -39,14 +36,14 @@ export default async function handler(req, res) {
 
     console.log('📤 Envoi notification OneSignal...');
 
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
+    const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Basic ${process.env.ONESIGNAL_REST_API_KEY}`
       },
       body: JSON.stringify({
-        app_id: process.env.ONESIGNAL_APP_ID,
+        app_id: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
         filters: [
           { field: 'tag', key: 'user_id', relation: '=', value: userId }
         ],
@@ -54,7 +51,7 @@ export default async function handler(req, res) {
         contents: { en: message },
         data: {
           type: 'colis_added',
-          userId,
+          userId: userId,
           codes: colisCodes
         },
         url: 'https://gestionnaire-colis.vercel.app/colis'
@@ -71,7 +68,6 @@ export default async function handler(req, res) {
 
     console.log('✅ Notification envoyée avec succès');
     return res.status(200).json({ success: true, data });
-
   } catch (error) {
     console.error('❌ Erreur serveur:', error);
     return res.status(500).json({ error: error.message, stack: error.stack });
