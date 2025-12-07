@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // Permettre les requêtes OPTIONS pour CORS
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -11,16 +10,13 @@ export default async function handler(req, res) {
   try {
     const { userId, colisCodes, location, lockerType } = req.body;
 
-    // Log pour debug
     console.log('📥 Requête reçue:', { userId, colisCodes, location, lockerType });
 
-    // Vérifier que les données sont présentes
     if (!userId || !colisCodes || !Array.isArray(colisCodes) || colisCodes.length === 0) {
       console.error('❌ Données manquantes');
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Vérifier les variables d'environnement
     if (!process.env.ONESIGNAL_REST_API_KEY || !process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID) {
       console.error('❌ Variables d\'environnement manquantes');
       return res.status(500).json({ error: 'Server configuration error' });
@@ -40,7 +36,6 @@ export default async function handler(req, res) {
 
     console.log('📤 Envoi notification OneSignal...');
 
-    // Envoyer la notification via OneSignal REST API
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
