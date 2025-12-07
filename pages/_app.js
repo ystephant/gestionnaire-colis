@@ -7,7 +7,7 @@ export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
 
   useEffect(() => {
-    // Vérifier l'authentification pour les pages protégées
+    // Vérifier l'authentification
     const checkAuth = () => {
       const publicPaths = ['/'];
       const currentPath = router.pathname;
@@ -23,33 +23,31 @@ export default function MyApp({ Component, pageProps }) {
     };
 
     checkAuth();
+  }, [router.pathname]);
 
-    // Initialisation OneSignal
-    if (typeof window !== 'undefined' && window.OneSignalDeferred) {
+  useEffect(() => {
+    // Initialiser OneSignal uniquement côté client
+    if (typeof window !== 'undefined') {
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      
       window.OneSignalDeferred.push(async function(OneSignal) {
         try {
           await OneSignal.init({
-            appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || "24c0cb48-bcea-4953-934c-8d41632f3f16",
-            safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_WEB_ID,
+            appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
+            allowLocalhostAsSecureOrigin: true,
             notifyButton: {
               enable: false,
             },
-            allowLocalhostAsSecureOrigin: true,
           });
           
-          console.log('✅ OneSignal initialisé avec succès');
-          
-          // Demander la permission pour les notifications
-          const permission = await OneSignal.Notifications.permission;
-          if (permission === 'default') {
-            await OneSignal.Notifications.requestPermission();
-          }
+          console.log('✅ OneSignal initialisé');
+          window.OneSignal = OneSignal;
         } catch (error) {
-          console.error('❌ Erreur initialisation OneSignal:', error);
+          console.error('❌ Erreur OneSignal:', error);
         }
       });
     }
-  }, [router.pathname]);
+  }, []);
 
   return (
     <ThemeProvider>
