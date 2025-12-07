@@ -63,11 +63,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message, stack: error.stack });
   }
 }
-```
-
-### 4️⃣ Vérifiez vos variables d'environnement Vercel
-
-Assurez-vous d'avoir sur Vercel :
-```
-NEXT_PUBLIC_ONESIGNAL_APP_ID=24c0cb48-bcea-4953-934c-8d41632f3f16
-ONESIGNAL_REST_API_KEY=itowpqwq4e5aviwnoxsh3frle
