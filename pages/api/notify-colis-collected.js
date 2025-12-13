@@ -33,13 +33,14 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Key ${apiKey}` // ✅ CHANGEMENT ICI : Key au lieu de Bearer
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         app_id: appId,
-        filters: [
-          { field: 'tag', key: 'user_id', relation: '=', value: userId }
-        ],
+        include_aliases: {
+          external_id: [userId]
+        },
+        target_channel: 'push',
         headings: { en: 'Colis récupéré 🎉' },
         contents: { en: message },
         data: {
