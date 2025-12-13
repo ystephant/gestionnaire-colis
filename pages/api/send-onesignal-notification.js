@@ -10,11 +10,14 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Key ${process.env.ONESIGNAL_REST_API_KEY}` // ✅ CHANGEMENT ICI
+        'Authorization': `Bearer ${process.env.ONESIGNAL_REST_API_KEY}`
       },
       body: JSON.stringify({
         app_id: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
-        include_external_user_ids: userIds,
+        include_aliases: {
+          external_id: userIds
+        },
+        target_channel: 'push',
         headings: { en: title },
         contents: { en: message },
         data: data,
