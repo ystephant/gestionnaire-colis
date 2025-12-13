@@ -10,7 +10,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ONESIGNAL_REST_API_KEY}` // ✅ Bearer au lieu de Basic
+        'Authorization': `Key ${process.env.ONESIGNAL_REST_API_KEY}` // ✅ CHANGEMENT ICI
       },
       body: JSON.stringify({
         app_id: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
