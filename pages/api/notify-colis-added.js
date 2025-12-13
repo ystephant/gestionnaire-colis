@@ -39,6 +39,9 @@ export default async function handler(req, res) {
 
     console.log('📤 Envoi notification OneSignal...');
 
+    // ✅ Créer un ID unique pour cette notification
+    const notificationId = `colis-added-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
@@ -56,9 +59,22 @@ export default async function handler(req, res) {
         data: {
           type: 'colis_added',
           userId: userId,
-          codes: colisCodes
+          codes: colisCodes,
+          notificationId: notificationId // ID unique
         },
-        url: 'https://gestionnaire-colis.vercel.app/colis'
+        url: 'https://gestionnaire-colis.vercel.app/colis',
+        // ✅ Paramètres Android
+        android_channel_id: 'colis-notifications',
+        android_group: 'colis', // Grouper les notifications
+        android_group_message: {
+          en: '$[notif_count] nouveaux colis'
+        },
+        // ✅ Paramètres iOS
+        ios_category: 'colis',
+        ios_badge_type: 'Increase',
+        ios_badge_count: 1,
+        // ✅ Pas de collapse_id pour éviter l'écrasement
+        // collapse_id est absent pour que chaque notification soit indépendante
       })
     });
 
