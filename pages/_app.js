@@ -27,7 +27,6 @@ export default function MyApp({ Component, pageProps }) {
   useEffect(() => {
     // Initialiser OneSignal avec gestion d'erreurs améliorée
     if (typeof window !== 'undefined') {
-      // Vérifier si le SDK est bloqué
       const script = document.createElement('script');
       script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
       script.defer = true;
@@ -54,15 +53,26 @@ export default function MyApp({ Component, pageProps }) {
           console.log('✅ OneSignal initialisé avec succès');
           window.OneSignal = OneSignal;
           
-          // Ne pas demander automatiquement la permission
-          // L'utilisateur devra cliquer sur un bouton pour l'activer
+          // 🔑 ENREGISTRER L'UTILISATEUR AVEC SON USERNAME
+          const username = localStorage.getItem('username');
+          if (username && router.pathname !== '/') {
+            try {
+              await OneSignal.login(username);
+              console.log('✅ Utilisateur enregistré dans OneSignal:', username);
+              
+              // Vérifier si l'utilisateur a déjà donné la permission
+              const isPushEnabled = await OneSignal.User.PushSubscription.optedIn;
+              console.log('📱 Push enabled:', isPushEnabled);
+            } catch (error) {
+              console.error('❌ Erreur lors de l\'enregistrement:', error);
+            }
+          }
         } catch (error) {
           console.error('❌ Erreur OneSignal:', error.message);
-          // Ne pas bloquer l'app si OneSignal échoue
         }
       });
     }
-  }, []);
+  }, [router.pathname]); // ✅ Ajouter router.pathname comme dépendance
 
   return (
     <ThemeProvider>
