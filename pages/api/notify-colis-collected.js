@@ -29,9 +29,6 @@ export default async function handler(req, res) {
 
     console.log('📤 Envoi notification récupération...');
 
-    // ✅ Créer un ID unique pour cette notification
-    const notificationId = `colis-collected-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
@@ -50,19 +47,9 @@ export default async function handler(req, res) {
           type: 'colis_collected',
           userId: userId,
           code: colisCode,
-          notificationId: notificationId // ID unique
+          timestamp: Date.now() // ✅ Timestamp unique
         },
-        url: 'https://gestionnaire-colis.vercel.app/colis',
-        // ✅ Paramètres Android
-        android_channel_id: 'colis-notifications',
-        android_group: 'colis',
-        android_group_message: {
-          en: '$[notif_count] notifications'
-        },
-        // ✅ Paramètres iOS
-        ios_category: 'colis',
-        ios_badge_type: 'Increase',
-        ios_badge_count: 1,
+        url: 'https://gestionnaire-colis.vercel.app/colis'
       })
     });
 
