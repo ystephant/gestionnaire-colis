@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
+import NotificationPermission from '../components/NotificationPermission'; // ✅ AJOUTER CETTE LIGNE
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -585,6 +586,9 @@ export default function LockerParcelApp() {
             {toastMessage}
           </div>
         )}
+
+    {/* ✅ AJOUTER UNIQUEMENT CETTE LIGNE */}
+      <NotificationPermission />
         
         {syncStatus && (
           <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
