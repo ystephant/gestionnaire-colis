@@ -1,4 +1,3 @@
-// pages/api/send-onesignal-notification.js
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -7,11 +6,11 @@ export default async function handler(req, res) {
   const { userIds, title, message, data } = req.body;
 
   try {
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
+    const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${process.env.ONESIGNAL_REST_API_KEY}`
+        'Authorization': `Bearer ${process.env.ONESIGNAL_REST_API_KEY}` // ✅ Bearer au lieu de Basic
       },
       body: JSON.stringify({
         app_id: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
@@ -27,9 +26,9 @@ export default async function handler(req, res) {
 
     const result = await response.json();
 
-    if (result.errors) {
-      console.error('❌ Erreur OneSignal:', result.errors);
-      return res.status(400).json({ error: result.errors });
+    if (result.errors || !response.ok) {
+      console.error('❌ Erreur OneSignal:', result);
+      return res.status(400).json({ error: result.errors || result });
     }
 
     console.log('✅ Notification envoyée:', result);
