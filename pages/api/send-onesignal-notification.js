@@ -6,9 +6,6 @@ export default async function handler(req, res) {
   const { userIds, title, message, data } = req.body;
 
   try {
-    // ✅ Créer un ID unique
-    const notificationId = `notification-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
@@ -25,18 +22,11 @@ export default async function handler(req, res) {
         contents: { en: message },
         data: {
           ...data,
-          notificationId: notificationId
+          timestamp: Date.now() // ✅ Timestamp unique
         },
         web_url: 'https://gestionnaire-colis.vercel.app/colis',
         chrome_web_icon: 'https://gestionnaire-colis.vercel.app/icons/icon-192.png',
-        chrome_web_badge: 'https://gestionnaire-colis.vercel.app/icons/badge-icon.png',
-        // ✅ Paramètres Android
-        android_channel_id: 'colis-notifications',
-        android_group: 'colis',
-        // ✅ Paramètres iOS
-        ios_category: 'colis',
-        ios_badge_type: 'Increase',
-        ios_badge_count: 1,
+        chrome_web_badge: 'https://gestionnaire-colis.vercel.app/icons/badge-icon.png'
       })
     });
 
