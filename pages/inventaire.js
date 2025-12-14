@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Upload, Trash2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase'; // ✅ Utilisation de ton supabase.js existant
 
-// Simulation du contexte theme et router
+const supabase = getSupabase(); // ✅ Instance unique
+
+// Hooks pour theme et router
 const useTheme = () => {
   const [darkMode, setDarkMode] = useState(false);
   return { darkMode, toggleDarkMode: () => setDarkMode(!darkMode) };
@@ -668,3 +670,153 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                     darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
                   }`}
                 >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+                    Nom du jeu *
+                  </label>
+                  <input
+                    type="text"
+                    value={newGameName}
+                    onChange={(e) => setNewGameName(e.target.value)}
+                    placeholder="Ex: Monopoly, Uno..."
+                    className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none transition-colors duration-300 ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  />
+                </div>
+
+                <div className={`p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30 border-2 border-blue-700' : 'bg-blue-50 border-2 border-blue-200'}`}>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-blue-300' : 'text-blue-800'} mb-3 flex items-center gap-2`}>
+                    <Camera size={18} />
+                    Scanner la règle du jeu (OCR)
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                      disabled={isProcessingImage}
+                    >
+                      <Camera size={18} />
+                      Prendre une photo
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex-1 bg-purple-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
+                      disabled={isProcessingImage}
+                    >
+                      <Upload size={18} />
+                      Choisir un fichier
+                    </button>
+                  </div>
+                  
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleImageCapture}
+                    className="hidden"
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageCapture}
+                    className="hidden"
+                  />
+                  
+                  {isProcessingImage && (
+                    <div className="mt-3 text-center">
+                      <div className="animate-spin inline-block w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+                      <p className={`text-sm mt-2 ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
+                        Analyse de l'image en cours...
+                      </p>
+                    </div>
+                  )}
+                  
+                  {capturedImage && (
+                    <div className="mt-3">
+                      <img src={capturedImage} alt="Règle capturée" className="w-full rounded-lg border-2 border-blue-500" />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+                    Contenu du jeu *
+                  </label>
+                  
+                  <div className="space-y-3">
+                    {newGameItems.map((item, index) => (
+                      <div key={index} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={(e) => updateItemField(index, e.target.value)}
+                          placeholder={`Élément ${index + 1}`}
+                          className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none transition-colors duration-300 ${
+                            darkMode 
+                              ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                              : 'bg-white border-gray-200 text-gray-900'
+                          }`}
+                        />
+                        <button
+                          onClick={() => removeItemField(index)}
+                          disabled={newGameItems.length <= 1}
+                          className={`p-2 rounded-lg transition ${
+                            newGameItems.length <= 1
+                              ? 'opacity-30 cursor-not-allowed'
+                              : darkMode
+                                ? 'bg-red-600 hover:bg-red-700 text-white'
+                                : 'bg-red-500 hover:bg-red-600 text-white'
+                          }`}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={addItemField}
+                    className="w-full mt-3 bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} />
+                    Ajouter un élément
+                  </button>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={createGame}
+                    className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2"
+                  >
+                    <Check size={20} />
+                    Créer le jeu
+                  </button>
+                  <button
+                    onClick={closeCreateModal}
+                    className={`flex-1 py-3 rounded-xl font-bold transition ${
+                      darkMode 
+                        ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
