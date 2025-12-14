@@ -159,35 +159,79 @@ export default function InventaireJeux() {
 
   // Capture photo et OCR
   const handleImageCapture = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const file = e.target.files[0];
+  if (!file) return;
 
-    setIsProcessingImage(true);
-    
-    // Prévisualisation
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setCapturedImage(event.target.result);
-    };
-    reader.readAsDataURL(file);
-
-    // Simulation OCR - Ici vous intégreriez Claude API avec vision
-    setTimeout(() => {
-      // Exemple de détection (à remplacer par vraie API Claude)
-      const detectedItems = [
-        "1 plateau de jeu",
-        "52 cartes",
-        "4 pions joueur",
-        "2 dés à 6 faces",
-        "1 livret de règles",
-        "20 jetons en bois"
-      ];
-      
-      setNewGameItems(detectedItems);
-      setIsProcessingImage(false);
-      alert('✅ Contenu détecté avec succès ! Vous pouvez modifier les éléments avant de valider.');
-    }, 2000);
+  setIsProcessingImage(true);
+  
+  // Prévisualisation
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    setCapturedImage(event.target.result);
   };
+  reader.readAsDataURL(file);
+
+  // Conversion en base64
+  const base64Data = await new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(",")[1]);
+    r.readAsDataURL(file);
+  });
+
+  try {
+    // Appel API Claude avec vision
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: file.type,
+                  data: base64Data
+                }
+              },
+              {
+                type: "text",
+                text: `Analyse cette image de règle de jeu de société. 
+                
+Extrait UNIQUEMENT la liste du matériel/contenu de la boîte.
+Retourne UNIQUEMENT un JSON avec ce format exact :
+{
+  "items": ["élément 1", "élément 2", ...]
+}
+
+Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content[0].text;
+    const cleaned = text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+    
+    setNewGameItems(parsed.items || []);
+    setIsProcessingImage(false);
+    alert('✅ Contenu détecté ! Vérifiez et modifiez si nécessaire.');
+  } catch (error) {
+    console.error('Erreur OCR:', error);
+    alert('❌ Erreur lors de l\'analyse. Veuillez réessayer.');
+    setIsProcessingImage(false);
+  }
+};
 
   const createGame = () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
