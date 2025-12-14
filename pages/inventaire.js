@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Upload, Trash2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 // Simulation du contexte theme et router
 const useTheme = () => {
@@ -12,50 +13,11 @@ const useRouter = () => ({
   pathname: '/inventaire'
 });
 
-// Simulation Supabase
-const mockSupabase = {
-  games: [
-    {
-      id: 1,
-      name: "Les Colons de Catane",
-      search_name: "catane",
-      items: [
-        "1 plateau de jeu modulable (19 tuiles hexagonales)",
-        "4 cartes récapitulatives",
-        "95 cartes ressources (Bois, Argile, Blé, Mouton, Minerai)",
-        "25 cartes développement",
-        "4 cartes d'aide de jeu",
-        "2 cartes spéciales (Route la plus longue, Armée la plus puissante)",
-        "16 villes (4 par joueur)",
-        "20 colonies (5 par joueur)",
-        "60 routes (15 par joueur)",
-        "2 dés",
-        "1 pion voleur",
-        "1 livret de règles"
-      ]
-    },
-    {
-      id: 2,
-      name: "Azul",
-      search_name: "azul",
-      items: [
-        "100 tuiles en résine (20 de chaque couleur)",
-        "9 disques Usine",
-        "4 plateaux joueur individuels",
-        "1 plateau Premier Joueur",
-        "1 marqueur Premier Joueur",
-        "1 sac en tissu",
-        "1 livret de règles"
-      ]
-    }
-  ]
-};
-
 export default function InventaireJeux() {
   const router = useRouter();
   const { darkMode, toggleDarkMode } = useTheme();
   const [username] = useState('demo_user');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
@@ -63,7 +25,7 @@ export default function InventaireJeux() {
   const [missingItems, setMissingItems] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
-  const [allGames, setAllGames] = useState(mockSupabase.games);
+  const [allGames, setAllGames] = useState([]);
   
   // États pour création/édition
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -74,6 +36,30 @@ export default function InventaireJeux() {
   const [capturedImage, setCapturedImage] = useState(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+
+  // Charger les jeux au démarrage
+  useEffect(() => {
+    fetchGames();
+  }, []);
+
+  // Récupérer tous les jeux depuis Supabase
+  const fetchGames = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setAllGames(data || []);
+    } catch (error) {
+      console.error('Erreur chargement:', error);
+      alert('❌ Erreur lors du chargement des jeux');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Recherche
   useEffect(() => {
@@ -159,51 +145,51 @@ export default function InventaireJeux() {
 
   // Capture photo et OCR
   const handleImageCapture = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
 
-  setIsProcessingImage(true);
-  
-  // Prévisualisation
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    setCapturedImage(event.target.result);
-  };
-  reader.readAsDataURL(file);
+    setIsProcessingImage(true);
+    
+    // Prévisualisation
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setCapturedImage(event.target.result);
+    };
+    reader.readAsDataURL(file);
 
-  // Conversion en base64
-  const base64Data = await new Promise((resolve) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result.split(",")[1]);
-    r.readAsDataURL(file);
-  });
+    // Conversion en base64
+    const base64Data = await new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result.split(",")[1]);
+      r.readAsDataURL(file);
+    });
 
-  try {
-    // Appel API Claude avec vision
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: file.type,
-                  data: base64Data
-                }
-              },
-              {
-                type: "text",
-                text: `Analyse cette image de règle de jeu de société. 
-                
+    try {
+      // Appel API Claude avec vision
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: file.type,
+                    data: base64Data
+                  }
+                },
+                {
+                  type: "text",
+                  text: `Analyse cette image de règle de jeu de société. 
+                  
 Extrait UNIQUEMENT la liste du matériel/contenu de la boîte.
 Retourne UNIQUEMENT un JSON avec ce format exact :
 {
@@ -211,29 +197,30 @@ Retourne UNIQUEMENT un JSON avec ce format exact :
 }
 
 Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
-              }
-            ]
-          }
-        ]
-      })
-    });
+                }
+              ]
+            }
+          ]
+        })
+      });
 
-    const data = await response.json();
-    const text = data.content[0].text;
-    const cleaned = text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleaned);
-    
-    setNewGameItems(parsed.items || []);
-    setIsProcessingImage(false);
-    alert('✅ Contenu détecté ! Vérifiez et modifiez si nécessaire.');
-  } catch (error) {
-    console.error('Erreur OCR:', error);
-    alert('❌ Erreur lors de l\'analyse. Veuillez réessayer.');
-    setIsProcessingImage(false);
-  }
-};
+      const data = await response.json();
+      const text = data.content[0].text;
+      const cleaned = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+      
+      setNewGameItems(parsed.items || []);
+      setIsProcessingImage(false);
+      alert('✅ Contenu détecté ! Vérifiez et modifiez si nécessaire.');
+    } catch (error) {
+      console.error('Erreur OCR:', error);
+      alert('❌ Erreur lors de l\'analyse. Veuillez réessayer.');
+      setIsProcessingImage(false);
+    }
+  };
 
-  const createGame = () => {
+  // Créer un nouveau jeu dans Supabase
+  const createGame = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (!newGameName.trim() || validItems.length === 0) {
@@ -241,17 +228,28 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       return;
     }
 
-    const newGame = {
-      id: Date.now(),
-      name: newGameName.trim(),
-      search_name: newGameName.toLowerCase().trim(),
-      items: validItems
-    };
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .insert([{
+          name: newGameName.trim(),
+          search_name: newGameName.toLowerCase().trim(),
+          items: validItems,
+          created_by: username || 'anonymous'
+        }])
+        .select()
+        .single();
 
-    setAllGames([...allGames, newGame]);
-    alert(`✅ Le jeu "${newGameName}" a été créé et est maintenant disponible pour tous !`);
-    closeCreateModal();
-    selectGame(newGame);
+      if (error) throw error;
+
+      setAllGames([data, ...allGames]);
+      alert(`✅ Le jeu "${newGameName}" a été créé et est maintenant visible pour tous !`);
+      closeCreateModal();
+      selectGame(data);
+    } catch (error) {
+      console.error('Erreur création:', error);
+      alert('❌ Erreur lors de la création du jeu');
+    }
   };
 
   // Édition de jeu existant
@@ -265,7 +263,8 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
     setNewGameItems([]);
   };
 
-  const saveEdit = () => {
+  // Sauvegarder les modifications dans Supabase
+  const saveEdit = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (validItems.length === 0) {
@@ -273,23 +272,41 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       return;
     }
 
-    const updatedGames = allGames.map(game => 
-      game.id === selectedGame.id 
-        ? { ...game, items: validItems }
-        : game
-    );
+    try {
+      const { error } = await supabase
+        .from('games')
+        .update({ 
+          items: validItems,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedGame.id);
 
-    setAllGames(updatedGames);
-    setSelectedGame({ ...selectedGame, items: validItems });
-    setEditMode(false);
-    setCheckedItems({});
-    alert('✅ Modifications enregistrées !');
+      if (error) throw error;
+
+      const updatedGames = allGames.map(game => 
+        game.id === selectedGame.id 
+          ? { ...game, items: validItems }
+          : game
+      );
+
+      setAllGames(updatedGames);
+      setSelectedGame({ ...selectedGame, items: validItems });
+      setEditMode(false);
+      setCheckedItems({});
+      alert('✅ Modifications enregistrées et visibles par tous !');
+    } catch (error) {
+      console.error('Erreur modification:', error);
+      alert('❌ Erreur lors de la modification');
+    }
   };
 
   if (loading) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center transition-colors duration-300`}>
-        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
+        <div className="text-center">
+          <div className="animate-spin inline-block w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full mb-4"></div>
+          <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement des jeux...</div>
+        </div>
       </div>
     );
   }
@@ -651,151 +668,3 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                     darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
                   }`}
                 >
-                  <X size={24} />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
-                    Nom du jeu *
-                  </label>
-                  <input
-                    type="text"
-                    value={newGameName}
-                    onChange={(e) => setNewGameName(e.target.value)}
-                    placeholder="Ex: Monopoly, Uno..."
-                    className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none transition-colors duration-300 ${
-                      darkMode 
-                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                        : 'bg-white border-gray-200 text-gray-900'
-                    }`}
-                  />
-                </div>
-
-                <div className={`p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30 border-2 border-blue-700' : 'bg-blue-50 border-2 border-blue-200'}`}>
-                  <p className={`text-sm font-semibold ${darkMode ? 'text-blue-300' : 'text-blue-800'} mb-3 flex items-center gap-2`}>
-                    <Camera size={18} />
-                    Scanner la règle du jeu (OCR)
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => cameraInputRef.current?.click()}
-                      className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
-                    >
-                      <Camera size={18} />
-                      Prendre une photo
-                    </button>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 bg-purple-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
-                    >
-                      <Upload size={18} />
-                      Choisir un fichier
-                    </button>
-                  </div>
-                  
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handleImageCapture}
-                    className="hidden"
-                  />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageCapture}
-                    className="hidden"
-                  />
-                  
-                  {isProcessingImage && (
-                    <div className="mt-3 text-center">
-                      <div className="animate-spin inline-block w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-                      <p className={`text-sm mt-2 ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
-                        Analyse de l'image en cours...
-                      </p>
-                    </div>
-                  )}
-                  
-                  {capturedImage && (
-                    <div className="mt-3">
-                      <img src={capturedImage} alt="Règle capturée" className="w-full rounded-lg border-2 border-blue-500" />
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
-                    Contenu du jeu *
-                  </label>
-                  
-                  <div className="space-y-3">
-                    {newGameItems.map((item, index) => (
-                      <div key={index} className="flex gap-2">
-                        <input
-                          type="text"
-                          value={item}
-                          onChange={(e) => updateItemField(index, e.target.value)}
-                          placeholder={`Élément ${index + 1}`}
-                          className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none transition-colors duration-300 ${
-                            darkMode 
-                              ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                              : 'bg-white border-gray-200 text-gray-900'
-                          }`}
-                        />
-                        <button
-                          onClick={() => removeItemField(index)}
-                          disabled={newGameItems.length <= 1}
-                          className={`p-2 rounded-lg transition ${
-                            newGameItems.length <= 1
-                              ? 'opacity-30 cursor-not-allowed'
-                              : darkMode
-                                ? 'bg-red-600 hover:bg-red-700 text-white'
-                                : 'bg-red-500 hover:bg-red-600 text-white'
-                          }`}
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={addItemField}
-                    className="w-full mt-3 bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
-                  >
-                    <Plus size={18} />
-                    Ajouter un élément
-                  </button>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={createGame}
-                    className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2"
-                  >
-                    <Check size={20} />
-                    Créer le jeu
-                  </button>
-                  <button
-                    onClick={closeCreateModal}
-                    className={`flex-1 py-3 rounded-xl font-bold transition ${
-                      darkMode 
-                        ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Annuler
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
