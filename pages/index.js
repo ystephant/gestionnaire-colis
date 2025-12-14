@@ -144,7 +144,6 @@ export default function MenuPrincipal() {
             </p>
           </form>
 
-          {/* Toggle Dark Mode sur page de connexion */}
           <div className="mt-6 flex justify-center">
             <button
               onClick={toggleDarkMode}
@@ -208,7 +207,6 @@ export default function MenuPrincipal() {
             </div>
             
             <div className="flex items-center gap-2">
-              {/* Toggle Dark Mode */}
               <button
                 onClick={toggleDarkMode}
                 className={`p-3 rounded-xl transition-all duration-300 ${
@@ -280,8 +278,8 @@ export default function MenuPrincipal() {
           </div>
         )}
 
-        {/* Cartes des applications */}
-        <div className="grid md:grid-cols-3 gap-6">
+        {/* Cartes des applications - Grille 2x2 */}
+        <div className="grid md:grid-cols-2 gap-6">
           {/* Gestionnaire de Colis */}
           <div 
             onClick={() => router.push('/colis')}
@@ -347,6 +345,31 @@ export default function MenuPrincipal() {
               <div className="flex gap-2 flex-wrap justify-center text-sm">
                 <span className="bg-pink-100 text-pink-700 px-3 py-1 rounded-full">💬 Messages</span>
                 <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full">🚀 Efficace</span>
+              </div>
+            </div>
+          </div>
+
+          {/* NOUVEAU : Inventaire de Jeux */}
+          <div 
+            onClick={() => router.push('/inventaire')}
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="bg-gradient-to-br from-orange-500 to-amber-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                  <polyline points="12 12 12 12.01"></polyline>
+                  <polyline points="12 6 12 6.01"></polyline>
+                  <polyline points="12 18 12 18.01"></polyline>
+                </svg>
+              </div>
+              <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Inventaire de Jeux</h2>
+              <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                Vérifiez le contenu de vos jeux de société
+              </p>
+              <div className="flex gap-2 flex-wrap justify-center text-sm">
+                <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full">📦 Inventaire</span>
+                <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full">✅ Vérification</span>
               </div>
             </div>
           </div>
