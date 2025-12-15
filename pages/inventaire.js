@@ -1,25 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Upload, Trash2 } from 'lucide-react';
-import { getSupabase } from '@/lib/supabase';
-
-const supabase = getSupabase();
-
-// Hooks pour theme et router
-const useTheme = () => {
-  const [darkMode, setDarkMode] = useState(false);
-  return { darkMode, toggleDarkMode: () => setDarkMode(!darkMode) };
-};
-
-const useRouter = () => ({
-  push: (path) => console.log('Navigate to:', path),
-  pathname: '/inventaire'
-});
+import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Upload, Trash2, Grid } from 'lucide-react';
 
 export default function InventaireJeux() {
-  const router = useRouter();
-  const { darkMode, toggleDarkMode } = useTheme();
+  const [darkMode, setDarkMode] = useState(false);
   const [username] = useState('demo_user');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
@@ -27,9 +12,24 @@ export default function InventaireJeux() {
   const [missingItems, setMissingItems] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
-  const [allGames, setAllGames] = useState([]);
+  const [allGames, setAllGames] = useState([
+    {
+      id: 1,
+      name: "Detective Club",
+      items: ["52 cartes illustrées", "6 cartes indice", "12 jetons vote", "1 livret de règles"],
+      itemsWithImages: [
+        { id: "card_1", name: "Carte 1 - Le Chat", image: null },
+        { id: "card_2", name: "Carte 2 - La Lune", image: null },
+        { id: "card_3", name: "Carte 3 - Le Château", image: null }
+      ]
+    },
+    {
+      id: 2,
+      name: "Unlock! Mystery Adventures",
+      items: ["60 cartes", "1 livret", "10 jetons"]
+    }
+  ]);
   
-  // États pour création/édition
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [newGameName, setNewGameName] = useState('');
@@ -38,124 +38,18 @@ export default function InventaireJeux() {
   const [capturedImage, setCapturedImage] = useState(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  
+  // Gestion des items avec images
+  const [showImageMode, setShowImageMode] = useState(false);
+  const [itemsWithImages, setItemsWithImages] = useState([]);
+  const [editingImageMode, setEditingImageMode] = useState(false);
+  const itemImageInputRef = useRef(null);
+  const [currentEditingItemId, setCurrentEditingItemId] = useState(null);
 
-  // État pour inventaire actif
-  const [activeInventoryId, setActiveInventoryId] = useState(null);
-  const [syncStatus, setSyncStatus] = useState('');
-
-  // Charger les jeux au démarrage
-  useEffect(() => {
-    fetchGames();
-  }, []);
-
-  // Configurer la synchronisation temps réel quand un jeu est sélectionné
-  useEffect(() => {
-    if (selectedGame && activeInventoryId) {
-      setupRealtimeSync();
-      return () => {
-        if (window.inventoryChannel) {
-          supabase.removeChannel(window.inventoryChannel);
-        }
-      };
-    }
-  }, [activeInventoryId]);
-
-  // Récupérer tous les jeux depuis Supabase
-  const fetchGames = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setAllGames(data || []);
-    } catch (error) {
-      console.error('Erreur chargement:', error);
-      alert('❌ Erreur lors du chargement des jeux');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Configurer la synchronisation temps réel
-  const setupRealtimeSync = () => {
-    const channel = supabase
-      .channel(`inventory-${username}-${selectedGame.id}`)
-      .on('postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'game_inventories',
-          filter: `user_id=eq.${username},game_id=eq.${selectedGame.id}`
-        },
-        (payload) => {
-          console.log('🔄 Changement temps réel:', payload);
-          
-          if (payload.eventType === 'UPDATE') {
-            setCheckedItems(payload.new.checked_items || {});
-            setMissingItems(payload.new.missing_items || '');
-            setSyncStatus('✅ Synchronisé');
-            setTimeout(() => setSyncStatus(''), 2000);
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Synchronisation temps réel activée');
-          setSyncStatus('🔄 Synchronisé en temps réel');
-        }
-      });
-
-    window.inventoryChannel = channel;
-  };
-
-  // Charger ou créer l'inventaire actif
-  const loadActiveInventory = async (game) => {
-    try {
-      // Chercher un inventaire existant
-      const { data, error } = await supabase
-        .from('game_inventories')
-        .select('*')
-        .eq('user_id', username)
-        .eq('game_id', game.id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data) {
-        // Inventaire existant
-        setActiveInventoryId(data.id);
-        setCheckedItems(data.checked_items || {});
-        setMissingItems(data.missing_items || '');
-      } else {
-        // Créer un nouvel inventaire
-        const { data: newInventory, error: createError } = await supabase
-          .from('game_inventories')
-          .insert([{
-            user_id: username,
-            game_id: game.id,
-            checked_items: {},
-            missing_items: ''
-          }])
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        setActiveInventoryId(newInventory.id);
-      }
-    } catch (error) {
-      console.error('Erreur chargement inventaire:', error);
-    }
-  };
-
-  // Recherche
   useEffect(() => {
     if (searchQuery.length > 1) {
       const results = allGames.filter(game =>
-        game.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        game.search_name.toLowerCase().includes(searchQuery.toLowerCase())
+        game.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setSearchResults(results);
       setShowResults(true);
@@ -165,86 +59,41 @@ export default function InventaireJeux() {
     }
   }, [searchQuery, allGames]);
 
-  const selectGame = async (game) => {
+  const selectGame = (game) => {
     setSelectedGame(game);
     setSearchQuery('');
     setShowResults(false);
     setCheckedItems({});
     setMissingItems('');
     setEditMode(false);
-    await loadActiveInventory(game);
+    setShowImageMode(false);
+    setEditingImageMode(false);
+    
+    if (game.itemsWithImages && game.itemsWithImages.length > 0) {
+      setItemsWithImages(game.itemsWithImages);
+    } else {
+      setItemsWithImages([]);
+    }
   };
 
-  const toggleItem = async (index) => {
-    const newCheckedItems = {
+  const toggleItem = (index) => {
+    setCheckedItems({
       ...checkedItems,
       [index]: !checkedItems[index]
-    };
-    
-    setCheckedItems(newCheckedItems);
-
-    // Sauvegarder en temps réel dans Supabase
-    if (activeInventoryId) {
-      try {
-        const { error } = await supabase
-          .from('game_inventories')
-          .update({ 
-            checked_items: newCheckedItems,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', activeInventoryId);
-
-        if (error) throw error;
-      } catch (error) {
-        console.error('Erreur sauvegarde:', error);
-      }
-    }
+    });
   };
 
-  const updateMissingItems = async (text) => {
-    setMissingItems(text);
-
-    // Sauvegarder en temps réel dans Supabase
-    if (activeInventoryId) {
-      try {
-        const { error } = await supabase
-          .from('game_inventories')
-          .update({ 
-            missing_items: text,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', activeInventoryId);
-
-        if (error) throw error;
-      } catch (error) {
-        console.error('Erreur sauvegarde:', error);
-      }
-    }
+  const toggleImageItem = (itemId) => {
+    setCheckedItems({
+      ...checkedItems,
+      [itemId]: !checkedItems[itemId]
+    });
   };
 
-  const resetInventory = async () => {
+  const resetInventory = () => {
     if (!confirm('Réinitialiser l\'inventaire de ce jeu ?')) return;
-    
-    const emptyState = {};
-    setCheckedItems(emptyState);
+    setCheckedItems({});
     setMissingItems('');
-
-    if (activeInventoryId) {
-      try {
-        const { error } = await supabase
-          .from('game_inventories')
-          .update({ 
-            checked_items: emptyState,
-            missing_items: '',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', activeInventoryId);
-
-        if (error) throw error;
-      } catch (error) {
-        console.error('Erreur réinitialisation:', error);
-      }
-    }
   };
 
   const changeGame = () => {
@@ -253,22 +102,18 @@ export default function InventaireJeux() {
     setMissingItems('');
     setSearchQuery('');
     setEditMode(false);
-    setActiveInventoryId(null);
-    setSyncStatus('');
-    
-    if (window.inventoryChannel) {
-      supabase.removeChannel(window.inventoryChannel);
-    }
+    setShowImageMode(false);
+    setItemsWithImages([]);
+    setEditingImageMode(false);
   };
 
   const getProgress = () => {
     if (!selectedGame) return 0;
-    const total = selectedGame.items.length;
+    const total = showImageMode ? itemsWithImages.length : selectedGame.items.length;
     const checked = Object.values(checkedItems).filter(Boolean).length;
     return Math.round((checked / total) * 100);
   };
 
-  // Création de jeu
   const openCreateModal = () => {
     setNewGameName(searchQuery);
     setNewGameItems(['']);
@@ -298,21 +143,19 @@ export default function InventaireJeux() {
     setNewGameItems(updated);
   };
 
-  // Capture photo et OCR
+  // OCR avec API Claude
   const handleImageCapture = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setIsProcessingImage(true);
     
-    // Prévisualisation
     const reader = new FileReader();
     reader.onload = (event) => {
       setCapturedImage(event.target.result);
     };
     reader.readAsDataURL(file);
 
-    // Conversion en base64
     const base64Data = await new Promise((resolve) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result.split(",")[1]);
@@ -320,7 +163,6 @@ export default function InventaireJeux() {
     });
 
     try {
-      // Appel API Claude avec vision
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -369,13 +211,93 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       alert('✅ Contenu détecté ! Vérifiez et modifiez si nécessaire.');
     } catch (error) {
       console.error('Erreur OCR:', error);
-      alert('❌ Erreur lors de l\'analyse. Veuillez réessayer.');
+      alert('❌ Erreur lors de l\'analyse: ' + error.message);
       setIsProcessingImage(false);
     }
   };
 
-  // Créer un nouveau jeu dans Supabase
-  const createGame = async () => {
+  // Capturer une photo pour un item spécifique
+  const handleItemImageCapture = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !currentEditingItemId) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const updatedItems = itemsWithImages.map(item => 
+        item.id === currentEditingItemId 
+          ? { ...item, image: event.target.result }
+          : item
+      );
+      setItemsWithImages(updatedItems);
+      setCurrentEditingItemId(null);
+      alert('✅ Photo ajoutée !');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openImageCapture = (itemId) => {
+    setCurrentEditingItemId(itemId);
+    itemImageInputRef.current?.click();
+  };
+
+  // Ajouter un nouvel item avec image
+  const addImageItem = () => {
+    const newItem = {
+      id: `card_${Date.now()}`,
+      name: '',
+      image: null
+    };
+    setItemsWithImages([...itemsWithImages, newItem]);
+  };
+
+  const updateImageItemName = (itemId, name) => {
+    const updated = itemsWithImages.map(item =>
+      item.id === itemId ? { ...item, name } : item
+    );
+    setItemsWithImages(updated);
+  };
+
+  const removeImageItem = (itemId) => {
+    setItemsWithImages(itemsWithImages.filter(item => item.id !== itemId));
+  };
+
+  const startEditImageMode = () => {
+    setEditingImageMode(true);
+  };
+
+  const cancelEditImageMode = () => {
+    setEditingImageMode(false);
+    if (selectedGame.itemsWithImages) {
+      setItemsWithImages(selectedGame.itemsWithImages);
+    }
+  };
+
+  // Sauvegarder le mode image
+  const saveImageMode = () => {
+    const validItems = itemsWithImages.filter(item => item.name.trim() !== '');
+    
+    if (validItems.length === 0) {
+      alert('Ajoutez au moins un élément');
+      return;
+    }
+
+    const updatedGame = {
+      ...selectedGame,
+      itemsWithImages: validItems
+    };
+
+    const updatedGames = allGames.map(game =>
+      game.id === selectedGame.id ? updatedGame : game
+    );
+
+    setAllGames(updatedGames);
+    setSelectedGame(updatedGame);
+    setEditingImageMode(false);
+    setCheckedItems({});
+    alert('✅ Inventaire détaillé enregistré !');
+  };
+
+  const createGame = () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (!newGameName.trim() || validItems.length === 0) {
@@ -383,31 +305,19 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('games')
-        .insert([{
-          name: newGameName.trim(),
-          search_name: newGameName.toLowerCase().trim(),
-          items: validItems,
-          created_by: username || 'anonymous'
-        }])
-        .select()
-        .single();
+    const newGame = {
+      id: Date.now(),
+      name: newGameName.trim(),
+      items: validItems,
+      itemsWithImages: []
+    };
 
-      if (error) throw error;
-
-      setAllGames([data, ...allGames]);
-      alert(`✅ Le jeu "${newGameName}" a été créé et est maintenant visible pour tous !`);
-      closeCreateModal();
-      selectGame(data);
-    } catch (error) {
-      console.error('Erreur création:', error);
-      alert('❌ Erreur lors de la création du jeu');
-    }
+    setAllGames([newGame, ...allGames]);
+    alert(`✅ Le jeu "${newGameName}" a été créé !`);
+    closeCreateModal();
+    selectGame(newGame);
   };
 
-  // Édition de jeu existant
   const startEditMode = () => {
     setNewGameItems([...selectedGame.items]);
     setEditMode(true);
@@ -418,8 +328,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
     setNewGameItems([]);
   };
 
-  // Sauvegarder les modifications dans Supabase
-  const saveEdit = async () => {
+  const saveEdit = () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (validItems.length === 0) {
@@ -427,62 +336,40 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from('games')
-        .update({ 
-          items: validItems,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedGame.id);
+    const updatedGame = { ...selectedGame, items: validItems };
+    const updatedGames = allGames.map(game => 
+      game.id === selectedGame.id ? updatedGame : game
+    );
 
-      if (error) throw error;
-
-      const updatedGames = allGames.map(game => 
-        game.id === selectedGame.id 
-          ? { ...game, items: validItems }
-          : game
-      );
-
-      setAllGames(updatedGames);
-      setSelectedGame({ ...selectedGame, items: validItems });
-      setEditMode(false);
-      setCheckedItems({});
-      alert('✅ Modifications enregistrées et visibles par tous !');
-    } catch (error) {
-      console.error('Erreur modification:', error);
-      alert('❌ Erreur lors de la modification');
-    }
+    setAllGames(updatedGames);
+    setSelectedGame(updatedGame);
+    setEditMode(false);
+    setCheckedItems({});
+    alert('✅ Modifications enregistrées !');
   };
 
   if (loading) {
     return (
-      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center transition-colors duration-300`}>
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center`}>
         <div className="text-center">
           <div className="animate-spin inline-block w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full mb-4"></div>
-          <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement des jeux...</div>
+          <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-amber-50 to-orange-100'} py-8 px-4 transition-colors duration-300`}>
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-amber-50 to-orange-100'} py-8 px-4`}>
       <div className="max-w-4xl mx-auto">
-        {/* Indicateur de synchronisation */}
-        {syncStatus && (
-          <div className="fixed top-4 right-4 bg-green-100 text-green-800 px-4 py-2 rounded-lg shadow-lg z-50 text-sm">
-            {syncStatus}
-          </div>
-        )}
-
         {/* Header */}
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => router.push('/')}
+                onClick={changeGame}
                 className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
+                title="Retour au menu"
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -498,37 +385,21 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
             </div>
 
             <button
-              onClick={toggleDarkMode}
+              onClick={() => setDarkMode(!darkMode)}
               className={`p-3 rounded-xl transition-all duration-300 ${
                 darkMode 
                   ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
                   : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
               }`}
             >
-              {darkMode ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="5"/>
-                  <line x1="12" y1="1" x2="12" y2="3"/>
-                  <line x1="12" y1="21" x2="12" y2="23"/>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                  <line x1="1" y1="12" x2="3" y2="12"/>
-                  <line x1="21" y1="12" x2="23" y2="12"/>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                </svg>
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                </svg>
-              )}
+              {darkMode ? '☀️' : '🌙'}
             </button>
           </div>
         </div>
 
         {/* Recherche */}
         {!selectedGame && (
-          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
             <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
               <Search size={24} className="text-orange-600" />
               Rechercher un jeu
@@ -540,7 +411,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Tapez le nom d'un jeu..."
-                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-lg transition-colors duration-300 ${
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-lg ${
                   darkMode 
                     ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
                     : 'bg-white border-gray-200 text-gray-900'
@@ -596,7 +467,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
 
             <div className={`mt-6 p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-orange-50'}`}>
               <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-3`}>
-                💡 <strong>{allGames.length} jeux disponibles</strong> dans la base de données
+                💡 <strong>{allGames.length} jeux disponibles</strong> dans votre collection
               </p>
               <button
                 onClick={openCreateModal}
@@ -609,20 +480,38 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         )}
 
-        {/* Jeu sélectionné */}
-        {selectedGame && !editMode && (
+        {/* SUITE DANS PARTIE 2 */}
+      </div>
+    </div>
+  );
+}
+{/* Jeu sélectionné - MODE NORMAL */}
+        {selectedGame && !editMode && !editingImageMode && (
           <div className="space-y-6">
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
                   <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-2`}>
                     {selectedGame.name}
                   </h2>
                   <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {selectedGame.items.length} éléments à vérifier
+                    {showImageMode ? `${itemsWithImages.length} éléments détaillés` : `${selectedGame.items.length} éléments à vérifier`}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  {itemsWithImages.length > 0 && (
+                    <button
+                      onClick={() => setShowImageMode(!showImageMode)}
+                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                        showImageMode
+                          ? darkMode ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-purple-500 text-white hover:bg-purple-600'
+                          : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <Grid size={18} />
+                      {showImageMode ? 'Mode liste' : 'Mode détaillé'}
+                    </button>
+                  )}
                   <button
                     onClick={startEditMode}
                     className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
@@ -632,8 +521,21 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                     }`}
                   >
                     <Edit size={18} />
-                    Éditer
+                    Éditer liste
                   </button>
+                  {itemsWithImages.length > 0 && (
+                    <button
+                      onClick={startEditImageMode}
+                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                        darkMode 
+                          ? 'bg-purple-600 text-white hover:bg-purple-700' 
+                          : 'bg-purple-500 text-white hover:bg-purple-600'
+                      }`}
+                    >
+                      <Camera size={18} />
+                      Gérer photos
+                    </button>
+                  )}
                   <button
                     onClick={changeGame}
                     className={`px-4 py-2 rounded-lg font-medium transition ${
@@ -673,44 +575,103 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
               </button>
             </div>
 
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
-              <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
-                Contenu de la boîte
-              </h3>
-              
-              <div className="space-y-2">
-                {selectedGame.items.map((item, index) => (
-                  <label
-                    key={index}
-                    className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition ${
-                      checkedItems[index]
-                        ? darkMode
-                          ? 'bg-green-900 bg-opacity-30 border-2 border-green-700'
-                          : 'bg-green-50 border-2 border-green-300'
-                        : darkMode
-                          ? 'bg-gray-700 hover:bg-gray-650 border-2 border-gray-600'
-                          : 'bg-gray-50 hover:bg-gray-100 border-2 border-gray-200'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checkedItems[index] || false}
-                      onChange={() => toggleItem(index)}
-                      className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 mt-0.5 flex-shrink-0"
-                    />
-                    <span className={`text-sm ${
-                      checkedItems[index]
-                        ? darkMode ? 'text-green-300 line-through' : 'text-green-700 line-through'
-                        : darkMode ? 'text-gray-200' : 'text-gray-800'
-                    }`}>
-                      {item}
-                    </span>
-                  </label>
-                ))}
+            {/* Mode liste classique */}
+            {!showImageMode && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+                <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
+                  Contenu de la boîte
+                </h3>
+                
+                <div className="space-y-2">
+                  {selectedGame.items.map((item, index) => (
+                    <label
+                      key={index}
+                      className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition ${
+                        checkedItems[index]
+                          ? darkMode
+                            ? 'bg-green-900 bg-opacity-30 border-2 border-green-700'
+                            : 'bg-green-50 border-2 border-green-300'
+                          : darkMode
+                            ? 'bg-gray-700 hover:bg-gray-650 border-2 border-gray-600'
+                            : 'bg-gray-50 hover:bg-gray-100 border-2 border-gray-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checkedItems[index] || false}
+                        onChange={() => toggleItem(index)}
+                        className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 mt-0.5 flex-shrink-0"
+                      />
+                      <span className={`text-sm ${
+                        checkedItems[index]
+                          ? darkMode ? 'text-green-300 line-through' : 'text-green-700 line-through'
+                          : darkMode ? 'text-gray-200' : 'text-gray-800'
+                      }`}>
+                        {item}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
+            {/* Mode grille avec images */}
+            {showImageMode && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+                <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
+                  <Grid size={20} className="text-purple-500" />
+                  Inventaire détaillé
+                </h3>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {itemsWithImages.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => toggleImageItem(item.id)}
+                      className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
+                        checkedItems[item.id]
+                          ? 'border-green-500 opacity-60'
+                          : darkMode
+                            ? 'border-gray-600 hover:border-orange-500'
+                            : 'border-gray-200 hover:border-orange-500'
+                      }`}
+                    >
+                      {item.image ? (
+                        <img 
+                          src={item.image} 
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className={`w-full h-full flex items-center justify-center ${
+                          darkMode ? 'bg-gray-700' : 'bg-gray-100'
+                        }`}>
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-gray-500' : 'text-gray-400'}>
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                          </svg>
+                        </div>
+                      )}
+                      
+                      {checkedItems[item.id] && (
+                        <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center">
+                          <Check size={48} className="text-white" />
+                        </div>
+                      )}
+                      
+                      <div className={`absolute bottom-0 left-0 right-0 p-2 text-xs font-medium text-center ${
+                        darkMode ? 'bg-gray-900 bg-opacity-80 text-gray-100' : 'bg-white bg-opacity-90 text-gray-800'
+                      }`}>
+                        {item.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
               <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
                 <AlertCircle size={20} className="text-red-500" />
                 Éléments manquants
@@ -718,10 +679,10 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
               
               <textarea
                 value={missingItems}
-                onChange={(e) => updateMissingItems(e.target.value)}
+                onChange={(e) => setMissingItems(e.target.value)}
                 placeholder="Notez ici les éléments manquants ou endommagés..."
                 rows="6"
-                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none transition-colors duration-300 ${
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none ${
                   darkMode 
                     ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
                     : 'bg-white border-gray-200 text-gray-900'
@@ -744,9 +705,9 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         )}
 
-        {/* Mode édition */}
+        {/* Mode édition liste */}
         {selectedGame && editMode && (
-          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
             <div className="flex items-center justify-between mb-6">
               <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
                 <Edit size={24} className="text-blue-500" />
@@ -782,7 +743,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                     value={item}
                     onChange={(e) => updateItemField(index, e.target.value)}
                     placeholder={`Élément ${index + 1}`}
-                    className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-blue-500 focus:outline-none transition-colors duration-300 ${
+                    className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-blue-500 focus:outline-none ${
                       darkMode 
                         ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
                         : 'bg-white border-gray-200 text-gray-900'
@@ -811,6 +772,102 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
             >
               <Plus size={18} />
               Ajouter un élément
+            </button>
+          </div>
+        )}
+
+        {/* Mode édition images détaillées */}
+        {selectedGame && editingImageMode && (
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
+                <Camera size={24} className="text-purple-500" />
+                Gérer l'inventaire détaillé : {selectedGame.name}
+              </h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={saveImageMode}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition flex items-center gap-2"
+                >
+                  <Check size={18} />
+                  Sauvegarder
+                </button>
+                <button
+                  onClick={cancelEditImageMode}
+                  className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 ${
+                    darkMode 
+                      ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  <X size={18} />
+                  Annuler
+                </button>
+              </div>
+            </div>
+
+            <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+              <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
+                💡 Ajoutez chaque carte/élément unique avec une photo pour faciliter l'inventaire
+              </p>
+            </div>
+
+            <input
+              ref={itemImageInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleItemImageCapture}
+              className="hidden"
+            />
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
+              {itemsWithImages.map((item) => (
+                <div key={item.id} className={`border-2 rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                  <div 
+                    onClick={() => openImageCapture(item.id)}
+                    className={`aspect-square cursor-pointer relative ${
+                      darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'
+                    } transition`}
+                  >
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Camera size={32} className={darkMode ? 'text-gray-500' : 'text-gray-400'} />
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeImageItem(item.id);
+                        }}
+                        className="bg-red-600 text-white p-1 rounded-full hover:bg-red-700 transition"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={item.name}
+                    onChange={(e) => updateImageItemName(item.id, e.target.value)}
+                    placeholder="Nom de la carte"
+                    className={`w-full px-2 py-2 text-xs focus:outline-none ${
+                      darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'
+                    }`}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={addImageItem}
+              className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
+            >
+              <Plus size={20} />
+              Ajouter une carte/élément
             </button>
           </div>
         )}
@@ -844,7 +901,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                     value={newGameName}
                     onChange={(e) => setNewGameName(e.target.value)}
                     placeholder="Ex: Monopoly, Uno..."
-                    className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none transition-colors duration-300 ${
+                    className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none ${
                       darkMode 
                         ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
                         : 'bg-white border-gray-200 text-gray-900'
@@ -921,7 +978,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                           value={item}
                           onChange={(e) => updateItemField(index, e.target.value)}
                           placeholder={`Élément ${index + 1}`}
-                          className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none transition-colors duration-300 ${
+                          className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none ${
                             darkMode 
                               ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
                               : 'bg-white border-gray-200 text-gray-900'
@@ -976,7 +1033,3 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
             </div>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
