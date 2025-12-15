@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Upload, Trash2 } from 'lucide-react';
-import { getSupabase } from '@/lib/supabase'; // ✅ Utilisation de ton supabase.js existant
+import { getSupabase } from '@/lib/supabase';
 
-const supabase = getSupabase(); // ✅ Instance unique
+const supabase = getSupabase();
 
 // Hooks pour theme et router
 const useTheme = () => {
@@ -39,10 +39,26 @@ export default function InventaireJeux() {
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
+  // État pour inventaire actif
+  const [activeInventoryId, setActiveInventoryId] = useState(null);
+  const [syncStatus, setSyncStatus] = useState('');
+
   // Charger les jeux au démarrage
   useEffect(() => {
     fetchGames();
   }, []);
+
+  // Configurer la synchronisation temps réel quand un jeu est sélectionné
+  useEffect(() => {
+    if (selectedGame && activeInventoryId) {
+      setupRealtimeSync();
+      return () => {
+        if (window.inventoryChannel) {
+          supabase.removeChannel(window.inventoryChannel);
+        }
+      };
+    }
+  }, [activeInventoryId]);
 
   // Récupérer tous les jeux depuis Supabase
   const fetchGames = async () => {
@@ -63,6 +79,77 @@ export default function InventaireJeux() {
     }
   };
 
+  // Configurer la synchronisation temps réel
+  const setupRealtimeSync = () => {
+    const channel = supabase
+      .channel(`inventory-${username}-${selectedGame.id}`)
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'game_inventories',
+          filter: `user_id=eq.${username},game_id=eq.${selectedGame.id}`
+        },
+        (payload) => {
+          console.log('🔄 Changement temps réel:', payload);
+          
+          if (payload.eventType === 'UPDATE') {
+            setCheckedItems(payload.new.checked_items || {});
+            setMissingItems(payload.new.missing_items || '');
+            setSyncStatus('✅ Synchronisé');
+            setTimeout(() => setSyncStatus(''), 2000);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Synchronisation temps réel activée');
+          setSyncStatus('🔄 Synchronisé en temps réel');
+        }
+      });
+
+    window.inventoryChannel = channel;
+  };
+
+  // Charger ou créer l'inventaire actif
+  const loadActiveInventory = async (game) => {
+    try {
+      // Chercher un inventaire existant
+      const { data, error } = await supabase
+        .from('game_inventories')
+        .select('*')
+        .eq('user_id', username)
+        .eq('game_id', game.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (data) {
+        // Inventaire existant
+        setActiveInventoryId(data.id);
+        setCheckedItems(data.checked_items || {});
+        setMissingItems(data.missing_items || '');
+      } else {
+        // Créer un nouvel inventaire
+        const { data: newInventory, error: createError } = await supabase
+          .from('game_inventories')
+          .insert([{
+            user_id: username,
+            game_id: game.id,
+            checked_items: {},
+            missing_items: ''
+          }])
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        setActiveInventoryId(newInventory.id);
+      }
+    } catch (error) {
+      console.error('Erreur chargement inventaire:', error);
+    }
+  };
+
   // Recherche
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -78,26 +165,86 @@ export default function InventaireJeux() {
     }
   }, [searchQuery, allGames]);
 
-  const selectGame = (game) => {
+  const selectGame = async (game) => {
     setSelectedGame(game);
     setSearchQuery('');
     setShowResults(false);
     setCheckedItems({});
     setMissingItems('');
     setEditMode(false);
+    await loadActiveInventory(game);
   };
 
-  const toggleItem = (index) => {
-    setCheckedItems(prev => ({
-      ...prev,
-      [index]: !prev[index]
-    }));
+  const toggleItem = async (index) => {
+    const newCheckedItems = {
+      ...checkedItems,
+      [index]: !checkedItems[index]
+    };
+    
+    setCheckedItems(newCheckedItems);
+
+    // Sauvegarder en temps réel dans Supabase
+    if (activeInventoryId) {
+      try {
+        const { error } = await supabase
+          .from('game_inventories')
+          .update({ 
+            checked_items: newCheckedItems,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', activeInventoryId);
+
+        if (error) throw error;
+      } catch (error) {
+        console.error('Erreur sauvegarde:', error);
+      }
+    }
   };
 
-  const resetInventory = () => {
+  const updateMissingItems = async (text) => {
+    setMissingItems(text);
+
+    // Sauvegarder en temps réel dans Supabase
+    if (activeInventoryId) {
+      try {
+        const { error } = await supabase
+          .from('game_inventories')
+          .update({ 
+            missing_items: text,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', activeInventoryId);
+
+        if (error) throw error;
+      } catch (error) {
+        console.error('Erreur sauvegarde:', error);
+      }
+    }
+  };
+
+  const resetInventory = async () => {
     if (!confirm('Réinitialiser l\'inventaire de ce jeu ?')) return;
-    setCheckedItems({});
+    
+    const emptyState = {};
+    setCheckedItems(emptyState);
     setMissingItems('');
+
+    if (activeInventoryId) {
+      try {
+        const { error } = await supabase
+          .from('game_inventories')
+          .update({ 
+            checked_items: emptyState,
+            missing_items: '',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', activeInventoryId);
+
+        if (error) throw error;
+      } catch (error) {
+        console.error('Erreur réinitialisation:', error);
+      }
+    }
   };
 
   const changeGame = () => {
@@ -106,6 +253,12 @@ export default function InventaireJeux() {
     setMissingItems('');
     setSearchQuery('');
     setEditMode(false);
+    setActiveInventoryId(null);
+    setSyncStatus('');
+    
+    if (window.inventoryChannel) {
+      supabase.removeChannel(window.inventoryChannel);
+    }
   };
 
   const getProgress = () => {
@@ -316,6 +469,13 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-amber-50 to-orange-100'} py-8 px-4 transition-colors duration-300`}>
       <div className="max-w-4xl mx-auto">
+        {/* Indicateur de synchronisation */}
+        {syncStatus && (
+          <div className="fixed top-4 right-4 bg-green-100 text-green-800 px-4 py-2 rounded-lg shadow-lg z-50 text-sm">
+            {syncStatus}
+          </div>
+        )}
+
         {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
@@ -558,7 +718,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
               
               <textarea
                 value={missingItems}
-                onChange={(e) => setMissingItems(e.target.value)}
+                onChange={(e) => updateMissingItems(e.target.value)}
                 placeholder="Notez ici les éléments manquants ou endommagés..."
                 rows="6"
                 className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none transition-colors duration-300 ${
