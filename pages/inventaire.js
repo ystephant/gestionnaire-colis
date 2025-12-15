@@ -480,12 +480,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         )}
 
-        {/* SUITE DANS PARTIE 2 */}
-      </div>
-    </div>
-  );
-}
-{/* Jeu sélectionné - MODE NORMAL */}
+       {/* Jeu sélectionné - MODE NORMAL */}
         {selectedGame && !editMode && !editingImageMode && (
           <div className="space-y-6">
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
@@ -1033,3 +1028,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
