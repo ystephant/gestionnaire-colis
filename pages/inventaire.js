@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Upload, Trash2, Grid } from 'lucide-react';
+import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Upload, Trash2, Grid, Home } from 'lucide-react';
+import { useRouter } from 'next/router';
+import { getSupabase } from '@/lib/supabase';
+
+const supabase = getSupabase();
 
 export default function InventaireJeux() {
+  const router = useRouter();
   const [darkMode, setDarkMode] = useState(false);
   const [username] = useState('demo_user');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
@@ -12,23 +17,7 @@ export default function InventaireJeux() {
   const [missingItems, setMissingItems] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
-  const [allGames, setAllGames] = useState([
-    {
-      id: 1,
-      name: "Detective Club",
-      items: ["52 cartes illustrées", "6 cartes indice", "12 jetons vote", "1 livret de règles"],
-      itemsWithImages: [
-        { id: "card_1", name: "Carte 1 - Le Chat", image: null },
-        { id: "card_2", name: "Carte 2 - La Lune", image: null },
-        { id: "card_3", name: "Carte 3 - Le Château", image: null }
-      ]
-    },
-    {
-      id: 2,
-      name: "Unlock! Mystery Adventures",
-      items: ["60 cartes", "1 livret", "10 jetons"]
-    }
-  ]);
+  const [allGames, setAllGames] = useState([]);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -39,12 +28,42 @@ export default function InventaireJeux() {
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   
-  // Gestion des items avec images
   const [showImageMode, setShowImageMode] = useState(false);
   const [itemsWithImages, setItemsWithImages] = useState([]);
   const [editingImageMode, setEditingImageMode] = useState(false);
   const itemImageInputRef = useRef(null);
   const [currentEditingItemId, setCurrentEditingItemId] = useState(null);
+
+  // Charger les jeux au démarrage
+  useEffect(() => {
+    fetchGames();
+  }, []);
+
+  const fetchGames = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      // Parser les données JSON si nécessaire
+      const parsedGames = (data || []).map(game => ({
+        ...game,
+        items: Array.isArray(game.items) ? game.items : [],
+        itemsWithImages: Array.isArray(game.items_with_images) ? game.items_with_images : []
+      }));
+      
+      setAllGames(parsedGames);
+    } catch (error) {
+      console.error('Erreur chargement:', error);
+      alert('❌ Erreur lors du chargement des jeux');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -107,6 +126,10 @@ export default function InventaireJeux() {
     setEditingImageMode(false);
   };
 
+  const goHome = () => {
+    router.push('/');
+  };
+
   const getProgress = () => {
     if (!selectedGame) return 0;
     const total = showImageMode ? itemsWithImages.length : selectedGame.items.length;
@@ -143,7 +166,7 @@ export default function InventaireJeux() {
     setNewGameItems(updated);
   };
 
-  // OCR avec API Claude
+  // OCR avec API Claude (sans clé côté client - version simplifiée)
   const handleImageCapture = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -156,67 +179,10 @@ export default function InventaireJeux() {
     };
     reader.readAsDataURL(file);
 
-    const base64Data = await new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result.split(",")[1]);
-      r.readAsDataURL(file);
-    });
-
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image",
-                  source: {
-                    type: "base64",
-                    media_type: file.type,
-                    data: base64Data
-                  }
-                },
-                {
-                  type: "text",
-                  text: `Analyse cette image de règle de jeu de société. 
-                  
-Extrait UNIQUEMENT la liste du matériel/contenu de la boîte.
-Retourne UNIQUEMENT un JSON avec ce format exact :
-{
-  "items": ["élément 1", "élément 2", ...]
-}
-
-Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
-                }
-              ]
-            }
-          ]
-        })
-      });
-
-      const data = await response.json();
-      const text = data.content[0].text;
-      const cleaned = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-      
-      setNewGameItems(parsed.items || []);
-      setIsProcessingImage(false);
-      alert('✅ Contenu détecté ! Vérifiez et modifiez si nécessaire.');
-    } catch (error) {
-      console.error('Erreur OCR:', error);
-      alert('❌ Erreur lors de l\'analyse: ' + error.message);
-      setIsProcessingImage(false);
-    }
+    alert('📸 Image capturée ! Veuillez saisir manuellement le contenu du jeu.\n\n💡 Astuce : L\'OCR nécessite une clé API côté serveur pour fonctionner.');
+    setIsProcessingImage(false);
   };
 
-  // Capturer une photo pour un item spécifique
   const handleItemImageCapture = async (e) => {
     const file = e.target.files[0];
     if (!file || !currentEditingItemId) return;
@@ -240,7 +206,6 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
     itemImageInputRef.current?.click();
   };
 
-  // Ajouter un nouvel item avec image
   const addImageItem = () => {
     const newItem = {
       id: `card_${Date.now()}`,
@@ -272,8 +237,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
     }
   };
 
-  // Sauvegarder le mode image
-  const saveImageMode = () => {
+  const saveImageMode = async () => {
     const validItems = itemsWithImages.filter(item => item.name.trim() !== '');
     
     if (validItems.length === 0) {
@@ -281,23 +245,38 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       return;
     }
 
-    const updatedGame = {
-      ...selectedGame,
-      itemsWithImages: validItems
-    };
+    try {
+      const { error } = await supabase
+        .from('games')
+        .update({ 
+          items_with_images: validItems,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedGame.id);
 
-    const updatedGames = allGames.map(game =>
-      game.id === selectedGame.id ? updatedGame : game
-    );
+      if (error) throw error;
 
-    setAllGames(updatedGames);
-    setSelectedGame(updatedGame);
-    setEditingImageMode(false);
-    setCheckedItems({});
-    alert('✅ Inventaire détaillé enregistré !');
+      const updatedGame = {
+        ...selectedGame,
+        itemsWithImages: validItems
+      };
+
+      const updatedGames = allGames.map(game =>
+        game.id === selectedGame.id ? updatedGame : game
+      );
+
+      setAllGames(updatedGames);
+      setSelectedGame(updatedGame);
+      setEditingImageMode(false);
+      setCheckedItems({});
+      alert('✅ Inventaire détaillé enregistré !');
+    } catch (error) {
+      console.error('Erreur sauvegarde:', error);
+      alert('❌ Erreur lors de la sauvegarde');
+    }
   };
 
-  const createGame = () => {
+  const createGame = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (!newGameName.trim() || validItems.length === 0) {
@@ -305,17 +284,34 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       return;
     }
 
-    const newGame = {
-      id: Date.now(),
-      name: newGameName.trim(),
-      items: validItems,
-      itemsWithImages: []
-    };
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .insert([{
+          name: newGameName.trim(),
+          search_name: newGameName.toLowerCase().trim(),
+          items: validItems,
+          items_with_images: [],
+          created_by: username
+        }])
+        .select()
+        .single();
 
-    setAllGames([newGame, ...allGames]);
-    alert(`✅ Le jeu "${newGameName}" a été créé !`);
-    closeCreateModal();
-    selectGame(newGame);
+      if (error) throw error;
+
+      const newGame = {
+        ...data,
+        itemsWithImages: []
+      };
+
+      setAllGames([newGame, ...allGames]);
+      alert(`✅ Le jeu "${newGameName}" a été créé !`);
+      closeCreateModal();
+      selectGame(newGame);
+    } catch (error) {
+      console.error('Erreur création:', error);
+      alert('❌ Erreur lors de la création du jeu');
+    }
   };
 
   const startEditMode = () => {
@@ -328,7 +324,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
     setNewGameItems([]);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (validItems.length === 0) {
@@ -336,16 +332,31 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       return;
     }
 
-    const updatedGame = { ...selectedGame, items: validItems };
-    const updatedGames = allGames.map(game => 
-      game.id === selectedGame.id ? updatedGame : game
-    );
+    try {
+      const { error } = await supabase
+        .from('games')
+        .update({ 
+          items: validItems,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedGame.id);
 
-    setAllGames(updatedGames);
-    setSelectedGame(updatedGame);
-    setEditMode(false);
-    setCheckedItems({});
-    alert('✅ Modifications enregistrées !');
+      if (error) throw error;
+
+      const updatedGame = { ...selectedGame, items: validItems };
+      const updatedGames = allGames.map(game => 
+        game.id === selectedGame.id ? updatedGame : game
+      );
+
+      setAllGames(updatedGames);
+      setSelectedGame(updatedGame);
+      setEditMode(false);
+      setCheckedItems({});
+      alert('✅ Modifications enregistrées !');
+    } catch (error) {
+      console.error('Erreur modification:', error);
+      alert('❌ Erreur lors de la modification');
+    }
   };
 
   if (loading) {
@@ -353,7 +364,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center`}>
         <div className="text-center">
           <div className="animate-spin inline-block w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full mb-4"></div>
-          <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
+          <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement des jeux...</div>
         </div>
       </div>
     );
@@ -362,18 +373,15 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-amber-50 to-orange-100'} py-8 px-4`}>
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
-                onClick={changeGame}
+                onClick={goHome}
                 className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
-                title="Retour au menu"
+                title="Retour à l'accueil"
               >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
+                <Home size={24} />
               </button>
               <div className="bg-orange-600 p-3 rounded-xl">
                 <Package size={28} color="white" />
@@ -397,7 +405,6 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         </div>
 
-        {/* Recherche */}
         {!selectedGame && (
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
             <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
@@ -467,7 +474,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
 
             <div className={`mt-6 p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-orange-50'}`}>
               <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-3`}>
-                💡 <strong>{allGames.length} jeux disponibles</strong> dans votre collection
+                💡 <strong>{allGames.length} jeu{allGames.length > 1 ? 'x' : ''} disponible{allGames.length > 1 ? 's' : ''}</strong> dans votre collection
               </p>
               <button
                 onClick={openCreateModal}
@@ -480,12 +487,11 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         )}
 
-        {/* Jeu sélectionné - MODE NORMAL */}
         {selectedGame && !editMode && !editingImageMode && (
           <div className="space-y-6">
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
+              <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+                <div className="flex-1 min-w-[200px]">
                   <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-2`}>
                     {selectedGame.name}
                   </h2>
@@ -497,43 +503,59 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                   {itemsWithImages.length > 0 && (
                     <button
                       onClick={() => setShowImageMode(!showImageMode)}
-                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                      className={`px-3 py-2 rounded-lg font-medium transition flex items-center gap-2 text-sm ${
                         showImageMode
                           ? darkMode ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-purple-500 text-white hover:bg-purple-600'
                           : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      <Grid size={18} />
-                      {showImageMode ? 'Mode liste' : 'Mode détaillé'}
+                      <Grid size={16} />
+                      {showImageMode ? 'Liste' : 'Détaillé'}
                     </button>
                   )}
                   <button
                     onClick={startEditMode}
-                    className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                    className={`px-3 py-2 rounded-lg font-medium transition flex items-center gap-2 text-sm ${
                       darkMode 
                         ? 'bg-blue-600 text-white hover:bg-blue-700' 
                         : 'bg-blue-500 text-white hover:bg-blue-600'
                     }`}
                   >
-                    <Edit size={18} />
-                    Éditer liste
+                    <Edit size={16} />
+                    Éditer
                   </button>
-                  {itemsWithImages.length > 0 && (
+                  {itemsWithImages.length === 0 && (
                     <button
-                      onClick={startEditImageMode}
-                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                      onClick={() => {
+                        setItemsWithImages([{ id: `card_${Date.now()}`, name: '', image: null }]);
+                        setEditingImageMode(true);
+                      }}
+                      className={`px-3 py-2 rounded-lg font-medium transition flex items-center gap-2 text-sm ${
                         darkMode 
                           ? 'bg-purple-600 text-white hover:bg-purple-700' 
                           : 'bg-purple-500 text-white hover:bg-purple-600'
                       }`}
                     >
-                      <Camera size={18} />
-                      Gérer photos
+                      <Camera size={16} />
+                      Mode détaillé
+                    </button>
+                  )}
+                  {itemsWithImages.length > 0 && (
+                    <button
+                      onClick={startEditImageMode}
+                      className={`px-3 py-2 rounded-lg font-medium transition flex items-center gap-2 text-sm ${
+                        darkMode 
+                          ? 'bg-purple-600 text-white hover:bg-purple-700' 
+                          : 'bg-purple-500 text-white hover:bg-purple-600'
+                      }`}
+                    >
+                      <Camera size={16} />
+                      Gérer
                     </button>
                   )}
                   <button
                     onClick={changeGame}
-                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                    className={`px-3 py-2 rounded-lg font-medium transition text-sm ${
                       darkMode 
                         ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -570,7 +592,6 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
               </button>
             </div>
 
-            {/* Mode liste classique */}
             {!showImageMode && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
                 <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
@@ -610,7 +631,6 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
               </div>
             )}
 
-            {/* Mode grille avec images */}
             {showImageMode && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
                 <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
@@ -700,7 +720,6 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         )}
 
-        {/* Mode édition liste */}
         {selectedGame && editMode && (
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
             <div className="flex items-center justify-between mb-6">
@@ -771,7 +790,6 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         )}
 
-        {/* Mode édition images détaillées */}
         {selectedGame && editingImageMode && (
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
             <div className="flex items-center justify-between mb-6">
@@ -867,7 +885,6 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
           </div>
         )}
 
-        {/* Modal création */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto`}>
@@ -907,7 +924,7 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                 <div className={`p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30 border-2 border-blue-700' : 'bg-blue-50 border-2 border-blue-200'}`}>
                   <p className={`text-sm font-semibold ${darkMode ? 'text-blue-300' : 'text-blue-800'} mb-3 flex items-center gap-2`}>
                     <Camera size={18} />
-                    Scanner la règle du jeu (OCR)
+                    Prendre une photo de la règle (optionnel)
                   </p>
                   <div className="flex gap-2">
                     <button
@@ -944,18 +961,12 @@ Ne retourne RIEN d'autre que le JSON. Pas de markdown, pas d'explication.`
                     className="hidden"
                   />
                   
-                  {isProcessingImage && (
-                    <div className="mt-3 text-center">
-                      <div className="animate-spin inline-block w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-                      <p className={`text-sm mt-2 ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
-                        Analyse de l'image en cours...
-                      </p>
-                    </div>
-                  )}
-                  
                   {capturedImage && (
                     <div className="mt-3">
                       <img src={capturedImage} alt="Règle capturée" className="w-full rounded-lg border-2 border-blue-500" />
+                      <p className={`text-xs mt-2 ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
+                        💡 Saisissez manuellement le contenu ci-dessous
+                      </p>
                     </div>
                   )}
                 </div>
