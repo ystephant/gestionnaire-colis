@@ -703,6 +703,8 @@ export default function InventaireJeux() {
                   <Grid size={20} className="text-purple-500" />
                   Inventaire détaillé
                 </h3>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {itemsWithImages.map((item) => (
                     <div
                       key={item.id}
@@ -1059,5 +1061,3 @@ export default function InventaireJeux() {
     </div>
   );
 }
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
