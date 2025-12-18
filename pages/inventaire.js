@@ -66,9 +66,11 @@ export default function InventaireJeux() {
   }, [activeInventoryId]);
 
   const setupRealtimeSync = () => {
-    const channel = supabase
-      .channel(`inventory-${selectedGame.id}`)
-      .on('postgres_changes',
+  console.log('🔄 Configuration Realtime pour game_id:', selectedGame.id);
+  
+  const channel = supabase
+    .channel(`inventory-${selectedGame.id}`)
+    .on('postgres_changes',
         {
           event: '*',
           schema: 'public',
@@ -87,9 +89,13 @@ export default function InventaireJeux() {
         }
       )
       .subscribe((status) => {
+        console.log('📡 Statut subscription:', status);
         if (status === 'SUBSCRIBED') {
           console.log('✅ Synchronisation temps réel activée');
           setSyncStatus('🔄 Synchronisé en temps réel');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Erreur de canal Realtime');
+          alert('⚠️ Erreur de synchronisation temps réel');
         }
       });
 
