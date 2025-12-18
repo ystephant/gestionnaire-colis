@@ -1202,28 +1202,30 @@ const handleDrop = async (e) => {
         {/* Vue détaillée d'un item avec photos */}
         {selectedGame && detailedView && (
   <DetailedViewComponent
-    detailedView={detailedView}
-    currentDetailPhotos={currentDetailPhotos}
-    editingDetails={editingDetails}
-    darkMode={darkMode}
-    closeDetailedView={closeDetailedView}
-    startEditingDetails={startEditingDetails}
-    saveDetailedView={saveDetailedView}
-    cancelEditingDetails={cancelEditingDetails}
-    detailImageInputRef={detailImageInputRef}
-    handleDetailPhotoCapture={handleDetailPhotoCapture}
-    openDetailPhotoCapture={openDetailPhotoCapture}
-    removeDetailPhoto={removeDetailPhoto}
-    updateDetailPhotoName={updateDetailPhotoName}
-    addDetailPhoto={addDetailPhoto}
-    checkedItems={checkedItems}
-    toggleDetailPhoto={toggleDetailPhoto}
-    isDragging={isDragging}
-    handleDragEnter={handleDragEnter}
-    handleDragLeave={handleDragLeave}
-    handleDragOver={handleDragOver}
-    handleDrop={handleDrop}
-  />
+  detailedView={detailedView}
+  currentDetailPhotos={currentDetailPhotos}
+  editingDetails={editingDetails}
+  darkMode={darkMode}
+  closeDetailedView={closeDetailedView}
+  startEditingDetails={startEditingDetails}
+  saveDetailedView={saveDetailedView}
+  cancelEditingDetails={cancelEditingDetails}
+  detailImageInputRef={detailImageInputRef}
+  handleDetailPhotoCapture={handleDetailPhotoCapture}
+  openDetailPhotoCapture={openDetailPhotoCapture}
+  removeDetailPhoto={removeDetailPhoto}
+  updateDetailPhotoName={updateDetailPhotoName}
+  addDetailPhoto={addDetailPhoto}
+  checkedItems={checkedItems}
+  toggleDetailPhoto={toggleDetailPhoto}
+  isDragging={isDragging}
+  handleDragEnter={handleDragEnter}
+  handleDragLeave={handleDragLeave}
+  handleDragOver={handleDragOver}
+  handleDrop={handleDrop}
+  uploadingPhotos={uploadingPhotos}
+  uploadProgress={uploadProgress}
+/>
 )}
 
         {/* Modal création */}
@@ -1343,7 +1345,8 @@ function DetailedViewComponent({
   detailImageInputRef, handleDetailPhotoCapture, openDetailPhotoCapture,
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto,
   checkedItems, toggleDetailPhoto,
-  isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop
+  isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
+  uploadingPhotos, uploadProgress
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
 const [lastTap, setLastTap] = useState(0);
