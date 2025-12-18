@@ -141,37 +141,39 @@ export default function InventaireJeux() {
   }, [searchQuery, allGames]);
 
   const loadActiveInventory = async (game) => {
-    try {
-      const { data, error } = await supabase
+  try {
+    const { data, error } = await supabase
+      .from('game_inventories')
+      .select('*')
+      .eq('game_id', game.id)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    if (data) {
+      setActiveInventoryId(data.id);
+      setCheckedItems(data.checked_items || {});
+      setMissingItems(data.missing_items || '');
+    } else {
+      // MODIFIEZ CETTE PARTIE :
+      const { data: newInventory, error: createError } = await supabase
         .from('game_inventories')
-        .select('*')
-        .eq('game_id', game.id)
-        .maybeSingle();
+        .insert([{
+          game_id: game.id,
+          user_id: username,  // ← AJOUTEZ CETTE LIGNE
+          checked_items: {},
+          missing_items: ''
+        }])
+        .select()
+        .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data) {
-        setActiveInventoryId(data.id);
-        setCheckedItems(data.checked_items || {});
-        setMissingItems(data.missing_items || '');
-      } else {
-        const { data: newInventory, error: createError } = await supabase
-          .from('game_inventories')
-          .insert([{
-            game_id: game.id,
-            checked_items: {},
-            missing_items: ''
-          }])
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        setActiveInventoryId(newInventory.id);
-      }
-    } catch (error) {
-      console.error('Erreur chargement inventaire:', error);
+      if (createError) throw createError;
+      setActiveInventoryId(newInventory.id);
     }
-  };
+  } catch (error) {
+    console.error('Erreur chargement inventaire:', error);
+  }
+};
 
   const selectGame = async (game) => {
     setSelectedGame(game);
