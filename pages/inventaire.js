@@ -35,7 +35,6 @@ export default function InventaireJeux() {
   
   const [activeInventoryId, setActiveInventoryId] = useState(null);
   const [syncStatus, setSyncStatus] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
 
   // Charger le mode sombre depuis localStorage
   useEffect(() => {
@@ -402,17 +401,18 @@ export default function InventaireJeux() {
   };
 
   const addDetailPhoto = () => {
-  setCurrentEditingPhotoId(null);
-  detailImageInputRef.current?.click();
-};
+    const newPhoto = {
+      id: `photo_${Date.now()}`,
+      name: '',
+      image: null
+    };
+    setCurrentDetailPhotos([...currentDetailPhotos, newPhoto]);
+  };
 
   const handleDetailPhotoCapture = async (e) => {
-  const files = Array.from(e.target.files);
-  if (files.length === 0) return;
+    const file = e.target.files[0];
+    if (!file || !currentEditingPhotoId) return;
 
-  // Si currentEditingPhotoId existe, on remplace une photo existante (mode téléphone)
-  if (currentEditingPhotoId) {
-    const file = files[0];
     const reader = new FileReader();
     reader.onload = (event) => {
       const updatedPhotos = currentDetailPhotos.map(photo => 
@@ -424,94 +424,12 @@ export default function InventaireJeux() {
       setCurrentEditingPhotoId(null);
     };
     reader.readAsDataURL(file);
-    return;
-  }
-
-  // Sinon, on ajoute plusieurs photos (mode ordinateur)
-  const newPhotos = [];
-  let processedCount = 0;
-
-  files.forEach((file, index) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      newPhotos.push({
-        id: `photo_${Date.now()}_${index}`,
-        name: file.name.replace(/\.[^/.]+$/, ''), // Nom du fichier sans extension
-        image: event.target.result
-      });
-      
-      processedCount++;
-      
-      // Quand toutes les photos sont chargées, on les ajoute
-      if (processedCount === files.length) {
-        setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
-      }
-    };
-    reader.readAsDataURL(file);
-  });
-};
-
-  const handleDragEnter = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (editingDetails) {
-    setIsDragging(true);
-  }
-};
-
-const handleDragLeave = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  // Vérifier qu'on quitte vraiment la zone de drop
-  if (e.currentTarget === e.target) {
-    setIsDragging(false);
-  }
-};
-
-const handleDragOver = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-};
-
-const handleDrop = async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  setIsDragging(false);
-  
-  if (!editingDetails) return;
-
-  const files = Array.from(e.dataTransfer.files).filter(file => 
-    file.type.startsWith('image/')
-  );
-  
-  if (files.length === 0) return;
-
-  const newPhotos = [];
-  let processedCount = 0;
-
-  files.forEach((file, index) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      newPhotos.push({
-        id: `photo_${Date.now()}_${index}`,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        image: event.target.result
-      });
-      
-      processedCount++;
-      
-      if (processedCount === files.length) {
-        setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
-      }
-    };
-    reader.readAsDataURL(file);
-  });
-};
+  };
 
   const openDetailPhotoCapture = (photoId) => {
-  setCurrentEditingPhotoId(photoId);
-  detailImageInputRef.current?.click();
-};
+    setCurrentEditingPhotoId(photoId);
+    detailImageInputRef.current?.click();
+  };
 
   const updateDetailPhotoName = (photoId, name) => {
     const updated = currentDetailPhotos.map(photo =>
@@ -1082,30 +1000,25 @@ const handleDrop = async (e) => {
 
         {/* Vue détaillée d'un item avec photos */}
         {selectedGame && detailedView && (
-  <DetailedViewComponent
-    detailedView={detailedView}
-    currentDetailPhotos={currentDetailPhotos}
-    editingDetails={editingDetails}
-    darkMode={darkMode}
-    closeDetailedView={closeDetailedView}
-    startEditingDetails={startEditingDetails}
-    saveDetailedView={saveDetailedView}
-    cancelEditingDetails={cancelEditingDetails}
-    detailImageInputRef={detailImageInputRef}
-    handleDetailPhotoCapture={handleDetailPhotoCapture}
-    openDetailPhotoCapture={openDetailPhotoCapture}
-    removeDetailPhoto={removeDetailPhoto}
-    updateDetailPhotoName={updateDetailPhotoName}
-    addDetailPhoto={addDetailPhoto}
-    checkedItems={checkedItems}
-    toggleDetailPhoto={toggleDetailPhoto}
-    isDragging={isDragging}
-    handleDragEnter={handleDragEnter}
-    handleDragLeave={handleDragLeave}
-    handleDragOver={handleDragOver}
-    handleDrop={handleDrop}
-  />
-)}
+          <DetailedViewComponent
+            detailedView={detailedView}
+            currentDetailPhotos={currentDetailPhotos}
+            editingDetails={editingDetails}
+            darkMode={darkMode}
+            closeDetailedView={closeDetailedView}
+            startEditingDetails={startEditingDetails}
+            saveDetailedView={saveDetailedView}
+            cancelEditingDetails={cancelEditingDetails}
+            detailImageInputRef={detailImageInputRef}
+            handleDetailPhotoCapture={handleDetailPhotoCapture}
+            openDetailPhotoCapture={openDetailPhotoCapture}
+            removeDetailPhoto={removeDetailPhoto}
+            updateDetailPhotoName={updateDetailPhotoName}
+            addDetailPhoto={addDetailPhoto}
+            checkedItems={checkedItems}
+            toggleDetailPhoto={toggleDetailPhoto}
+          />
+        )}
 
         {/* Modal création */}
         {showCreateModal && (
@@ -1223,8 +1136,7 @@ function DetailedViewComponent({
   closeDetailedView, startEditingDetails, saveDetailedView, cancelEditingDetails,
   detailImageInputRef, handleDetailPhotoCapture, openDetailPhotoCapture,
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto,
-  checkedItems, toggleDetailPhoto,
-  isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop
+  checkedItems, toggleDetailPhoto
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
 const [lastTap, setLastTap] = useState(0);
@@ -1312,39 +1224,20 @@ const handlePhotoClick = (e, photo) => {
         {editingDetails ? (
           <>
             <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
-  <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
-    💡 Glissez-déposez vos photos ou cliquez sur "Ajouter des photos". Vous pouvez aussi cliquer sur une carte pour remplacer une photo.
-  </p>
-</div>
+              <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
+                💡 Cliquez sur chaque carte pour ajouter une photo. Le nom est optionnel.
+              </p>
+            </div>
 
-          <input
-            ref={detailImageInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleDetailPhotoCapture}
-            className="hidden"
-          />
+            <input
+              ref={detailImageInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleDetailPhotoCapture}
+              className="hidden"
+            />
 
-            <div 
-  className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4 relative transition-all ${
-    isDragging ? 'ring-4 ring-purple-500 ring-opacity-50 bg-purple-50 dark:bg-purple-900 dark:bg-opacity-20 rounded-xl p-4' : ''
-  }`}
-  onDragEnter={handleDragEnter}
-  onDragOver={handleDragOver}
-  onDragLeave={handleDragLeave}
-  onDrop={handleDrop}
->
-  {isDragging && (
-    <div className="absolute inset-0 flex items-center justify-center bg-purple-500 bg-opacity-10 rounded-xl border-4 border-dashed border-purple-500 pointer-events-none z-10">
-      <div className="text-center">
-        <Camera size={48} className="mx-auto mb-2 text-purple-600" />
-        <p className={`text-lg font-bold ${darkMode ? 'text-purple-300' : 'text-purple-600'}`}>
-          Déposez vos photos ici
-        </p>
-      </div>
-    </div>
-  )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
               {currentDetailPhotos.map((photo) => (
                 <div key={photo.id} className={`border-2 rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div 
@@ -1388,13 +1281,13 @@ const handlePhotoClick = (e, photo) => {
               ))}
             </div>
 
-<button
-  onClick={addDetailPhoto}
-  className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
->
-  <Plus size={20} />
-  Ajouter des photos
-</button>
+            <button
+              onClick={addDetailPhoto}
+              className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
+            >
+              <Plus size={20} />
+              Ajouter une photo
+            </button>
           </>
         ) : (
           <>
