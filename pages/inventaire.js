@@ -5,6 +5,9 @@ import { getSupabase } from '@/lib/supabase';
 
 const supabase = getSupabase();
 
+// ⚙️ CONFIGURATION IMGBB - Remplacez par votre clé API
+const IMGBB_API_KEY = 'cc220033c79cff185cc5dd1604633dd9'; // ← Mettez votre vraie clé API ici
+
 export default function InventaireJeux() {
   const router = useRouter();
   const [darkMode, setDarkMode] = useState(false);
@@ -35,6 +38,9 @@ export default function InventaireJeux() {
   
   const [activeInventoryId, setActiveInventoryId] = useState(null);
   const [syncStatus, setSyncStatus] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Charger le mode sombre depuis localStorage
   useEffect(() => {
@@ -102,7 +108,34 @@ export default function InventaireJeux() {
     window.inventoryChannel = channel;
   };
 
-  const fetchGames = async () => {
+  // Fonction pour uploader une image vers ImgBB
+const uploadToImgBB = async (base64Image) => {
+  try {
+    // Retirer le préfixe "data:image/...;base64," si présent
+    const base64Data = base64Image.split(',')[1] || base64Image;
+    
+    const formData = new FormData();
+    formData.append('image', base64Data);
+    
+    const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    
+    if (data.success) {
+      return data.data.url; // URL de l'image hébergée
+    } else {
+      throw new Error(data.error.message || 'Erreur upload ImgBB');
+    }
+  } catch (error) {
+    console.error('Erreur upload ImgBB:', error);
+    throw error;
+  }
+};
+
+const fetchGames = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -401,35 +434,203 @@ export default function InventaireJeux() {
   };
 
   const addDetailPhoto = () => {
-    const newPhoto = {
-      id: `photo_${Date.now()}`,
-      name: '',
-      image: null
-    };
-    setCurrentDetailPhotos([...currentDetailPhotos, newPhoto]);
-  };
+  setCurrentEditingPhotoId(null);
+  detailImageInputRef.current?.click();
+};
 
   const handleDetailPhotoCapture = async (e) => {
-    const file = e.target.files[0];
-    if (!file || !currentEditingPhotoId) return;
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
+  // Vérifier la clé API
+  if (IMGBB_API_KEY === 'VOTRE_CLE_API_ICI') {
+    alert('⚠️ Veuillez configurer votre clé API ImgBB dans le code !');
+    return;
+  }
+
+  // Si currentEditingPhotoId existe, on remplace une photo existante (mode téléphone)
+  if (currentEditingPhotoId) {
+    const file = files[0];
+    
+    // Vérifier la taille (32MB max)
+    if (file.size > 32 * 1024 * 1024) {
+      alert('❌ Image trop grande ! Maximum 32 MB par image.');
+      return;
+    }
+    
+    setUploadingPhotos(true);
+    
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const imgUrl = await uploadToImgBB(base64);
+      
       const updatedPhotos = currentDetailPhotos.map(photo => 
         photo.id === currentEditingPhotoId 
-          ? { ...photo, image: event.target.result }
+          ? { ...photo, image: imgUrl }
           : photo
       );
       setCurrentDetailPhotos(updatedPhotos);
       setCurrentEditingPhotoId(null);
-    };
-    reader.readAsDataURL(file);
-  };
+      
+    } catch (error) {
+      console.error('Erreur upload:', error);
+      alert('❌ Erreur lors de l\'upload de la photo');
+    } finally {
+      setUploadingPhotos(false);
+    }
+    return;
+  }
+
+  // Sinon, on ajoute plusieurs photos (mode ordinateur)
+  setUploadingPhotos(true);
+  setUploadProgress(0);
+  
+  const newPhotos = [];
+  let uploadedCount = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    
+    // Vérifier la taille
+    if (file.size > 32 * 1024 * 1024) {
+      alert(`❌ ${file.name} est trop grande ! Maximum 32 MB par image.`);
+      continue;
+    }
+
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const imgUrl = await uploadToImgBB(base64);
+      
+      newPhotos.push({
+        id: `photo_${Date.now()}_${i}`,
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        image: imgUrl // URL ImgBB au lieu de base64
+      });
+      
+      uploadedCount++;
+      setUploadProgress(Math.round((uploadedCount / files.length) * 100));
+      
+    } catch (error) {
+      console.error('Erreur upload photo:', error);
+      alert(`❌ Erreur lors de l'upload de ${file.name}`);
+    }
+  }
+
+  setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
+  setUploadingPhotos(false);
+  setUploadProgress(0);
+  
+  if (newPhotos.length > 0) {
+    alert(`✅ ${newPhotos.length} photo(s) uploadée(s) avec succès sur ImgBB !`);
+  }
+};
+
+  const handleDragEnter = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (editingDetails) {
+    setIsDragging(true);
+  }
+};
+
+const handleDragLeave = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  // Vérifier qu'on quitte vraiment la zone de drop
+  if (e.currentTarget === e.target) {
+    setIsDragging(false);
+  }
+};
+
+const handleDragOver = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+};
+
+const handleDrop = async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setIsDragging(false);
+  
+  if (!editingDetails) return;
+
+  // Vérifier la clé API
+  if (IMGBB_API_KEY === 'VOTRE_CLE_API_ICI') {
+    alert('⚠️ Veuillez configurer votre clé API ImgBB dans le code !');
+    return;
+  }
+
+  const files = Array.from(e.dataTransfer.files).filter(file => 
+    file.type.startsWith('image/')
+  );
+  
+  if (files.length === 0) return;
+
+  setUploadingPhotos(true);
+  setUploadProgress(0);
+  
+  const newPhotos = [];
+  let uploadedCount = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    
+    // Vérifier la taille
+    if (file.size > 32 * 1024 * 1024) {
+      alert(`❌ ${file.name} est trop grande ! Maximum 32 MB par image.`);
+      continue;
+    }
+
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const imgUrl = await uploadToImgBB(base64);
+      
+      newPhotos.push({
+        id: `photo_${Date.now()}_${i}`,
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        image: imgUrl
+      });
+      
+      uploadedCount++;
+      setUploadProgress(Math.round((uploadedCount / files.length) * 100));
+      
+    } catch (error) {
+      console.error('Erreur upload:', error);
+      alert(`❌ Erreur lors de l'upload de ${file.name}`);
+    }
+  }
+
+  setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
+  setUploadingPhotos(false);
+  setUploadProgress(0);
+  
+  if (newPhotos.length > 0) {
+    alert(`✅ ${newPhotos.length} photo(s) uploadée(s) avec succès sur ImgBB !`);
+  }
+};
 
   const openDetailPhotoCapture = (photoId) => {
-    setCurrentEditingPhotoId(photoId);
-    detailImageInputRef.current?.click();
-  };
+  setCurrentEditingPhotoId(photoId);
+  detailImageInputRef.current?.click();
+};
 
   const updateDetailPhotoName = (photoId, name) => {
     const updated = currentDetailPhotos.map(photo =>
@@ -1000,25 +1201,30 @@ export default function InventaireJeux() {
 
         {/* Vue détaillée d'un item avec photos */}
         {selectedGame && detailedView && (
-          <DetailedViewComponent
-            detailedView={detailedView}
-            currentDetailPhotos={currentDetailPhotos}
-            editingDetails={editingDetails}
-            darkMode={darkMode}
-            closeDetailedView={closeDetailedView}
-            startEditingDetails={startEditingDetails}
-            saveDetailedView={saveDetailedView}
-            cancelEditingDetails={cancelEditingDetails}
-            detailImageInputRef={detailImageInputRef}
-            handleDetailPhotoCapture={handleDetailPhotoCapture}
-            openDetailPhotoCapture={openDetailPhotoCapture}
-            removeDetailPhoto={removeDetailPhoto}
-            updateDetailPhotoName={updateDetailPhotoName}
-            addDetailPhoto={addDetailPhoto}
-            checkedItems={checkedItems}
-            toggleDetailPhoto={toggleDetailPhoto}
-          />
-        )}
+  <DetailedViewComponent
+    detailedView={detailedView}
+    currentDetailPhotos={currentDetailPhotos}
+    editingDetails={editingDetails}
+    darkMode={darkMode}
+    closeDetailedView={closeDetailedView}
+    startEditingDetails={startEditingDetails}
+    saveDetailedView={saveDetailedView}
+    cancelEditingDetails={cancelEditingDetails}
+    detailImageInputRef={detailImageInputRef}
+    handleDetailPhotoCapture={handleDetailPhotoCapture}
+    openDetailPhotoCapture={openDetailPhotoCapture}
+    removeDetailPhoto={removeDetailPhoto}
+    updateDetailPhotoName={updateDetailPhotoName}
+    addDetailPhoto={addDetailPhoto}
+    checkedItems={checkedItems}
+    toggleDetailPhoto={toggleDetailPhoto}
+    isDragging={isDragging}
+    handleDragEnter={handleDragEnter}
+    handleDragLeave={handleDragLeave}
+    handleDragOver={handleDragOver}
+    handleDrop={handleDrop}
+  />
+)}
 
         {/* Modal création */}
         {showCreateModal && (
@@ -1136,7 +1342,8 @@ function DetailedViewComponent({
   closeDetailedView, startEditingDetails, saveDetailedView, cancelEditingDetails,
   detailImageInputRef, handleDetailPhotoCapture, openDetailPhotoCapture,
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto,
-  checkedItems, toggleDetailPhoto
+  checkedItems, toggleDetailPhoto,
+  isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
 const [lastTap, setLastTap] = useState(0);
@@ -1224,20 +1431,55 @@ const handlePhotoClick = (e, photo) => {
         {editingDetails ? (
           <>
             <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
-              <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
-                💡 Cliquez sur chaque carte pour ajouter une photo. Le nom est optionnel.
-              </p>
-            </div>
+  <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
+    💡 Vos photos sont hébergées gratuitement sur ImgBB ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
+  </p>
+</div>
 
-            <input
-              ref={detailImageInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleDetailPhotoCapture}
-              className="hidden"
-            />
+{uploadingPhotos && (
+  <div className="mb-4 p-4 rounded-xl bg-purple-100 dark:bg-purple-900 dark:bg-opacity-30">
+    <div className="flex items-center justify-between mb-2">
+      <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">
+        📤 Upload en cours... {uploadProgress}%
+      </p>
+    </div>
+    <div className="w-full bg-purple-200 dark:bg-purple-800 rounded-full h-2">
+      <div 
+        className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+        style={{ width: `${uploadProgress}%` }}
+      />
+    </div>
+  </div>
+)}
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
+          <input
+            ref={detailImageInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleDetailPhotoCapture}
+            className="hidden"
+          />
+
+            <div 
+  className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4 relative transition-all ${
+    isDragging ? 'ring-4 ring-purple-500 ring-opacity-50 bg-purple-50 dark:bg-purple-900 dark:bg-opacity-20 rounded-xl p-4' : ''
+  }`}
+  onDragEnter={handleDragEnter}
+  onDragOver={handleDragOver}
+  onDragLeave={handleDragLeave}
+  onDrop={handleDrop}
+>
+  {isDragging && (
+    <div className="absolute inset-0 flex items-center justify-center bg-purple-500 bg-opacity-10 rounded-xl border-4 border-dashed border-purple-500 pointer-events-none z-10">
+      <div className="text-center">
+        <Camera size={48} className="mx-auto mb-2 text-purple-600" />
+        <p className={`text-lg font-bold ${darkMode ? 'text-purple-300' : 'text-purple-600'}`}>
+          Déposez vos photos ici
+        </p>
+      </div>
+    </div>
+  )}
               {currentDetailPhotos.map((photo) => (
                 <div key={photo.id} className={`border-2 rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div 
@@ -1281,13 +1523,13 @@ const handlePhotoClick = (e, photo) => {
               ))}
             </div>
 
-            <button
-              onClick={addDetailPhoto}
-              className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
-            >
-              <Plus size={20} />
-              Ajouter une photo
-            </button>
+<button
+  onClick={addDetailPhoto}
+  className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
+>
+  <Plus size={20} />
+  Ajouter des photos
+</button>
           </>
         ) : (
           <>
