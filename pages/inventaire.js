@@ -1131,21 +1131,11 @@ function DetailedViewComponent({
   checkedItems, toggleDetailPhoto
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
-  const [longPressTimer, setLongPressTimer] = useState(null);
 
-  const handlePhotoTouchStart = (photo) => {
-    const timer = setTimeout(() => {
-      setFullscreenPhoto(photo);
-    }, 800); // 800ms = 0.8 secondes (plus court que 3s pour meilleure UX)
-    setLongPressTimer(timer);
-  };
-
-  const handlePhotoTouchEnd = () => {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      setLongPressTimer(null);
-    }
-  };
+  const handlePhotoDoubleClick = (e, photo) => {
+  e.stopPropagation(); // Empêche le toggle du vert
+  setFullscreenPhoto(photo);
+};
 
   const closeFullscreen = () => {
     setFullscreenPhoto(null);
@@ -1292,7 +1282,7 @@ function DetailedViewComponent({
               <div>
                 <div className={`mb-4 p-3 rounded-xl ${darkMode ? 'bg-purple-900 bg-opacity-30' : 'bg-purple-50'}`}>
                   <p className={`text-xs ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>
-                    💡 Maintenez appuyé sur une photo pour la voir en plein écran
+                  💡 Double-cliquez sur une photo pour la voir en plein écran
                   </p>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -1300,14 +1290,10 @@ function DetailedViewComponent({
                     const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
                     return (
                       <div
-                        key={photo.id}
-                        onClick={() => toggleDetailPhoto(detailedView.itemIndex, photo.id)}
-                        onTouchStart={() => handlePhotoTouchStart(photo)}
-                        onTouchEnd={handlePhotoTouchEnd}
-                        onMouseDown={() => handlePhotoTouchStart(photo)}
-                        onMouseUp={handlePhotoTouchEnd}
-                        onMouseLeave={handlePhotoTouchEnd}
-                        className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
+                       key={photo.id}
+                       onClick={() => toggleDetailPhoto(detailedView.itemIndex, photo.id)}
+                       onDoubleClick={(e) => handlePhotoDoubleClick(e, photo)}
+                       className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
                           isChecked
                             ? 'border-green-500 opacity-60'
                             : darkMode
