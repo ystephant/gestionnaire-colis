@@ -1605,11 +1605,13 @@ const handlePhotoClick = (e, photo) => {
                               : 'border-gray-200 hover:border-purple-500'
                         }`}
                       >
-                        <img 
-                          src={photo.image} 
-                          alt={photo.name || 'Photo'}
-                          className="w-full h-full object-cover"
-                        />
+ // Dans le composant DetailedViewComponent, modifiez l'affichage des images :
+<img 
+  src={photo.image} 
+  alt={photo.name || 'Photo'}
+  className="w-full h-full object-cover"
+  loading="lazy" // ⬅️ AJOUTEZ CECI
+/>
                         
                         {isChecked && (
                           <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center">
