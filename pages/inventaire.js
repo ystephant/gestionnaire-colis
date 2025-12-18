@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, Home, List, ArrowLeft, Upload } from 'lucide-react';
+import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, Home, List, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/router';
 import { getSupabase } from '@/lib/supabase';
 
@@ -31,12 +31,12 @@ export default function InventaireJeux() {
   const [editingDetails, setEditingDetails] = useState(false);
   const [currentDetailPhotos, setCurrentDetailPhotos] = useState([]);
   const detailImageInputRef = useRef(null);
-  const multipleImageInputRef = useRef(null); // ✅ NOUVEAU: pour upload multiple
   const [currentEditingPhotoId, setCurrentEditingPhotoId] = useState(null);
   
   const [activeInventoryId, setActiveInventoryId] = useState(null);
   const [syncStatus, setSyncStatus] = useState('');
 
+  // Charger le mode sombre depuis localStorage
   useEffect(() => {
     const savedDarkMode = localStorage.getItem('darkMode');
     if (savedDarkMode !== null) {
@@ -44,6 +44,7 @@ export default function InventaireJeux() {
     }
   }, []);
 
+  // Sauvegarder le mode sombre
   useEffect(() => {
     localStorage.setItem('darkMode', darkMode.toString());
   }, [darkMode]);
@@ -52,6 +53,7 @@ export default function InventaireJeux() {
     fetchGames();
   }, []);
 
+  // Synchronisation temps réel
   useEffect(() => {
     if (selectedGame && activeInventoryId) {
       setupRealtimeSync();
@@ -64,40 +66,40 @@ export default function InventaireJeux() {
   }, [activeInventoryId]);
 
   const setupRealtimeSync = () => {
-    console.log('🔄 Configuration Realtime pour game_id:', selectedGame.id);
-    
-    const channel = supabase
-      .channel(`inventory-${selectedGame.id}`)
-      .on('postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'game_inventories',
-            filter: `game_id=eq.${selectedGame.id}`
-          },
-          (payload) => {
-            console.log('🔄 Changement temps réel:', payload);
-            
-            if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-              setCheckedItems(payload.new.checked_items || {});
-              setMissingItems(payload.new.missing_items || '');
-              setSyncStatus('✅ Synchronisé');
-              setTimeout(() => setSyncStatus(''), 2000);
-            }
+  console.log('🔄 Configuration Realtime pour game_id:', selectedGame.id);
+  
+  const channel = supabase
+    .channel(`inventory-${selectedGame.id}`)
+    .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'game_inventories',
+          filter: `game_id=eq.${selectedGame.id}`
+        },
+        (payload) => {
+          console.log('🔄 Changement temps réel:', payload);
+          
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            setCheckedItems(payload.new.checked_items || {});
+            setMissingItems(payload.new.missing_items || '');
+            setSyncStatus('✅ Synchronisé');
+            setTimeout(() => setSyncStatus(''), 2000);
           }
-        )
-        .subscribe((status) => {
-          console.log('📡 Statut subscription:', status);
-          if (status === 'SUBSCRIBED') {
-            console.log('✅ Synchronisation temps réel activée');
-            setSyncStatus('🔄 Synchronisé en temps réel');
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('❌ Erreur de canal Realtime');
-            alert('⚠️ Erreur de synchronisation temps réel');
-          }
-        });
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Statut subscription:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Synchronisation temps réel activée');
+          setSyncStatus('🔄 Synchronisé en temps réel');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Erreur de canal Realtime');
+          alert('⚠️ Erreur de synchronisation temps réel');
+        }
+      });
 
-      window.inventoryChannel = channel;
+    window.inventoryChannel = channel;
   };
 
   const fetchGames = async () => {
@@ -139,38 +141,39 @@ export default function InventaireJeux() {
   }, [searchQuery, allGames]);
 
   const loadActiveInventory = async (game) => {
-    try {
-      const { data, error } = await supabase
+  try {
+    const { data, error } = await supabase
+      .from('game_inventories')
+      .select('*')
+      .eq('game_id', game.id)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    if (data) {
+      setActiveInventoryId(data.id);
+      setCheckedItems(data.checked_items || {});
+      setMissingItems(data.missing_items || '');
+    } else {
+      // MODIFIEZ CETTE PARTIE :
+      const { data: newInventory, error: createError } = await supabase
         .from('game_inventories')
-        .select('*')
-        .eq('game_id', game.id)
-        .maybeSingle();
+        .insert([{
+          game_id: game.id,
+          user_id: username,  // ← AJOUTEZ CETTE LIGNE
+          checked_items: {},
+          missing_items: ''
+        }])
+        .select()
+        .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data) {
-        setActiveInventoryId(data.id);
-        setCheckedItems(data.checked_items || {});
-        setMissingItems(data.missing_items || '');
-      } else {
-        const { data: newInventory, error: createError } = await supabase
-          .from('game_inventories')
-          .insert([{
-            game_id: game.id,
-            user_id: username,
-            checked_items: {},
-            missing_items: ''
-          }])
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        setActiveInventoryId(newInventory.id);
-      }
-    } catch (error) {
-      console.error('Erreur chargement inventaire:', error);
+      if (createError) throw createError;
+      setActiveInventoryId(newInventory.id);
     }
-  };
+  } catch (error) {
+    console.error('Erreur chargement inventaire:', error);
+  }
+};
 
   const selectGame = async (game) => {
     setSelectedGame(game);
@@ -217,15 +220,18 @@ export default function InventaireJeux() {
     const newCheckedItems = { ...checkedItems };
     
     if (hasDetailPhotos) {
+      // Si on coche l'item parent, cocher toutes les photos détaillées
       const isChecking = !checkedItems[index];
       newCheckedItems[index] = isChecking;
       
+      // Cocher/décocher toutes les photos de cet item
       itemDetails[index].forEach(photo => {
         if (photo.image) {
           newCheckedItems[`detail_${index}_${photo.id}`] = isChecking;
         }
       });
     } else {
+      // Pas de photos détaillées, toggle simple
       newCheckedItems[index] = !checkedItems[index];
     }
     
@@ -239,11 +245,13 @@ export default function InventaireJeux() {
       [`detail_${itemIndex}_${photoId}`]: !checkedItems[`detail_${itemIndex}_${photoId}`]
     };
     
+    // Vérifier si toutes les photos de cet item sont cochées
     const photos = itemDetails[itemIndex] || [];
     const allPhotosChecked = photos.filter(p => p.image).every(p => 
       newCheckedItems[`detail_${itemIndex}_${p.id}`]
     );
     
+    // Mettre à jour l'item parent en conséquence
     newCheckedItems[itemIndex] = allPhotosChecked;
     
     setCheckedItems(newCheckedItems);
@@ -323,6 +331,7 @@ export default function InventaireJeux() {
       const photoCount = photos.filter(p => p.image).length;
       
       if (photoCount > 0) {
+        // Compter chaque photo individuellement
         totalItems += photoCount;
         photos.forEach(photo => {
           if (photo.image && checkedItems[`detail_${index}_${photo.id}`]) {
@@ -330,6 +339,7 @@ export default function InventaireJeux() {
           }
         });
       } else {
+        // Pas de photos, compter l'item simple
         totalItems += 1;
         if (checkedItems[index]) {
           checkedCount++;
@@ -391,19 +401,18 @@ export default function InventaireJeux() {
   };
 
   const addDetailPhoto = () => {
-    const newPhoto = {
-      id: `photo_${Date.now()}`,
-      name: '',
-      image: null
-    };
-    setCurrentDetailPhotos([...currentDetailPhotos, newPhoto]);
-  };
+  // Réinitialiser currentEditingPhotoId pour permettre la sélection multiple
+  setCurrentEditingPhotoId(null);
+  detailImageInputRef.current?.click();
+};
 
-  // ✅ FONCTION POUR UPLOAD PHOTO UNIQUE (téléphone)
   const handleDetailPhotoCapture = async (e) => {
-    const file = e.target.files[0];
-    if (!file || !currentEditingPhotoId) return;
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
 
+  // Si currentEditingPhotoId existe, on remplace une photo existante (mode téléphone)
+  if (currentEditingPhotoId) {
+    const file = files[0];
     const reader = new FileReader();
     reader.onload = (event) => {
       const updatedPhotos = currentDetailPhotos.map(photo => 
@@ -415,42 +424,37 @@ export default function InventaireJeux() {
       setCurrentEditingPhotoId(null);
     };
     reader.readAsDataURL(file);
-  };
+    return;
+  }
 
-  // ✅ NOUVELLE FONCTION: Upload multiple de photos (ordinateur)
-  const handleMultiplePhotoCapture = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+  // Sinon, on ajoute plusieurs photos (mode ordinateur)
+  const newPhotos = [];
+  let processedCount = 0;
 
-    const newPhotos = [];
-
-    for (const file of files) {
-      const reader = new FileReader();
-      const imageData = await new Promise((resolve) => {
-        reader.onload = (event) => resolve(event.target.result);
-        reader.readAsDataURL(file);
-      });
-
+  files.forEach((file, index) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
       newPhotos.push({
-        id: `photo_${Date.now()}_${Math.random()}`,
+        id: `photo_${Date.now()}_${index}`,
         name: file.name.replace(/\.[^/.]+$/, ''), // Nom du fichier sans extension
-        image: imageData
+        image: event.target.result
       });
-    }
-
-    setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
-    alert(`✅ ${newPhotos.length} photo${newPhotos.length > 1 ? 's' : ''} ajoutée${newPhotos.length > 1 ? 's' : ''} !`);
-  };
+      
+      processedCount++;
+      
+      // Quand toutes les photos sont chargées, on les ajoute
+      if (processedCount === files.length) {
+        setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+};
 
   const openDetailPhotoCapture = (photoId) => {
-    setCurrentEditingPhotoId(photoId);
-    detailImageInputRef.current?.click();
-  };
-
-  // ✅ NOUVELLE FONCTION: Ouvrir le sélecteur de fichiers multiples
-  const openMultiplePhotoCapture = () => {
-    multipleImageInputRef.current?.click();
-  };
+  setCurrentEditingPhotoId(photoId);
+  detailImageInputRef.current?.click();
+};
 
   const updateDetailPhotoName = (photoId, name) => {
     const updated = currentDetailPhotos.map(photo =>
@@ -1250,13 +1254,14 @@ const handlePhotoClick = (e, photo) => {
               </p>
             </div>
 
-            <input
-              ref={detailImageInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleDetailPhotoCapture}
-              className="hidden"
-            />
+          <input
+            ref={detailImageInputRef}
+            type="file"
+            accept="image/*"
+            multiple  // ← AJOUT ICI
+            onChange={handleDetailPhotoCapture}
+            className="hidden"
+          />
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
               {currentDetailPhotos.map((photo) => (
@@ -1307,7 +1312,7 @@ const handlePhotoClick = (e, photo) => {
               className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
             >
               <Plus size={20} />
-              Ajouter une photo
+              Ajouter des photos
             </button>
           </>
         ) : (
