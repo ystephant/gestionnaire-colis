@@ -1131,10 +1131,21 @@ function DetailedViewComponent({
   checkedItems, toggleDetailPhoto
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
+const [lastTap, setLastTap] = useState(0);
 
-  const handlePhotoDoubleClick = (e, photo) => {
-  e.stopPropagation(); // Empêche le toggle du vert
-  setFullscreenPhoto(photo);
+const handlePhotoClick = (e, photo) => {
+  const now = Date.now();
+  const DOUBLE_CLICK_DELAY = 300; // 300ms entre les clics
+
+  if (now - lastTap < DOUBLE_CLICK_DELAY) {
+    // Double-clic détecté
+    e.stopPropagation();
+    setFullscreenPhoto(photo);
+    setLastTap(0); // Reset
+  } else {
+    // Premier clic, juste mémoriser le temps
+    setLastTap(now);
+  }
 };
 
   const closeFullscreen = () => {
@@ -1290,10 +1301,21 @@ function DetailedViewComponent({
                     const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
                     return (
                       <div
-                       key={photo.id}
-                       onClick={() => toggleDetailPhoto(detailedView.itemIndex, photo.id)}
-                       onDoubleClick={(e) => handlePhotoDoubleClick(e, photo)}
-                       className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
+  key={photo.id}
+  onClick={(e) => {
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      // Double-clic détecté
+      e.stopPropagation();
+      setFullscreenPhoto(photo);
+      setLastTap(0);
+    } else {
+      // Simple clic = toggle vert
+      setLastTap(now);
+      toggleDetailPhoto(detailedView.itemIndex, photo.id);
+    }
+  }}
+  className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
                           isChecked
                             ? 'border-green-500 opacity-60'
                             : darkMode
