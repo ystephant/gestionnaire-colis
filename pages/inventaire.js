@@ -218,7 +218,7 @@ const fetchGames = async () => {
   setShowAllGamesList(false);
   setDetailedView(null);
   
-  // ⬇️ NOUVEAU : Charger les item_details uniquement pour ce jeu
+  // ⬇️ VÉRIFIEZ QUE CETTE PARTIE EST BIEN LÀ
   try {
     const { data, error } = await supabase
       .from('games')
@@ -229,6 +229,7 @@ const fetchGames = async () => {
     if (error) throw error;
     
     const details = data.item_details ? (typeof data.item_details === 'object' ? data.item_details : {}) : {};
+    console.log('📸 Photos chargées:', details); // ⬅️ Ajoutez ce log pour vérifier
     setItemDetails(details);
   } catch (error) {
     console.error('Erreur chargement détails:', error);
@@ -673,7 +674,7 @@ const handleDrop = async (e) => {
   console.log('📊 Taille des données à sauvegarder:', (dataSize / 1024).toFixed(2), 'KB');
   console.log('📊 Nombre de photos:', validPhotos.length);
   
-  if (dataSize > 500000) { // Plus de 500 KB
+  if (dataSize > 500000) {
     alert('⚠️ Attention : Beaucoup de données à sauvegarder. Cela peut prendre du temps...');
   }
 
@@ -691,6 +692,7 @@ const handleDrop = async (e) => {
       throw error;
     }
 
+    // ⬇️ AJOUTEZ CES LIGNES IMPORTANTES
     const updatedGame = {
       ...selectedGame,
       itemDetails: updatedItemDetails
@@ -702,8 +704,10 @@ const handleDrop = async (e) => {
 
     setAllGames(updatedGames);
     setSelectedGame(updatedGame);
-    setItemDetails(updatedItemDetails);
+    setItemDetails(updatedItemDetails); // ⬅️ TRÈS IMPORTANT : Mettre à jour itemDetails
     setEditingDetails(false);
+    setDetailedView(null); // ⬅️ FERMEZ la vue détaillée pour revenir à la liste
+    
     alert('✅ Photos enregistrées !');
   } catch (error) {
     console.error('❌ Erreur sauvegarde complète:', error);
