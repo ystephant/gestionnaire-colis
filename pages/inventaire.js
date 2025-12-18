@@ -136,29 +136,29 @@ const uploadToImgBB = async (base64Image) => {
 };
 
 const fetchGames = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .order('name', { ascending: true });
-      
-      if (error) throw error;
-      
-      const parsedGames = (data || []).map(game => ({
-        ...game,
-        items: Array.isArray(game.items) ? game.items : [],
-        itemDetails: game.item_details ? (typeof game.item_details === 'object' ? game.item_details : {}) : {}
-      }));
-      
-      setAllGames(parsedGames);
-    } catch (error) {
-      console.error('Erreur chargement:', error);
-      alert('❌ Erreur lors du chargement des jeux');
-    } finally {
-      setLoading(false);
-    }
-  };
+  setLoading(true);
+  try {
+    const { data, error } = await supabase
+      .from('games')
+      .select('id, name, items, created_by, created_at, updated_at') // ⬅️ NE PAS charger item_details tout de suite
+      .order('name', { ascending: true });
+    
+    if (error) throw error;
+    
+    const parsedGames = (data || []).map(game => ({
+      ...game,
+      items: Array.isArray(game.items) ? game.items : [],
+      itemDetails: {} // ⬅️ Vide par défaut, sera chargé à la demande
+    }));
+    
+    setAllGames(parsedGames);
+  } catch (error) {
+    console.error('Erreur chargement:', error);
+    alert('❌ Erreur lors du chargement des jeux');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -209,17 +209,34 @@ const fetchGames = async () => {
 };
 
   const selectGame = async (game) => {
-    setSelectedGame(game);
-    setSearchQuery('');
-    setShowResults(false);
-    setCheckedItems({});
-    setMissingItems('');
-    setEditMode(false);
-    setShowAllGamesList(false);
-    setDetailedView(null);
-    setItemDetails(game.itemDetails || {});
-    await loadActiveInventory(game);
-  };
+  setSelectedGame(game);
+  setSearchQuery('');
+  setShowResults(false);
+  setCheckedItems({});
+  setMissingItems('');
+  setEditMode(false);
+  setShowAllGamesList(false);
+  setDetailedView(null);
+  
+  // ⬇️ NOUVEAU : Charger les item_details uniquement pour ce jeu
+  try {
+    const { data, error } = await supabase
+      .from('games')
+      .select('item_details')
+      .eq('id', game.id)
+      .single();
+    
+    if (error) throw error;
+    
+    const details = data.item_details ? (typeof data.item_details === 'object' ? data.item_details : {}) : {};
+    setItemDetails(details);
+  } catch (error) {
+    console.error('Erreur chargement détails:', error);
+    setItemDetails({});
+  }
+  
+  await loadActiveInventory(game);
+};
 
   const deleteGame = async (gameId, gameName) => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?\n\nCette action est irréversible.`)) {
@@ -644,43 +661,55 @@ const handleDrop = async (e) => {
   };
 
   const saveDetailedView = async () => {
-    const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
-    
-    const updatedItemDetails = {
-      ...itemDetails,
-      [detailedView.itemIndex]: validPhotos
+  const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
+  
+  const updatedItemDetails = {
+    ...itemDetails,
+    [detailedView.itemIndex]: validPhotos
+  };
+
+  // 🔍 DIAGNOSTIC : Afficher la taille des données
+  const dataSize = JSON.stringify(updatedItemDetails).length;
+  console.log('📊 Taille des données à sauvegarder:', (dataSize / 1024).toFixed(2), 'KB');
+  console.log('📊 Nombre de photos:', validPhotos.length);
+  
+  if (dataSize > 500000) { // Plus de 500 KB
+    alert('⚠️ Attention : Beaucoup de données à sauvegarder. Cela peut prendre du temps...');
+  }
+
+  try {
+    const { error } = await supabase
+      .from('games')
+      .update({ 
+        item_details: updatedItemDetails,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', selectedGame.id);
+
+    if (error) {
+      console.error('❌ Erreur Supabase:', error);
+      throw error;
+    }
+
+    const updatedGame = {
+      ...selectedGame,
+      itemDetails: updatedItemDetails
     };
 
-    try {
-      const { error } = await supabase
-        .from('games')
-        .update({ 
-          item_details: updatedItemDetails,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedGame.id);
+    const updatedGames = allGames.map(game =>
+      game.id === selectedGame.id ? updatedGame : game
+    );
 
-      if (error) throw error;
-
-      const updatedGame = {
-        ...selectedGame,
-        itemDetails: updatedItemDetails
-      };
-
-      const updatedGames = allGames.map(game =>
-        game.id === selectedGame.id ? updatedGame : game
-      );
-
-      setAllGames(updatedGames);
-      setSelectedGame(updatedGame);
-      setItemDetails(updatedItemDetails);
-      setEditingDetails(false);
-      alert('✅ Photos enregistrées !');
-    } catch (error) {
-      console.error('Erreur sauvegarde:', error);
-      alert('❌ Erreur lors de la sauvegarde');
-    }
-  };
+    setAllGames(updatedGames);
+    setSelectedGame(updatedGame);
+    setItemDetails(updatedItemDetails);
+    setEditingDetails(false);
+    alert('✅ Photos enregistrées !');
+  } catch (error) {
+    console.error('❌ Erreur sauvegarde complète:', error);
+    alert(`❌ Erreur lors de la sauvegarde: ${error.message || 'Erreur inconnue'}`);
+  }
+};
 
   const createGame = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
