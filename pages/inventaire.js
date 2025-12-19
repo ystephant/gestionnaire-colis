@@ -13,6 +13,7 @@ export default function InventaireJeux() {
   const [darkMode, setDarkMode] = useState(false);
   const [username] = useState('demo_user');
   const [loading, setLoading] = useState(true);
+  const [displayLimit, setDisplayLimit] = useState(20); // Limiter à 20 photos au départ
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
@@ -1381,22 +1382,21 @@ function DetailedViewComponent({
   uploadingPhotos, uploadProgress
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
-const [lastTap, setLastTap] = useState(0);
+  const [lastTap, setLastTap] = useState(0);
+  const [displayLimit, setDisplayLimit] = useState(20); // 📌 AJOUT : Pagination
 
-const handlePhotoClick = (e, photo) => {
-  const now = Date.now();
-  const DOUBLE_CLICK_DELAY = 300; // 300ms entre les clics
+  const handlePhotoClick = (e, photo) => {
+    const now = Date.now();
+    const DOUBLE_CLICK_DELAY = 300;
 
-  if (now - lastTap < DOUBLE_CLICK_DELAY) {
-    // Double-clic détecté
-    e.stopPropagation();
-    setFullscreenPhoto(photo);
-    setLastTap(0); // Reset
-  } else {
-    // Premier clic, juste mémoriser le temps
-    setLastTap(now);
-  }
-};
+    if (now - lastTap < DOUBLE_CLICK_DELAY) {
+      e.stopPropagation();
+      setFullscreenPhoto(photo);
+      setLastTap(0);
+    } else {
+      setLastTap(now);
+    }
+  };
 
   const closeFullscreen = () => {
     setFullscreenPhoto(null);
@@ -1422,6 +1422,10 @@ const handlePhotoClick = (e, photo) => {
               </h2>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''}
+                {/* 📌 AJOUT : Indicateur de pagination */}
+                {displayLimit < currentDetailPhotos.length && (
+                  <> • Affichage de {displayLimit} sur {currentDetailPhotos.length}</>
+                )}
               </p>
             </div>
           </div>
@@ -1466,56 +1470,61 @@ const handlePhotoClick = (e, photo) => {
         {editingDetails ? (
           <>
             <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
-  <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
-    💡 Vos photos sont hébergées gratuitement sur ImgBB ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
-  </p>
-</div>
+              <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
+                💡 Vos photos sont hébergées gratuitement sur ImgBB ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
+              </p>
+              {/* 📌 AJOUT : Indicateur de photos en mode édition */}
+              <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
+                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Affichage de {Math.min(displayLimit, currentDetailPhotos.length)} cartes
+              </p>
+            </div>
 
-{uploadingPhotos && (
-  <div className="mb-4 p-4 rounded-xl bg-purple-100 dark:bg-purple-900 dark:bg-opacity-30">
-    <div className="flex items-center justify-between mb-2">
-      <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">
-        📤 Upload en cours... {uploadProgress}%
-      </p>
-    </div>
-    <div className="w-full bg-purple-200 dark:bg-purple-800 rounded-full h-2">
-      <div 
-        className="bg-purple-600 h-2 rounded-full transition-all duration-300"
-        style={{ width: `${uploadProgress}%` }}
-      />
-    </div>
-  </div>
-)}
+            {uploadingPhotos && (
+              <div className="mb-4 p-4 rounded-xl bg-purple-100 dark:bg-purple-900 dark:bg-opacity-30">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">
+                    📤 Upload en cours... {uploadProgress}%
+                  </p>
+                </div>
+                <div className="w-full bg-purple-200 dark:bg-purple-800 rounded-full h-2">
+                  <div 
+                    className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
-          <input
-            ref={detailImageInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleDetailPhotoCapture}
-            className="hidden"
-          />
+            <input
+              ref={detailImageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleDetailPhotoCapture}
+              className="hidden"
+            />
 
             <div 
-  className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4 relative transition-all ${
-    isDragging ? 'ring-4 ring-purple-500 ring-opacity-50 bg-purple-50 dark:bg-purple-900 dark:bg-opacity-20 rounded-xl p-4' : ''
-  }`}
-  onDragEnter={handleDragEnter}
-  onDragOver={handleDragOver}
-  onDragLeave={handleDragLeave}
-  onDrop={handleDrop}
->
-  {isDragging && (
-    <div className="absolute inset-0 flex items-center justify-center bg-purple-500 bg-opacity-10 rounded-xl border-4 border-dashed border-purple-500 pointer-events-none z-10">
-      <div className="text-center">
-        <Camera size={48} className="mx-auto mb-2 text-purple-600" />
-        <p className={`text-lg font-bold ${darkMode ? 'text-purple-300' : 'text-purple-600'}`}>
-          Déposez vos photos ici
-        </p>
-      </div>
-    </div>
-  )}
-              {currentDetailPhotos.map((photo) => (
+              className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4 relative transition-all ${
+                isDragging ? 'ring-4 ring-purple-500 ring-opacity-50 bg-purple-50 dark:bg-purple-900 dark:bg-opacity-20 rounded-xl p-4' : ''
+              }`}
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              {isDragging && (
+                <div className="absolute inset-0 flex items-center justify-center bg-purple-500 bg-opacity-10 rounded-xl border-4 border-dashed border-purple-500 pointer-events-none z-10">
+                  <div className="text-center">
+                    <Camera size={48} className="mx-auto mb-2 text-purple-600" />
+                    <p className={`text-lg font-bold ${darkMode ? 'text-purple-300' : 'text-purple-600'}`}>
+                      Déposez vos photos ici
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* 📌 MODIFIÉ : Limiter l'affichage avec slice */}
+              {currentDetailPhotos.slice(0, displayLimit).map((photo) => (
                 <div key={photo.id} className={`border-2 rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div 
                     onClick={() => openDetailPhotoCapture(photo.id)}
@@ -1524,7 +1533,7 @@ const handlePhotoClick = (e, photo) => {
                     } transition`}
                   >
                     {photo.image ? (
-                      <img src={photo.image} alt={photo.name || 'Photo'} className="w-full h-full object-cover" />
+                      <img src={photo.image} alt={photo.name || 'Photo'} className="w-full h-full object-cover" loading="lazy" />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center gap-2">
                         <Camera size={32} className={darkMode ? 'text-gray-500' : 'text-gray-400'} />
@@ -1558,13 +1567,29 @@ const handlePhotoClick = (e, photo) => {
               ))}
             </div>
 
-<button
-  onClick={addDetailPhoto}
-  className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
->
-  <Plus size={20} />
-  Ajouter des photos
-</button>
+            {/* 📌 AJOUT : Bouton "Charger plus" en mode édition */}
+            {displayLimit < currentDetailPhotos.length && (
+              <div className="mb-4 text-center">
+                <button
+                  onClick={() => setDisplayLimit(prev => prev + 20)}
+                  className={`px-4 py-2 rounded-lg font-semibold transition ${
+                    darkMode
+                      ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Afficher 20 photos de plus ({currentDetailPhotos.length - displayLimit} restantes)
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={addDetailPhoto}
+              className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
+            >
+              <Plus size={20} />
+              Ajouter des photos
+            </button>
           </>
         ) : (
           <>
@@ -1578,60 +1603,79 @@ const handlePhotoClick = (e, photo) => {
               <div>
                 <div className={`mb-4 p-3 rounded-xl ${darkMode ? 'bg-purple-900 bg-opacity-30' : 'bg-purple-50'}`}>
                   <p className={`text-xs ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>
-                  💡 Double-cliquez sur une photo pour la voir en plein écran
+                    💡 Double-cliquez sur une photo pour la voir en plein écran
                   </p>
                 </div>
+                
+                {/* 📌 MODIFIÉ : Affichage avec pagination */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {currentDetailPhotos.filter(p => p.image).map((photo) => {
-                    const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
-                    return (
-                      <div
-  key={photo.id}
-  onClick={(e) => {
-    const now = Date.now();
-    if (now - lastTap < 300) {
-      // Double-clic détecté
-      e.stopPropagation();
-      setFullscreenPhoto(photo);
-      setLastTap(0);
-    } else {
-      // Simple clic = toggle vert
-      setLastTap(now);
-      toggleDetailPhoto(detailedView.itemIndex, photo.id);
-    }
-  }}
-  className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
-                          isChecked
-                            ? 'border-green-500 opacity-60'
-                            : darkMode
-                              ? 'border-gray-600 hover:border-purple-500'
-                              : 'border-gray-200 hover:border-purple-500'
-                        }`}
-                      >
-<img 
-  src={photo.image} 
-  alt={photo.name || 'Photo'}
-  className="w-full h-full object-cover"
-  loading="lazy" // ⬅️ AJOUTEZ CECI
-/>
-                        
-                        {isChecked && (
-                          <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center">
-                            <Check size={48} className="text-white" />
-                          </div>
-                        )}
-                        
-                        {photo.name && (
-                          <div className={`absolute bottom-0 left-0 right-0 p-2 text-xs font-medium text-center ${
-                            darkMode ? 'bg-gray-900 bg-opacity-80 text-gray-100' : 'bg-white bg-opacity-90 text-gray-800'
-                          }`}>
-                            {photo.name}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {currentDetailPhotos
+                    .filter(p => p.image)
+                    .slice(0, displayLimit)
+                    .map((photo) => {
+                      const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
+                      return (
+                        <div
+                          key={photo.id}
+                          onClick={(e) => {
+                            const now = Date.now();
+                            if (now - lastTap < 300) {
+                              e.stopPropagation();
+                              setFullscreenPhoto(photo);
+                              setLastTap(0);
+                            } else {
+                              setLastTap(now);
+                              toggleDetailPhoto(detailedView.itemIndex, photo.id);
+                            }
+                          }}
+                          className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
+                            isChecked
+                              ? 'border-green-500 opacity-60'
+                              : darkMode
+                                ? 'border-gray-600 hover:border-purple-500'
+                                : 'border-gray-200 hover:border-purple-500'
+                          }`}
+                        >
+                          <img 
+                            src={photo.image} 
+                            alt={photo.name || 'Photo'}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                          
+                          {isChecked && (
+                            <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center">
+                              <Check size={48} className="text-white" />
+                            </div>
+                          )}
+                          
+                          {photo.name && (
+                            <div className={`absolute bottom-0 left-0 right-0 p-2 text-xs font-medium text-center ${
+                              darkMode ? 'bg-gray-900 bg-opacity-80 text-gray-100' : 'bg-white bg-opacity-90 text-gray-800'
+                            }`}>
+                              {photo.name}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
+
+                {/* 📌 AJOUT : Bouton "Charger plus" en mode consultation */}
+                {displayLimit < currentDetailPhotos.filter(p => p.image).length && (
+                  <div className="mt-6 text-center">
+                    <button
+                      onClick={() => setDisplayLimit(prev => prev + 20)}
+                      className={`px-6 py-3 rounded-xl font-semibold transition ${
+                        darkMode
+                          ? 'bg-purple-600 text-white hover:bg-purple-700'
+                          : 'bg-purple-500 text-white hover:bg-purple-600'
+                      }`}
+                    >
+                      Afficher 20 photos de plus ({currentDetailPhotos.filter(p => p.image).length - displayLimit} restantes)
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </>
