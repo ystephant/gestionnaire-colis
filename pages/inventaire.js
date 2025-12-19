@@ -71,26 +71,6 @@ export default function InventaireJeux() {
     };
   };
 
-  useEffect(() => {
-  const savedDarkMode = localStorage.getItem('darkMode');
-  if (savedDarkMode !== null) {
-    setDarkMode(savedDarkMode === 'true');
-  }
-  
-  loadGames();
-  
-  // 📡 Synchronisation temps réel
-  const channel = supabase
-    .channel('games-sync')
-    .on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'games' }, 
-      () => loadGames()
-    )
-    .subscribe();
-  
-  return () => supabase.removeChannel(channel);
-}, []);
-
 // 📥 Charger les jeux depuis Supabase
 const loadGames = async () => {
   setLoading(true);
@@ -116,6 +96,10 @@ const loadGames = async () => {
   }
   
   loadGames();
+
+  useEffect(() => {
+  localStorage.setItem('darkMode', darkMode.toString());
+}, [darkMode]);
   
   // 📡 Synchronisation temps réel AMÉLIORÉE
   const channel = supabase
@@ -350,10 +334,6 @@ const loadGames = async () => {
     console.error('Erreur sauvegarde:', error);
   }
 };
-    
-    newCheckedItems[itemIndex] = allPhotosChecked;
-    setCheckedItems(newCheckedItems);
-  };
 
   const resetInventory = () => {
     if (!confirm('Réinitialiser l\'inventaire ?')) return;
@@ -543,10 +523,6 @@ const loadGames = async () => {
   console.error('Erreur:', error);
   alert('❌ Erreur création');
 }
-    
-    alert(`✅ Le jeu "${newGameName}" a été créé !`);
-    closeCreateModal();
-    selectGame(newGame);
   };
 
   const startEditMode = () => {
