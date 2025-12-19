@@ -355,11 +355,30 @@ useEffect(() => {
   // ✅ PAS DE loadGames() ici !
 };
 
-  const resetInventory = () => {
-    if (!confirm('Réinitialiser l\'inventaire ?')) return;
-    setCheckedItems({});
-    setMissingItems('');
-  };
+  const resetInventory = async () => {
+  if (!confirm('Réinitialiser l\'inventaire ?')) return;
+  
+  setCheckedItems({});
+  setMissingItems('');
+  
+  // 💾 Sauvegarder dans Supabase
+  try {
+    const { error } = await supabase
+      .from('games')
+      .update({ 
+        checked_items: {},
+        missing_items: ''
+      })
+      .eq('id', selectedGame.id);
+
+    if (error) throw error;
+    
+    setSyncStatus('✅ Inventaire réinitialisé');
+    setTimeout(() => setSyncStatus(''), 1500);
+  } catch (error) {
+    console.error('Erreur sauvegarde:', error);
+  }
+};
 
   const changeGame = () => {
     setSelectedGame(null);
@@ -457,15 +476,61 @@ useEffect(() => {
   };
 
   const updateDetailPhotoName = (photoId, name) => {
-    const updated = currentDetailPhotos.map(photo =>
-      photo.id === photoId ? { ...photo, name } : photo
-    );
-    setCurrentDetailPhotos(updated);
-  };
+  const updated = currentDetailPhotos.map(photo =>
+    photo.id === photoId ? { ...photo, name } : photo
+  );
+  setCurrentDetailPhotos(updated);
+  
+  // 💾 Auto-save après 1 seconde d'inactivité
+  clearTimeout(window.photoNameTimer);
+  window.photoNameTimer = setTimeout(async () => {
+    const updatedItemDetails = {
+      ...itemDetails,
+      [detailedView.itemIndex]: updated.filter(p => p.image !== null)
+    };
+    
+    try {
+      const { error } = await supabase
+        .from('games')
+        .update({ item_details: updatedItemDetails })
+        .eq('id', selectedGame.id);
 
-  const removeDetailPhoto = (photoId) => {
-    setCurrentDetailPhotos(currentDetailPhotos.filter(photo => photo.id !== photoId));
+      if (error) throw error;
+      
+      setItemDetails(updatedItemDetails);
+      setSyncStatus('✅ Nom sauvegardé');
+      setTimeout(() => setSyncStatus(''), 1500);
+    } catch (error) {
+      console.error('Erreur:', error);
+    }
+  }, 1000);
+};
+
+  const removeDetailPhoto = async (photoId) => {
+  const updatedPhotos = currentDetailPhotos.filter(photo => photo.id !== photoId);
+  setCurrentDetailPhotos(updatedPhotos);
+  
+  // 💾 Sauvegarder immédiatement dans Supabase
+  const updatedItemDetails = {
+    ...itemDetails,
+    [detailedView.itemIndex]: updatedPhotos.filter(p => p.image !== null)
   };
+  
+  try {
+    const { error } = await supabase
+      .from('games')
+      .update({ item_details: updatedItemDetails })
+      .eq('id', selectedGame.id);
+
+    if (error) throw error;
+    
+    setItemDetails(updatedItemDetails);
+    setSyncStatus('✅ Photo supprimée');
+    setTimeout(() => setSyncStatus(''), 1500);
+  } catch (error) {
+    console.error('Erreur:', error);
+  }
+};
 
   const saveDetailedView = async () => {
     const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
