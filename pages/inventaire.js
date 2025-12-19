@@ -96,10 +96,6 @@ const loadGames = async () => {
   }
   
   loadGames();
-
-  useEffect(() => {
-  localStorage.setItem('darkMode', darkMode.toString());
-}, [darkMode]);
   
   // 📡 Synchronisation temps réel AMÉLIORÉE
   const channel = supabase
@@ -129,6 +125,10 @@ const loadGames = async () => {
   
   return () => supabase.removeChannel(channel);
 }, [selectedGame]); // Ajouter selectedGame comme dépendance
+
+   useEffect(() => {
+  localStorage.setItem('darkMode', darkMode.toString());
+}, [darkMode]);
 
   useEffect(() => {
     if (searchQuery.length > 1) {
