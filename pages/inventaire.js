@@ -4,7 +4,7 @@ import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, 
 // ⚙️ CONFIGURATION CLOUDINARY - REMPLACEZ PAR VOS VALEURS
 const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey'; // ← Changez ici
 const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload'; // ← Changez ici
-const USE_SEPARATE_PHOTO_TABLE = false; // true = nouvelle table game_photos, false = ancien système item_details
+const USE_SEPARATE_PHOTO_TABLE = true; // true = nouvelle table game_photos, false = ancien système item_details
 
 // 🎨 Composant principal
 export default function InventaireJeux() {
