@@ -89,42 +89,62 @@ const loadGames = async () => {
   }
 };
 
-  useEffect(() => {
+  // 1️⃣ Chargement initial seulement
+useEffect(() => {
   const savedDarkMode = localStorage.getItem('darkMode');
   if (savedDarkMode !== null) {
     setDarkMode(savedDarkMode === 'true');
   }
   
   loadGames();
-  
-  // 📡 Synchronisation temps réel AMÉLIORÉE
+}, []); // ✅ Vide = une seule fois au démarrage
+
+// 2️⃣ Synchronisation temps réel SÉPARÉE
+useEffect(() => {
   const channel = supabase
     .channel('games-realtime')
     .on('postgres_changes', 
       { event: '*', schema: 'public', table: 'games' }, 
-      (payload) => {
-        console.log('🔄 Changement détecté:', payload);
+      async (payload) => {
+        console.log('🔄 Changement Supabase détecté:', payload);
         
-        // Recharger uniquement si c'est un autre utilisateur ou une autre session
-        if (payload.new && selectedGame && payload.new.id === selectedGame.id) {
-          // Mise à jour en direct du jeu sélectionné
-          setSelectedGame(payload.new);
-          setCheckedItems(payload.new.checked_items || {});
-          setMissingItems(payload.new.missing_items || '');
-          setItemDetails(payload.new.item_details || {});
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          // ✅ Mettre à jour le jeu dans la liste
+          setAllGames(prev => 
+            prev.map(game => 
+              game.id === payload.new.id ? payload.new : game
+            )
+          );
           
-          setSyncStatus('🔄 Synchronisé avec autre appareil');
-          setTimeout(() => setSyncStatus(''), 2000);
-        } else {
-          // Recharger toute la liste
-          loadGames();
+          // ✅ Si c'est le jeu actuellement sélectionné, le mettre à jour
+          setSelectedGame(prev => {
+            if (prev && prev.id === payload.new.id) {
+              // 🔥 MISE À JOUR TEMPS RÉEL DES COCHAGES
+              setCheckedItems(payload.new.checked_items || {});
+              setMissingItems(payload.new.missing_items || '');
+              setItemDetails(payload.new.item_details || {});
+              
+              setSyncStatus('🔄 Synchronisé');
+              setTimeout(() => setSyncStatus(''), 2000);
+              
+              return payload.new;
+            }
+            return prev;
+          });
+        } else if (payload.eventType === 'INSERT') {
+          await loadGames();
+        } else if (payload.eventType === 'DELETE') {
+          setAllGames(prev => prev.filter(g => g.id !== payload.old.id));
+          setSelectedGame(prev => 
+            prev?.id === payload.old.id ? null : prev
+          );
         }
       }
     )
     .subscribe();
   
   return () => supabase.removeChannel(channel);
-}, [selectedGame]); // Ajouter selectedGame comme dépendance
+}, []); // ✅ Écoute permanente, pas de dépendance !
 
    useEffect(() => {
   localStorage.setItem('darkMode', darkMode.toString());
