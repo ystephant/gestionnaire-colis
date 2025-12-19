@@ -1521,9 +1521,10 @@ function DetailedViewComponent({
             <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
               <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
                 💡 Vos photos sont hébergées gratuitement sur ImgBB ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
-             <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
-  📸 {currentDetailPhotos.filter(p => p.image).length} photos • Page {currentPage}/{getTotalPages()} ({PHOTOS_PER_PAGE} photos par page)
-</p>
+              </p>
+              <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
+                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Page {currentPage}/{getTotalPages()} ({PHOTOS_PER_PAGE} photos par page)
+              </p>
             </div>
 
             {uploadingPhotos && (
