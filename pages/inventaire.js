@@ -14,7 +14,7 @@ export default function InventaireJeux() {
   const [username] = useState('demo_user');
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const PHOTOS_PER_PAGE = 20;
+  const PHOTOS_PER_PAGE = 10;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
@@ -435,6 +435,7 @@ const fetchGames = async () => {
     setCurrentDetailPhotos(photos);
     setDetailedView({ itemIndex, itemName });
     setEditingDetails(false);
+    setCurrentPage(1);
   };
 
   const closeDetailedView = () => {
@@ -1299,9 +1300,15 @@ const previousPage = () => {
   handleDrop={handleDrop}
   uploadingPhotos={uploadingPhotos}
   uploadProgress={uploadProgress}
+  currentPage={currentPage}
+  getTotalPages={getTotalPages}
+  getCurrentPagePhotos={getCurrentPagePhotos}
+  goToPage={goToPage}
+  nextPage={nextPage}
+  previousPage={previousPage}
+  PHOTOS_PER_PAGE={PHOTOS_PER_PAGE}
 />
 )}
-
         {/* Modal création */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1420,7 +1427,8 @@ function DetailedViewComponent({
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto,
   checkedItems, toggleDetailPhoto,
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
-  uploadingPhotos, uploadProgress
+  uploadingPhotos, uploadProgress,
+  currentPage, getTotalPages, getCurrentPagePhotos, goToPage, nextPage, previousPage, PHOTOS_PER_PAGE
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const [lastTap, setLastTap] = useState(0);
