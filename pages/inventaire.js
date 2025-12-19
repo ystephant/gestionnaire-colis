@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, Home, List, ArrowLeft } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
+// 🔗 Connexion Supabase depuis les variables d'environnement Vercel
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 // ⚙️ CONFIGURATION CLOUDINARY - REMPLACEZ PAR VOS VALEURS
 const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey'; // ← Changez ici
 const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload'; // ← Changez ici
@@ -39,31 +45,6 @@ export default function InventaireJeux() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Simuler Supabase localement pour la démo
-  const supabase = {
-    from: (table) => ({
-      select: () => ({ 
-        eq: () => ({ 
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
-          single: () => Promise.resolve({ data: null, error: null }),
-          order: () => Promise.resolve({ data: [], error: null })
-        }),
-        order: () => Promise.resolve({ data: [], error: null })
-      }),
-      insert: () => ({ 
-        select: () => ({ 
-          single: () => Promise.resolve({ data: { id: Date.now() }, error: null })
-        })
-      }),
-      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
-      delete: () => ({ eq: () => Promise.resolve({ error: null }) })
-    }),
-    channel: () => ({
-      on: () => ({ subscribe: () => {} })
-    }),
-    removeChannel: () => {}
-  };
-
   // 📸 Upload vers Cloudinary (parallèle et optimisé)
   const uploadToCloudinary = async (file, folder = 'boardgames') => {
     const formData = new FormData();
@@ -91,17 +72,42 @@ export default function InventaireJeux() {
   };
 
   useEffect(() => {
-    const savedDarkMode = localStorage.getItem('darkMode');
-    if (savedDarkMode !== null) {
-      setDarkMode(savedDarkMode === 'true');
-    }
-    
-    // Charger les jeux depuis localStorage pour la démo
-    const savedGames = localStorage.getItem('boardgames');
-    if (savedGames) {
-      setAllGames(JSON.parse(savedGames));
-    }
-  }, []);
+  const savedDarkMode = localStorage.getItem('darkMode');
+  if (savedDarkMode !== null) {
+    setDarkMode(savedDarkMode === 'true');
+  }
+  
+  loadGames();
+  
+  // 📡 Synchronisation temps réel
+  const channel = supabase
+    .channel('games-sync')
+    .on('postgres_changes', 
+      { event: '*', schema: 'public', table: 'games' }, 
+      () => loadGames()
+    )
+    .subscribe();
+  
+  return () => supabase.removeChannel(channel);
+}, []);
+
+// 📥 Charger les jeux depuis Supabase
+const loadGames = async () => {
+  setLoading(true);
+  try {
+    const { data, error } = await supabase
+      .from('games')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    setAllGames(data || []);
+  } catch (error) {
+    console.error('Erreur:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     localStorage.setItem('darkMode', darkMode.toString());
@@ -231,12 +237,23 @@ export default function InventaireJeux() {
   const deleteGame = (gameId, gameName) => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
     
-    const updatedGames = allGames.filter(game => game.id !== gameId);
-    setAllGames(updatedGames);
-    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
-    
-    if (selectedGame?.id === gameId) setSelectedGame(null);
-    alert('✅ Jeu supprimé');
+    try {
+  const { error } = await supabase
+    .from('games')
+    .delete()
+    .eq('id', gameId);
+
+  if (error) throw error;
+
+  setSyncStatus('✅ Supprimé');
+  setTimeout(() => setSyncStatus(''), 2000);
+  
+  if (selectedGame?.id === gameId) setSelectedGame(null);
+  await loadGames();
+} catch (error) {
+  console.error('Erreur:', error);
+  alert('❌ Erreur suppression');
+}
   };
 
   const toggleItem = (index) => {
@@ -398,17 +415,26 @@ export default function InventaireJeux() {
       itemDetails: updatedItemDetails
     };
 
-    const updatedGames = allGames.map(game =>
-      game.id === selectedGame.id ? updatedGame : game
-    );
+    try {
+  const { error } = await supabase
+    .from('games')
+    .update({ item_details: updatedItemDetails })
+    .eq('id', selectedGame.id);
 
-    setAllGames(updatedGames);
-    setSelectedGame(updatedGame);
-    setItemDetails(updatedItemDetails);
-    
-    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
-    
-    alert('✅ Photos enregistrées ! Vous pouvez continuer à ajouter des photos.');
+  if (error) throw error;
+
+  setSyncStatus('✅ Photos synchronisées');
+  setTimeout(() => setSyncStatus(''), 2000);
+  
+  setItemDetails(updatedItemDetails);
+  await loadGames();
+  
+  const updated = allGames.find(g => g.id === selectedGame.id);
+  if (updated) setSelectedGame(updated);
+} catch (error) {
+  console.error('Erreur:', error);
+  alert('❌ Erreur sauvegarde photos');
+}
   };
 
   const createGame = () => {
@@ -428,9 +454,30 @@ export default function InventaireJeux() {
       created_at: new Date().toISOString()
     };
 
-    const updatedGames = [newGame, ...allGames].sort((a, b) => a.name.localeCompare(b.name));
-    setAllGames(updatedGames);
-    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
+    try {
+  const { data, error } = await supabase
+    .from('games')
+    .insert({
+      name: newGameName.trim(),
+      items: validItems,
+      item_details: {},
+      created_by: username
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  setSyncStatus('✅ Jeu créé');
+  setTimeout(() => setSyncStatus(''), 2000);
+  
+  closeCreateModal();
+  await loadGames();
+  if (data) selectGame(data);
+} catch (error) {
+  console.error('Erreur:', error);
+  alert('❌ Erreur création');
+}
     
     alert(`✅ Le jeu "${newGameName}" a été créé !`);
     closeCreateModal();
@@ -456,17 +503,27 @@ export default function InventaireJeux() {
     }
 
     const updatedGame = { ...selectedGame, items: validItems };
-    const updatedGames = allGames.map(game => 
-      game.id === selectedGame.id ? updatedGame : game
-    );
+    try {
+  const { error } = await supabase
+    .from('games')
+    .update({ items: validItems })
+    .eq('id', selectedGame.id);
 
-    setAllGames(updatedGames);
-    setSelectedGame(updatedGame);
-    setEditMode(false);
-    setCheckedItems({});
-    
-    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
-    alert('✅ Modifications enregistrées !');
+  if (error) throw error;
+
+  setSyncStatus('✅ Synchronisé');
+  setTimeout(() => setSyncStatus(''), 2000);
+  
+  setEditMode(false);
+  setCheckedItems({});
+  await loadGames();
+  
+  const updated = allGames.find(g => g.id === selectedGame.id);
+  if (updated) setSelectedGame(updated);
+} catch (error) {
+  console.error('Erreur:', error);
+  alert('❌ Erreur sauvegarde');
+}
   };
   
   const getDetailPhotoCount = (itemIndex) => {
