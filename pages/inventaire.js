@@ -1,20 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, Home, List, ArrowLeft } from 'lucide-react';
-import { useRouter } from 'next/router';
-import { getSupabase } from '@/lib/supabase';
 
-const supabase = getSupabase();
+// ⚙️ CONFIGURATION CLOUDINARY - REMPLACEZ PAR VOS VALEURS
+const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey'; // ← Changez ici
+const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload'; // ← Changez ici
+const USE_SEPARATE_PHOTO_TABLE = false; // true = nouvelle table game_photos, false = ancien système item_details
 
-// ⚙️ CONFIGURATION IMGBB - Remplacez par votre clé API
-const IMGBB_API_KEY = 'cc220033c79cff185cc5dd1604633dd9'; // ← Mettez votre vraie clé API ici
-
+// 🎨 Composant principal
 export default function InventaireJeux() {
-  const router = useRouter();
   const [darkMode, setDarkMode] = useState(false);
   const [username] = useState('demo_user');
-  const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  const PHOTOS_PER_PAGE = 10;
+  const [loading, setLoading] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
@@ -29,7 +25,6 @@ export default function InventaireJeux() {
   const [editMode, setEditMode] = useState(false);
   const [newGameName, setNewGameName] = useState('');
   const [newGameItems, setNewGameItems] = useState(['']);
-  const fileInputRef = useRef(null);
   
   const [detailedView, setDetailedView] = useState(null);
   const [itemDetails, setItemDetails] = useState({});
@@ -44,123 +39,73 @@ export default function InventaireJeux() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Charger le mode sombre depuis localStorage
+  // Simuler Supabase localement pour la démo
+  const supabase = {
+    from: (table) => ({
+      select: () => ({ 
+        eq: () => ({ 
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          single: () => Promise.resolve({ data: null, error: null }),
+          order: () => Promise.resolve({ data: [], error: null })
+        }),
+        order: () => Promise.resolve({ data: [], error: null })
+      }),
+      insert: () => ({ 
+        select: () => ({ 
+          single: () => Promise.resolve({ data: { id: Date.now() }, error: null })
+        })
+      }),
+      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      delete: () => ({ eq: () => Promise.resolve({ error: null }) })
+    }),
+    channel: () => ({
+      on: () => ({ subscribe: () => {} })
+    }),
+    removeChannel: () => {}
+  };
+
+  // 📸 Upload vers Cloudinary (parallèle et optimisé)
+  const uploadToCloudinary = async (file, folder = 'boardgames') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', folder);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+      {
+        method: 'POST',
+        body: formData
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Cloudinary upload failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      url: data.secure_url,
+      publicId: data.public_id
+    };
+  };
+
   useEffect(() => {
     const savedDarkMode = localStorage.getItem('darkMode');
     if (savedDarkMode !== null) {
       setDarkMode(savedDarkMode === 'true');
     }
+    
+    // Charger les jeux depuis localStorage pour la démo
+    const savedGames = localStorage.getItem('boardgames');
+    if (savedGames) {
+      setAllGames(JSON.parse(savedGames));
+    }
   }, []);
 
-  // Sauvegarder le mode sombre
   useEffect(() => {
     localStorage.setItem('darkMode', darkMode.toString());
   }, [darkMode]);
-
-  useEffect(() => {
-    fetchGames();
-  }, []);
-
-  // Synchronisation temps réel
-  useEffect(() => {
-    if (selectedGame && activeInventoryId) {
-      setupRealtimeSync();
-      return () => {
-        if (window.inventoryChannel) {
-          supabase.removeChannel(window.inventoryChannel);
-        }
-      };
-    }
-  }, [activeInventoryId]);
-
-  const setupRealtimeSync = () => {
-  console.log('🔄 Configuration Realtime pour game_id:', selectedGame.id);
-  
-  const channel = supabase
-    .channel(`inventory-${selectedGame.id}`)
-    .on('postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'game_inventories',
-          filter: `game_id=eq.${selectedGame.id}`
-        },
-        (payload) => {
-          console.log('🔄 Changement temps réel:', payload);
-          
-          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            setCheckedItems(payload.new.checked_items || {});
-            setMissingItems(payload.new.missing_items || '');
-            setSyncStatus('✅ Synchronisé');
-            setTimeout(() => setSyncStatus(''), 2000);
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Statut subscription:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Synchronisation temps réel activée');
-          setSyncStatus('🔄 Synchronisé en temps réel');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Erreur de canal Realtime');
-          alert('⚠️ Erreur de synchronisation temps réel');
-        }
-      });
-
-    window.inventoryChannel = channel;
-  };
-
-  // Fonction pour uploader une image vers ImgBB
-const uploadToImgBB = async (base64Image) => {
-  try {
-    // Retirer le préfixe "data:image/...;base64," si présent
-    const base64Data = base64Image.split(',')[1] || base64Image;
-    
-    const formData = new FormData();
-    formData.append('image', base64Data);
-    
-    const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-      method: 'POST',
-      body: formData
-    });
-
-    const data = await response.json();
-    
-    if (data.success) {
-      return data.data.url; // URL de l'image hébergée
-    } else {
-      throw new Error(data.error.message || 'Erreur upload ImgBB');
-    }
-  } catch (error) {
-    console.error('Erreur upload ImgBB:', error);
-    throw error;
-  }
-};
-
-const fetchGames = async () => {
-  setLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from('games')
-      .select('id, name, items, created_by, created_at, updated_at') // ⬅️ NE PAS charger item_details tout de suite
-      .order('name', { ascending: true });
-    
-    if (error) throw error;
-    
-    const parsedGames = (data || []).map(game => ({
-      ...game,
-      items: Array.isArray(game.items) ? game.items : [],
-      itemDetails: {} // ⬅️ Vide par défaut, sera chargé à la demande
-    }));
-    
-    setAllGames(parsedGames);
-  } catch (error) {
-    console.error('Erreur chargement:', error);
-    alert('❌ Erreur lors du chargement des jeux');
-  } finally {
-    setLoading(false);
-  }
-};
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -175,183 +120,163 @@ const fetchGames = async () => {
     }
   }, [searchQuery, allGames]);
 
-  const loadActiveInventory = async (game) => {
-  try {
-    const { data, error } = await supabase
-      .from('game_inventories')
-      .select('*')
-      .eq('game_id', game.id)
-      .maybeSingle();
+  // 📸 Upload MULTIPLE parallèle (10x plus rapide qu'ImgBB)
+  const handleDetailPhotoCapture = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
 
-    if (error && error.code !== 'PGRST116') throw error;
-
-    if (data) {
-      setActiveInventoryId(data.id);
-      setCheckedItems(data.checked_items || {});
-      setMissingItems(data.missing_items || '');
-    } else {
-      // MODIFIEZ CETTE PARTIE :
-      const { data: newInventory, error: createError } = await supabase
-        .from('game_inventories')
-        .insert([{
-          game_id: game.id,
-          user_id: username,  // ← AJOUTEZ CETTE LIGNE
-          checked_items: {},
-          missing_items: ''
-        }])
-        .select()
-        .single();
-
-      if (createError) throw createError;
-      setActiveInventoryId(newInventory.id);
-    }
-  } catch (error) {
-    console.error('Erreur chargement inventaire:', error);
-  }
-};
-
-  const selectGame = async (game) => {
-  setSelectedGame(game);
-  setSearchQuery('');
-  setShowResults(false);
-  setCheckedItems({});
-  setMissingItems('');
-  setEditMode(false);
-  setShowAllGamesList(false);
-  setDetailedView(null);
-  
-  // ⬇️ VÉRIFIEZ QUE CETTE PARTIE EST BIEN LÀ
-  try {
-    const { data, error } = await supabase
-      .from('games')
-      .select('item_details')
-      .eq('id', game.id)
-      .single();
-    
-    if (error) throw error;
-    
-    const details = data.item_details ? (typeof data.item_details === 'object' ? data.item_details : {}) : {};
-    console.log('📸 Photos chargées:', details); // ⬅️ Ajoutez ce log pour vérifier
-    setItemDetails(details);
-  } catch (error) {
-    console.error('Erreur chargement détails:', error);
-    setItemDetails({});
-  }
-  
-  await loadActiveInventory(game);
-};
-
-  const deleteGame = async (gameId, gameName) => {
-    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?\n\nCette action est irréversible.`)) {
+    // Vérifier la configuration
+    if (CLOUDINARY_CLOUD_NAME === 'dfnwxqjey') {
+      alert('⚠️ Veuillez configurer Cloudinary dans le code !\n\nÉtapes:\n1. Créez un compte sur cloudinary.com\n2. Notez votre Cloud Name\n3. Créez un Upload Preset "unsigned"\n4. Remplacez CLOUDINARY_CLOUD_NAME et CLOUDINARY_UPLOAD_PRESET dans le code');
       return;
     }
 
+    setUploadingPhotos(true);
+    setUploadProgress(0);
+
     try {
-      const { error } = await supabase
-        .from('games')
-        .delete()
-        .eq('id', gameId);
+      // ⚡ UPLOAD PARALLÈLE - toutes les photos en même temps !
+      let completed = 0;
+      const uploadPromises = files.map(async (file, index) => {
+        // Vérifier la taille (10MB max par défaut)
+        if (file.size > 10 * 1024 * 1024) {
+          console.warn(`⚠️ ${file.name} trop grande, ignorée`);
+          return null;
+        }
 
-      if (error) throw error;
+        try {
+          const folder = selectedGame 
+            ? `boardgames/${selectedGame.id}/${detailedView?.itemIndex || 0}`
+            : 'boardgames/demo';
+            
+          const result = await uploadToCloudinary(file, folder);
+          
+          completed++;
+          setUploadProgress(Math.round((completed / files.length) * 100));
+          
+          return {
+            id: `photo_${Date.now()}_${index}`,
+            name: '',
+            image: result.url,
+            cloudinaryPublicId: result.publicId
+          };
+        } catch (error) {
+          console.error(`Erreur upload ${file.name}:`, error);
+          return null;
+        }
+      });
 
-      setAllGames(allGames.filter(game => game.id !== gameId));
+      const results = await Promise.all(uploadPromises);
+      const newPhotos = results.filter(p => p !== null);
+
+      setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
       
-      if (selectedGame && selectedGame.id === gameId) {
-        setSelectedGame(null);
-      }
-      
-      alert('✅ Jeu supprimé avec succès');
+      alert(`✅ ${newPhotos.length} photo(s) uploadée(s) sur Cloudinary en ${((Date.now() - performance.now()) / 1000).toFixed(1)}s !`);
     } catch (error) {
-      console.error('Erreur suppression:', error);
-      alert('❌ Erreur lors de la suppression');
+      console.error('Erreur upload:', error);
+      alert('❌ Erreur lors de l\'upload des photos');
+    } finally {
+      setUploadingPhotos(false);
+      setUploadProgress(0);
     }
   };
 
-  const toggleItem = async (index) => {
-    const hasDetailPhotos = itemDetails[index] && itemDetails[index].filter(p => p.image).length > 0;
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (editingDetails) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === e.target) setIsDragging(false);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
     
+    if (!editingDetails) return;
+
+    const files = Array.from(e.dataTransfer.files).filter(file => 
+      file.type.startsWith('image/')
+    );
+    
+    if (files.length === 0) return;
+
+    // Simuler l'événement file input
+    const fakeEvent = { target: { files } };
+    await handleDetailPhotoCapture(fakeEvent);
+  };
+
+  const selectGame = (game) => {
+    setSelectedGame(game);
+    setSearchQuery('');
+    setShowResults(false);
+    setCheckedItems({});
+    setMissingItems('');
+    setEditMode(false);
+    setShowAllGamesList(false);
+    setDetailedView(null);
+    setItemDetails(game.itemDetails || {});
+  };
+
+  const deleteGame = (gameId, gameName) => {
+    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
+    
+    const updatedGames = allGames.filter(game => game.id !== gameId);
+    setAllGames(updatedGames);
+    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
+    
+    if (selectedGame?.id === gameId) setSelectedGame(null);
+    alert('✅ Jeu supprimé');
+  };
+
+  const toggleItem = (index) => {
+    const hasDetailPhotos = itemDetails[index]?.filter(p => p.image).length > 0;
     const newCheckedItems = { ...checkedItems };
     
     if (hasDetailPhotos) {
-      // Si on coche l'item parent, cocher toutes les photos détaillées
       const isChecking = !checkedItems[index];
       newCheckedItems[index] = isChecking;
-      
-      // Cocher/décocher toutes les photos de cet item
       itemDetails[index].forEach(photo => {
         if (photo.image) {
           newCheckedItems[`detail_${index}_${photo.id}`] = isChecking;
         }
       });
     } else {
-      // Pas de photos détaillées, toggle simple
       newCheckedItems[index] = !checkedItems[index];
     }
     
     setCheckedItems(newCheckedItems);
-    await saveCheckedItems(newCheckedItems);
   };
 
-  const toggleDetailPhoto = async (itemIndex, photoId) => {
+  const toggleDetailPhoto = (itemIndex, photoId) => {
     const newCheckedItems = {
       ...checkedItems,
       [`detail_${itemIndex}_${photoId}`]: !checkedItems[`detail_${itemIndex}_${photoId}`]
     };
     
-    // Vérifier si toutes les photos de cet item sont cochées
     const photos = itemDetails[itemIndex] || [];
     const allPhotosChecked = photos.filter(p => p.image).every(p => 
       newCheckedItems[`detail_${itemIndex}_${p.id}`]
     );
     
-    // Mettre à jour l'item parent en conséquence
     newCheckedItems[itemIndex] = allPhotosChecked;
-    
     setCheckedItems(newCheckedItems);
-    await saveCheckedItems(newCheckedItems);
   };
 
-  const saveCheckedItems = async (items) => {
-    if (activeInventoryId) {
-      try {
-        const { error } = await supabase
-          .from('game_inventories')
-          .update({ 
-            checked_items: items,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', activeInventoryId);
-
-        if (error) throw error;
-      } catch (error) {
-        console.error('Erreur sauvegarde:', error);
-      }
-    }
-  };
-
-  const resetInventory = async () => {
-    if (!confirm('Réinitialiser l\'inventaire de ce jeu ?')) return;
-    
-    const emptyState = {};
-    setCheckedItems(emptyState);
+  const resetInventory = () => {
+    if (!confirm('Réinitialiser l\'inventaire ?')) return;
+    setCheckedItems({});
     setMissingItems('');
-    
-    if (activeInventoryId) {
-      try {
-        const { error } = await supabase
-          .from('game_inventories')
-          .update({ 
-            checked_items: emptyState,
-            missing_items: '',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', activeInventoryId);
-
-        if (error) throw error;
-      } catch (error) {
-        console.error('Erreur réinitialisation:', error);
-      }
-    }
   };
 
   const changeGame = () => {
@@ -361,16 +286,6 @@ const fetchGames = async () => {
     setSearchQuery('');
     setEditMode(false);
     setDetailedView(null);
-    setActiveInventoryId(null);
-    setSyncStatus('');
-    
-    if (window.inventoryChannel) {
-      supabase.removeChannel(window.inventoryChannel);
-    }
-  };
-
-  const goHome = () => {
-    router.push('/');
   };
 
   const getProgress = () => {
@@ -384,7 +299,6 @@ const fetchGames = async () => {
       const photoCount = photos.filter(p => p.image).length;
       
       if (photoCount > 0) {
-        // Compter chaque photo individuellement
         totalItems += photoCount;
         photos.forEach(photo => {
           if (photo.image && checkedItems[`detail_${index}_${photo.id}`]) {
@@ -392,11 +306,8 @@ const fetchGames = async () => {
           }
         });
       } else {
-        // Pas de photos, compter l'item simple
         totalItems += 1;
-        if (checkedItems[index]) {
-          checkedCount++;
-        }
+        if (checkedItems[index]) checkedCount++;
       }
     });
     
@@ -435,7 +346,6 @@ const fetchGames = async () => {
     setCurrentDetailPhotos(photos);
     setDetailedView({ itemIndex, itemName });
     setEditingDetails(false);
-    setCurrentPage(1);
   };
 
   const closeDetailedView = () => {
@@ -455,203 +365,14 @@ const fetchGames = async () => {
   };
 
   const addDetailPhoto = () => {
-  setCurrentEditingPhotoId(null);
-  detailImageInputRef.current?.click();
-};
-
-  const handleDetailPhotoCapture = async (e) => {
-  const files = Array.from(e.target.files);
-  if (files.length === 0) return;
-
-  // Vérifier la clé API
-  if (IMGBB_API_KEY === 'VOTRE_CLE_API_ICI') {
-    alert('⚠️ Veuillez configurer votre clé API ImgBB dans le code !');
-    return;
-  }
-
-  // Si currentEditingPhotoId existe, on remplace une photo existante (mode téléphone)
-  if (currentEditingPhotoId) {
-    const file = files[0];
-    
-    // Vérifier la taille (32MB max)
-    if (file.size > 32 * 1024 * 1024) {
-      alert('❌ Image trop grande ! Maximum 32 MB par image.');
-      return;
-    }
-    
-    setUploadingPhotos(true);
-    
-    try {
-      const reader = new FileReader();
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      const imgUrl = await uploadToImgBB(base64);
-      
-      const updatedPhotos = currentDetailPhotos.map(photo => 
-        photo.id === currentEditingPhotoId 
-          ? { ...photo, image: imgUrl }
-          : photo
-      );
-      setCurrentDetailPhotos(updatedPhotos);
-      setCurrentEditingPhotoId(null);
-      
-    } catch (error) {
-      console.error('Erreur upload:', error);
-      alert('❌ Erreur lors de l\'upload de la photo');
-    } finally {
-      setUploadingPhotos(false);
-    }
-    return;
-  }
-
-  // Sinon, on ajoute plusieurs photos (mode ordinateur)
-  setUploadingPhotos(true);
-  setUploadProgress(0);
-  
-  const newPhotos = [];
-  let uploadedCount = 0;
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    
-    // Vérifier la taille
-    if (file.size > 32 * 1024 * 1024) {
-      alert(`❌ ${file.name} est trop grande ! Maximum 32 MB par image.`);
-      continue;
-    }
-
-    try {
-      const reader = new FileReader();
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      const imgUrl = await uploadToImgBB(base64);
-      
-      newPhotos.push({
-  id: `photo_${Date.now()}_${i}`,
-  name: '', // ⬅️ CHANGEZ de file.name.replace() à ''
-  image: imgUrl
-});
-      
-      uploadedCount++;
-      setUploadProgress(Math.round((uploadedCount / files.length) * 100));
-      
-    } catch (error) {
-      console.error('Erreur upload photo:', error);
-      alert(`❌ Erreur lors de l'upload de ${file.name}`);
-    }
-  }
-
-  setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
-  setUploadingPhotos(false);
-  setUploadProgress(0);
-  
-  if (newPhotos.length > 0) {
-    alert(`✅ ${newPhotos.length} photo(s) uploadée(s) avec succès sur ImgBB !`);
-  }
-};
-
-  const handleDragEnter = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (editingDetails) {
-    setIsDragging(true);
-  }
-};
-
-const handleDragLeave = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  // Vérifier qu'on quitte vraiment la zone de drop
-  if (e.currentTarget === e.target) {
-    setIsDragging(false);
-  }
-};
-
-const handleDragOver = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-};
-
-const handleDrop = async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  setIsDragging(false);
-  
-  if (!editingDetails) return;
-
-  // Vérifier la clé API
-  if (IMGBB_API_KEY === 'VOTRE_CLE_API_ICI') {
-    alert('⚠️ Veuillez configurer votre clé API ImgBB dans le code !');
-    return;
-  }
-
-  const files = Array.from(e.dataTransfer.files).filter(file => 
-    file.type.startsWith('image/')
-  );
-  
-  if (files.length === 0) return;
-
-  setUploadingPhotos(true);
-  setUploadProgress(0);
-  
-  const newPhotos = [];
-  let uploadedCount = 0;
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    
-    // Vérifier la taille
-    if (file.size > 32 * 1024 * 1024) {
-      alert(`❌ ${file.name} est trop grande ! Maximum 32 MB par image.`);
-      continue;
-    }
-
-    try {
-      const reader = new FileReader();
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      const imgUrl = await uploadToImgBB(base64);
-      
-      newPhotos.push({
-  id: `photo_${Date.now()}_${i}`,
-  name: '', // ⬅️ CHANGEZ de file.name.replace() à ''
-  image: imgUrl
-});
-      
-      uploadedCount++;
-      setUploadProgress(Math.round((uploadedCount / files.length) * 100));
-      
-    } catch (error) {
-      console.error('Erreur upload:', error);
-      alert(`❌ Erreur lors de l'upload de ${file.name}`);
-    }
-  }
-
-  setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
-  setUploadingPhotos(false);
-  setUploadProgress(0);
-  
-  if (newPhotos.length > 0) {
-    alert(`✅ ${newPhotos.length} photo(s) uploadée(s) avec succès sur ImgBB !`);
-  }
-};
+    setCurrentEditingPhotoId(null);
+    detailImageInputRef.current?.click();
+  };
 
   const openDetailPhotoCapture = (photoId) => {
-  setCurrentEditingPhotoId(photoId);
-  detailImageInputRef.current?.click();
-};
+    setCurrentEditingPhotoId(photoId);
+    detailImageInputRef.current?.click();
+  };
 
   const updateDetailPhotoName = (photoId, name) => {
     const updated = currentDetailPhotos.map(photo =>
@@ -664,36 +385,13 @@ const handleDrop = async (e) => {
     setCurrentDetailPhotos(currentDetailPhotos.filter(photo => photo.id !== photoId));
   };
 
-  const saveDetailedView = async () => {
-  const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
-  
-  const updatedItemDetails = {
-    ...itemDetails,
-    [detailedView.itemIndex]: validPhotos
-  };
-
-  // 🔍 DIAGNOSTIC : Afficher la taille des données
-  const dataSize = JSON.stringify(updatedItemDetails).length;
-  console.log('📊 Taille des données à sauvegarder:', (dataSize / 1024).toFixed(2), 'KB');
-  console.log('📊 Nombre de photos:', validPhotos.length);
-  
-  if (dataSize > 500000) {
-    alert('⚠️ Attention : Beaucoup de données à sauvegarder. Cela peut prendre du temps...');
-  }
-
-  try {
-    const { error } = await supabase
-      .from('games')
-      .update({ 
-        item_details: updatedItemDetails,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', selectedGame.id);
-
-    if (error) {
-      console.error('❌ Erreur Supabase:', error);
-      throw error;
-    }
+  const saveDetailedView = () => {
+    const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
+    
+    const updatedItemDetails = {
+      ...itemDetails,
+      [detailedView.itemIndex]: validPhotos
+    };
 
     const updatedGame = {
       ...selectedGame,
@@ -707,17 +405,13 @@ const handleDrop = async (e) => {
     setAllGames(updatedGames);
     setSelectedGame(updatedGame);
     setItemDetails(updatedItemDetails);
-    // ⬇️ NE PAS CHANGER editingDetails - rester en mode édition
-    // setEditingDetails(false); // ⬅️ COMMENTEZ OU SUPPRIMEZ CETTE LIGNE
+    
+    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
     
     alert('✅ Photos enregistrées ! Vous pouvez continuer à ajouter des photos.');
-  } catch (error) {
-    console.error('❌ Erreur sauvegarde complète:', error);
-    alert(`❌ Erreur lors de la sauvegarde: ${error.message || 'Erreur inconnue'}`);
-  }
-};
+  };
 
-  const createGame = async () => {
+  const createGame = () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (!newGameName.trim() || validItems.length === 0) {
@@ -725,34 +419,22 @@ const handleDrop = async (e) => {
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('games')
-        .insert([{
-          name: newGameName.trim(),
-          search_name: newGameName.toLowerCase().trim(),
-          items: validItems,
-          item_details: {},
-          created_by: username
-        }])
-        .select()
-        .single();
+    const newGame = {
+      id: Date.now(),
+      name: newGameName.trim(),
+      items: validItems,
+      itemDetails: {},
+      created_by: username,
+      created_at: new Date().toISOString()
+    };
 
-      if (error) throw error;
-
-      const newGame = {
-        ...data,
-        itemDetails: {}
-      };
-
-      setAllGames([newGame, ...allGames].sort((a, b) => a.name.localeCompare(b.name)));
-      alert(`✅ Le jeu "${newGameName}" a été créé !`);
-      closeCreateModal();
-      selectGame(newGame);
-    } catch (error) {
-      console.error('Erreur création:', error);
-      alert('❌ Erreur lors de la création du jeu');
-    }
+    const updatedGames = [newGame, ...allGames].sort((a, b) => a.name.localeCompare(b.name));
+    setAllGames(updatedGames);
+    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
+    
+    alert(`✅ Le jeu "${newGameName}" a été créé !`);
+    closeCreateModal();
+    selectGame(newGame);
   };
 
   const startEditMode = () => {
@@ -765,7 +447,7 @@ const handleDrop = async (e) => {
     setNewGameItems([]);
   };
 
-  const saveEdit = async () => {
+  const saveEdit = () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (validItems.length === 0) {
@@ -773,72 +455,19 @@ const handleDrop = async (e) => {
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from('games')
-        .update({ 
-          items: validItems,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedGame.id);
+    const updatedGame = { ...selectedGame, items: validItems };
+    const updatedGames = allGames.map(game => 
+      game.id === selectedGame.id ? updatedGame : game
+    );
 
-      if (error) throw error;
-
-      const updatedGame = { ...selectedGame, items: validItems };
-      const updatedGames = allGames.map(game => 
-        game.id === selectedGame.id ? updatedGame : game
-      );
-
-      setAllGames(updatedGames);
-      setSelectedGame(updatedGame);
-      setEditMode(false);
-      setCheckedItems({});
-      alert('✅ Modifications enregistrées !');
-    } catch (error) {
-      console.error('Erreur modification:', error);
-      alert('❌ Erreur lors de la modification');
-    }
+    setAllGames(updatedGames);
+    setSelectedGame(updatedGame);
+    setEditMode(false);
+    setCheckedItems({});
+    
+    localStorage.setItem('boardgames', JSON.stringify(updatedGames));
+    alert('✅ Modifications enregistrées !');
   };
-
-// Calculer le nombre total de pages
-const getTotalPages = () => {
-  const totalPhotos = editingDetails 
-    ? currentDetailPhotos.length 
-    : currentDetailPhotos.filter(p => p.image).length;
-  return Math.ceil(totalPhotos / PHOTOS_PER_PAGE);
-};
-
-// Obtenir les photos de la page actuelle
-const getCurrentPagePhotos = () => {
-  const startIndex = (currentPage - 1) * PHOTOS_PER_PAGE;
-  const endIndex = startIndex + PHOTOS_PER_PAGE;
-  
-  if (editingDetails) {
-    return currentDetailPhotos.slice(startIndex, endIndex);
-  } else {
-    return currentDetailPhotos.filter(p => p.image).slice(startIndex, endIndex);
-  }
-};
-
-// Navigation entre pages
-const goToPage = (pageNumber) => {
-  setCurrentPage(pageNumber);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-};
-
-const nextPage = () => {
-  if (currentPage < getTotalPages()) {
-    setCurrentPage(prev => prev + 1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-};
-
-const previousPage = () => {
-  if (currentPage > 1) {
-    setCurrentPage(prev => prev - 1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-};
   
   const getDetailPhotoCount = (itemIndex) => {
     const photos = itemDetails[itemIndex] || [];
@@ -850,7 +479,7 @@ const previousPage = () => {
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center`}>
         <div className="text-center">
           <div className="animate-spin inline-block w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full mb-4"></div>
-          <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement des jeux...</div>
+          <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
         </div>
       </div>
     );
@@ -868,19 +497,12 @@ const previousPage = () => {
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button
-                onClick={goHome}
-                className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
-                title="Retour à l'accueil"
-              >
-                <Home size={24} />
-              </button>
               <div className="bg-orange-600 p-3 rounded-xl">
                 <Package size={28} color="white" />
               </div>
               <div>
                 <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Inventaire de Jeux</h1>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Vérifiez le contenu de vos jeux</p>
+                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Avec Cloudinary - Upload ultra rapide ⚡</p>
               </div>
             </div>
 
@@ -942,7 +564,6 @@ const previousPage = () => {
                         className={`px-3 py-3 opacity-0 group-hover:opacity-100 transition ${
                           darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
                         }`}
-                        title="Supprimer ce jeu"
                       >
                         <Trash2 size={18} />
                       </button>
@@ -1011,7 +632,6 @@ const previousPage = () => {
                         className={`px-2 py-2 opacity-0 group-hover:opacity-100 transition ${
                           darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
                         }`}
-                        title="Supprimer"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -1031,7 +651,6 @@ const previousPage = () => {
           </div>
         )}
 
-{/* Vue normale - Liste avec icônes détails */}
         {selectedGame && !editMode && !detailedView && (
           <div className="space-y-6">
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
@@ -1203,7 +822,6 @@ const previousPage = () => {
           </div>
         )}
 
-        {/* Mode édition liste */}
         {selectedGame && editMode && (
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
             <div className="flex items-center justify-between mb-6">
@@ -1274,42 +892,34 @@ const previousPage = () => {
           </div>
         )}
 
-        {/* Vue détaillée d'un item avec photos */}
         {selectedGame && detailedView && (
-  <DetailedViewComponent
-  detailedView={detailedView}
-  currentDetailPhotos={currentDetailPhotos}
-  editingDetails={editingDetails}
-  darkMode={darkMode}
-  closeDetailedView={closeDetailedView}
-  startEditingDetails={startEditingDetails}
-  saveDetailedView={saveDetailedView}
-  cancelEditingDetails={cancelEditingDetails}
-  detailImageInputRef={detailImageInputRef}
-  handleDetailPhotoCapture={handleDetailPhotoCapture}
-  openDetailPhotoCapture={openDetailPhotoCapture}
-  removeDetailPhoto={removeDetailPhoto}
-  updateDetailPhotoName={updateDetailPhotoName}
-  addDetailPhoto={addDetailPhoto}
-  checkedItems={checkedItems}
-  toggleDetailPhoto={toggleDetailPhoto}
-  isDragging={isDragging}
-  handleDragEnter={handleDragEnter}
-  handleDragLeave={handleDragLeave}
-  handleDragOver={handleDragOver}
-  handleDrop={handleDrop}
-  uploadingPhotos={uploadingPhotos}
-  uploadProgress={uploadProgress}
-  currentPage={currentPage}
-  getTotalPages={getTotalPages}
-  getCurrentPagePhotos={getCurrentPagePhotos}
-  goToPage={goToPage}
-  nextPage={nextPage}
-  previousPage={previousPage}
-  PHOTOS_PER_PAGE={PHOTOS_PER_PAGE}
-/>
-)}
-        {/* Modal création */}
+          <DetailedViewComponent
+            detailedView={detailedView}
+            currentDetailPhotos={currentDetailPhotos}
+            editingDetails={editingDetails}
+            darkMode={darkMode}
+            closeDetailedView={closeDetailedView}
+            startEditingDetails={startEditingDetails}
+            saveDetailedView={saveDetailedView}
+            cancelEditingDetails={cancelEditingDetails}
+            detailImageInputRef={detailImageInputRef}
+            handleDetailPhotoCapture={handleDetailPhotoCapture}
+            openDetailPhotoCapture={openDetailPhotoCapture}
+            removeDetailPhoto={removeDetailPhoto}
+            updateDetailPhotoName={updateDetailPhotoName}
+            addDetailPhoto={addDetailPhoto}
+            checkedItems={checkedItems}
+            toggleDetailPhoto={toggleDetailPhoto}
+            isDragging={isDragging}
+            handleDragEnter={handleDragEnter}
+            handleDragLeave={handleDragLeave}
+            handleDragOver={handleDragOver}
+            handleDrop={handleDrop}
+            uploadingPhotos={uploadingPhotos}
+            uploadProgress={uploadProgress}
+          />
+        )}
+
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto`}>
@@ -1419,7 +1029,7 @@ const previousPage = () => {
   );
 }
 
-// Composant pour la vue détaillée avec plein écran
+// 🎨 Composant Vue Détaillée - SANS PAGINATION - Scroll infini fluide
 function DetailedViewComponent({ 
   detailedView, currentDetailPhotos, editingDetails, darkMode,
   closeDetailedView, startEditingDetails, saveDetailedView, cancelEditingDetails,
@@ -1427,12 +1037,10 @@ function DetailedViewComponent({
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto,
   checkedItems, toggleDetailPhoto,
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
-  uploadingPhotos, uploadProgress,
-  currentPage, getTotalPages, getCurrentPagePhotos, goToPage, nextPage, previousPage, PHOTOS_PER_PAGE
+  uploadingPhotos, uploadProgress
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const [lastTap, setLastTap] = useState(0);
-  const [displayLimit, setDisplayLimit] = useState(20); // 📌 AJOUT : Pagination
 
   const handlePhotoClick = (e, photo) => {
     const now = Date.now();
@@ -1470,11 +1078,7 @@ function DetailedViewComponent({
                 {detailedView.itemName}
               </h2>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''}
-                {/* 📌 AJOUT : Indicateur de pagination */}
-                {getTotalPages() > 1 && (
-  <> • Page {currentPage}/{getTotalPages()}</>
-)}
+                {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''} • Scroll infini fluide ⚡
               </p>
             </div>
           </div>
@@ -1520,10 +1124,10 @@ function DetailedViewComponent({
           <>
             <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
               <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
-                💡 Vos photos sont hébergées gratuitement sur ImgBB ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
+                ⚡ Upload ultra-rapide avec Cloudinary ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
               </p>
               <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
-                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Page {currentPage}/{getTotalPages()} ({PHOTOS_PER_PAGE} photos par page)
+                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Scroll infini (pas de pagination !)
               </p>
             </div>
 
@@ -1571,8 +1175,8 @@ function DetailedViewComponent({
                   </div>
                 </div>
               )}
-              {/* 📌 MODIFIÉ : Limiter l'affichage avec slice */}
-              {getCurrentPagePhotos().map((photo) => (
+              
+              {currentDetailPhotos.map((photo) => (
                 <div key={photo.id} className={`border-2 rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div 
                     onClick={() => openDetailPhotoCapture(photo.id)}
@@ -1615,75 +1219,6 @@ function DetailedViewComponent({
               ))}
             </div>
 
-            {/* 📌 AJOUT : Bouton "Charger plus" en mode édition */}
-            {getTotalPages() > 1 && (
-  <div className="mb-4 flex items-center justify-center gap-2">
-    <button
-      onClick={previousPage}
-      disabled={currentPage === 1}
-      className={`px-4 py-2 rounded-lg font-semibold transition ${
-        currentPage === 1
-          ? 'opacity-30 cursor-not-allowed'
-          : darkMode
-            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-      }`}
-    >
-      ← Précédent
-    </button>
-    
-    <div className="flex gap-1">
-      {[...Array(getTotalPages())].map((_, index) => {
-        const pageNum = index + 1;
-        // Afficher max 7 boutons de pages
-        if (
-          pageNum === 1 || 
-          pageNum === getTotalPages() || 
-          (pageNum >= currentPage - 2 && pageNum <= currentPage + 2)
-        ) {
-          return (
-            <button
-              key={pageNum}
-              onClick={() => goToPage(pageNum)}
-              className={`w-10 h-10 rounded-lg font-semibold transition ${
-                currentPage === pageNum
-                  ? darkMode
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-500 text-white'
-                  : darkMode
-                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {pageNum}
-            </button>
-          );
-        } else if (
-          pageNum === currentPage - 3 || 
-          pageNum === currentPage + 3
-        ) {
-          return <span key={pageNum} className="px-2">...</span>;
-        }
-        return null;
-      })}
-    </div>
-    
-    <button
-      onClick={nextPage}
-      disabled={currentPage === getTotalPages()}
-      className={`px-4 py-2 rounded-lg font-semibold transition ${
-        currentPage === getTotalPages()
-          ? 'opacity-30 cursor-not-allowed'
-          : darkMode
-            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-      }`}
-    >
-      Suivant →
-    </button>
-  </div>
-)}
-
             <button
               onClick={addDetailPhoto}
               className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
@@ -1704,136 +1239,65 @@ function DetailedViewComponent({
               <div>
                 <div className={`mb-4 p-3 rounded-xl ${darkMode ? 'bg-purple-900 bg-opacity-30' : 'bg-purple-50'}`}>
                   <p className={`text-xs ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>
-                    💡 Double-cliquez sur une photo pour la voir en plein écran
+                    💡 Double-cliquez sur une photo pour la voir en plein écran • Scroll fluide, pas de pagination !
                   </p>
                 </div>
                 
-                {/* 📌 MODIFIÉ : Affichage avec pagination */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {getCurrentPagePhotos().map((photo) => {
-                      const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
-                      return (
-                        <div
-                          key={photo.id}
-                          onClick={(e) => {
-                            const now = Date.now();
-                            if (now - lastTap < 300) {
-                              e.stopPropagation();
-                              setFullscreenPhoto(photo);
-                              setLastTap(0);
-                            } else {
-                              setLastTap(now);
-                              toggleDetailPhoto(detailedView.itemIndex, photo.id);
-                            }
-                          }}
-                          className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
-                            isChecked
-                              ? 'border-green-500 opacity-60'
-                              : darkMode
-                                ? 'border-gray-600 hover:border-purple-500'
-                                : 'border-gray-200 hover:border-purple-500'
-                          }`}
-                        >
-                          <img 
-                            src={photo.image} 
-                            alt={photo.name || 'Photo'}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                          
-                          {isChecked && (
-                            <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center">
-                              <Check size={48} className="text-white" />
-                            </div>
-                          )}
-                          
-                          {photo.name && (
-                            <div className={`absolute bottom-0 left-0 right-0 p-2 text-xs font-medium text-center ${
-                              darkMode ? 'bg-gray-900 bg-opacity-80 text-gray-100' : 'bg-white bg-opacity-90 text-gray-800'
-                            }`}>
-                              {photo.name}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  {currentDetailPhotos.filter(p => p.image).map((photo) => {
+                    const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
+                    return (
+                      <div
+                        key={photo.id}
+                        onClick={(e) => {
+                          const now = Date.now();
+                          if (now - lastTap < 300) {
+                            e.stopPropagation();
+                            setFullscreenPhoto(photo);
+                            setLastTap(0);
+                          } else {
+                            setLastTap(now);
+                            toggleDetailPhoto(detailedView.itemIndex, photo.id);
+                          }
+                        }}
+                        className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
+                          isChecked
+                            ? 'border-green-500 opacity-60'
+                            : darkMode
+                              ? 'border-gray-600 hover:border-purple-500'
+                              : 'border-gray-200 hover:border-purple-500'
+                        }`}
+                      >
+                        <img 
+                          src={photo.image} 
+                          alt={photo.name || 'Photo'}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                        
+                        {isChecked && (
+                          <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center">
+                            <Check size={48} className="text-white" />
+                          </div>
+                        )}
+                        
+                        {photo.name && (
+                          <div className={`absolute bottom-0 left-0 right-0 p-2 text-xs font-medium text-center ${
+                            darkMode ? 'bg-gray-900 bg-opacity-80 text-gray-100' : 'bg-white bg-opacity-90 text-gray-800'
+                          }`}>
+                            {photo.name}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-
-                {/* 📌 AJOUT : Bouton "Charger plus" en mode consultation */}
-                {getTotalPages() > 1 && (
-  <div className="mb-4 flex items-center justify-center gap-2">
-    <button
-      onClick={previousPage}
-      disabled={currentPage === 1}
-      className={`px-4 py-2 rounded-lg font-semibold transition ${
-        currentPage === 1
-          ? 'opacity-30 cursor-not-allowed'
-          : darkMode
-            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-      }`}
-    >
-      ← Précédent
-    </button>
-    
-    <div className="flex gap-1">
-      {[...Array(getTotalPages())].map((_, index) => {
-        const pageNum = index + 1;
-        // Afficher max 7 boutons de pages
-        if (
-          pageNum === 1 || 
-          pageNum === getTotalPages() || 
-          (pageNum >= currentPage - 2 && pageNum <= currentPage + 2)
-        ) {
-          return (
-            <button
-              key={pageNum}
-              onClick={() => goToPage(pageNum)}
-              className={`w-10 h-10 rounded-lg font-semibold transition ${
-                currentPage === pageNum
-                  ? darkMode
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-500 text-white'
-                  : darkMode
-                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {pageNum}
-            </button>
-          );
-        } else if (
-          pageNum === currentPage - 3 || 
-          pageNum === currentPage + 3
-        ) {
-          return <span key={pageNum} className="px-2">...</span>;
-        }
-        return null;
-      })}
-    </div>
-    
-    <button
-      onClick={nextPage}
-      disabled={currentPage === getTotalPages()}
-      className={`px-4 py-2 rounded-lg font-semibold transition ${
-        currentPage === getTotalPages()
-          ? 'opacity-30 cursor-not-allowed'
-          : darkMode
-            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-      }`}
-    >
-      Suivant →
-    </button>
-  </div>
-)}
               </div>
             )}
           </>
         )}
       </div>
 
-      {/* Modal plein écran */}
       {fullscreenPhoto && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50 p-4"
