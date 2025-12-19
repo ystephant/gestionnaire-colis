@@ -310,7 +310,6 @@ useEffect(() => {
   
   setCheckedItems(newCheckedItems);
   
-  // 💾 Sauvegarder dans Supabase en temps réel
   try {
     const { error } = await supabase
       .from('games')
@@ -324,6 +323,7 @@ useEffect(() => {
   } catch (error) {
     console.error('Erreur sauvegarde:', error);
   }
+  // ✅ PAS DE loadGames() ici ! La synchro temps réel s'en charge
 };
   const toggleDetailPhoto = async (itemIndex, photoId) => {
   const newCheckedItems = {
@@ -339,7 +339,6 @@ useEffect(() => {
   newCheckedItems[itemIndex] = allPhotosChecked;
   setCheckedItems(newCheckedItems);
   
-  // 💾 Sauvegarder dans Supabase
   try {
     const { error } = await supabase
       .from('games')
@@ -353,6 +352,7 @@ useEffect(() => {
   } catch (error) {
     console.error('Erreur sauvegarde:', error);
   }
+  // ✅ PAS DE loadGames() ici !
 };
 
   const resetInventory = () => {
@@ -492,10 +492,20 @@ useEffect(() => {
   setTimeout(() => setSyncStatus(''), 2000);
   
   setItemDetails(updatedItemDetails);
-  await loadGames();
-  
-  const updated = allGames.find(g => g.id === selectedGame.id);
-  if (updated) setSelectedGame(updated);
+
+// ✅ Mettre à jour directement sans recharger
+setSelectedGame(prev => ({
+  ...prev,
+  item_details: updatedItemDetails
+}));
+
+setAllGames(prev => 
+  prev.map(g => 
+    g.id === selectedGame.id 
+      ? { ...g, item_details: updatedItemDetails }
+      : g
+  )
+);
 } catch (error) {
   console.error('Erreur:', error);
   alert('❌ Erreur sauvegarde photos');
@@ -576,11 +586,17 @@ useEffect(() => {
   setTimeout(() => setSyncStatus(''), 2000);
   
   setEditMode(false);
-  setCheckedItems({});
-  await loadGames();
-  
-  const updated = allGames.find(g => g.id === selectedGame.id);
-  if (updated) setSelectedGame(updated);
+setCheckedItems({});
+
+// ✅ Mettre à jour directement
+const updatedGame = { ...selectedGame, items: validItems };
+setSelectedGame(updatedGame);
+
+setAllGames(prev => 
+  prev.map(g => 
+    g.id === selectedGame.id ? updatedGame : g
+  )
+);
 } catch (error) {
   console.error('Erreur:', error);
   alert('❌ Erreur sauvegarde');
