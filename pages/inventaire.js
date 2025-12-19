@@ -126,7 +126,7 @@ export default function InventaireJeux() {
     if (files.length === 0) return;
 
     // Vérifier la configuration
-    if (CLOUDINARY_CLOUD_NAME === 'dfnwxqjey') {
+    if (CLOUDINARY_CLOUD_NAME === 'VOTRE_CLOUD_NAME') {
       alert('⚠️ Veuillez configurer Cloudinary dans le code !\n\nÉtapes:\n1. Créez un compte sur cloudinary.com\n2. Notez votre Cloud Name\n3. Créez un Upload Preset "unsigned"\n4. Remplacez CLOUDINARY_CLOUD_NAME et CLOUDINARY_UPLOAD_PRESET dans le code');
       return;
     }
