@@ -234,7 +234,7 @@ const loadGames = async () => {
     setItemDetails(game.itemDetails || {});
   };
 
-  const deleteGame = (gameId, gameName) => {
+  const deleteGame = async (gameId, gameName) => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
     
     try {
@@ -402,7 +402,7 @@ const loadGames = async () => {
     setCurrentDetailPhotos(currentDetailPhotos.filter(photo => photo.id !== photoId));
   };
 
-  const saveDetailedView = () => {
+  const saveDetailedView = async () => {
     const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
     
     const updatedItemDetails = {
@@ -437,7 +437,7 @@ const loadGames = async () => {
 }
   };
 
-  const createGame = () => {
+  const createGame = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (!newGameName.trim() || validItems.length === 0) {
@@ -494,7 +494,7 @@ const loadGames = async () => {
     setNewGameItems([]);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     
     if (validItems.length === 0) {
