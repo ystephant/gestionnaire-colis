@@ -13,7 +13,8 @@ export default function InventaireJeux() {
   const [darkMode, setDarkMode] = useState(false);
   const [username] = useState('demo_user');
   const [loading, setLoading] = useState(true);
-  const [displayLimit, setDisplayLimit] = useState(20); // Limiter à 20 photos au départ
+  const [currentPage, setCurrentPage] = useState(1);
+  const PHOTOS_PER_PAGE = 20;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
@@ -798,6 +799,46 @@ const handleDrop = async (e) => {
     }
   };
 
+// Calculer le nombre total de pages
+const getTotalPages = () => {
+  const totalPhotos = editingDetails 
+    ? currentDetailPhotos.length 
+    : currentDetailPhotos.filter(p => p.image).length;
+  return Math.ceil(totalPhotos / PHOTOS_PER_PAGE);
+};
+
+// Obtenir les photos de la page actuelle
+const getCurrentPagePhotos = () => {
+  const startIndex = (currentPage - 1) * PHOTOS_PER_PAGE;
+  const endIndex = startIndex + PHOTOS_PER_PAGE;
+  
+  if (editingDetails) {
+    return currentDetailPhotos.slice(startIndex, endIndex);
+  } else {
+    return currentDetailPhotos.filter(p => p.image).slice(startIndex, endIndex);
+  }
+};
+
+// Navigation entre pages
+const goToPage = (pageNumber) => {
+  setCurrentPage(pageNumber);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+const nextPage = () => {
+  if (currentPage < getTotalPages()) {
+    setCurrentPage(prev => prev + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+const previousPage = () => {
+  if (currentPage > 1) {
+    setCurrentPage(prev => prev - 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+  
   const getDetailPhotoCount = (itemIndex) => {
     const photos = itemDetails[itemIndex] || [];
     return photos.filter(p => p.image).length;
@@ -1423,9 +1464,9 @@ function DetailedViewComponent({
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''}
                 {/* 📌 AJOUT : Indicateur de pagination */}
-                {displayLimit < currentDetailPhotos.length && (
-                  <> • Affichage de {displayLimit} sur {currentDetailPhotos.length}</>
-                )}
+                {getTotalPages() > 1 && (
+  <> • Page {currentPage}/{getTotalPages()}</>
+)}
               </p>
             </div>
           </div>
@@ -1472,11 +1513,9 @@ function DetailedViewComponent({
             <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
               <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
                 💡 Vos photos sont hébergées gratuitement sur ImgBB ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
-              </p>
-              {/* 📌 AJOUT : Indicateur de photos en mode édition */}
-              <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
-                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Affichage de {Math.min(displayLimit, currentDetailPhotos.length)} cartes
-              </p>
+             <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
+  📸 {currentDetailPhotos.filter(p => p.image).length} photos • Page {currentPage}/{getTotalPages()} ({PHOTOS_PER_PAGE} photos par page)
+</p>
             </div>
 
             {uploadingPhotos && (
@@ -1524,7 +1563,7 @@ function DetailedViewComponent({
                 </div>
               )}
               {/* 📌 MODIFIÉ : Limiter l'affichage avec slice */}
-              {currentDetailPhotos.slice(0, displayLimit).map((photo) => (
+              {getCurrentPagePhotos().map((photo) => (
                 <div key={photo.id} className={`border-2 rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div 
                     onClick={() => openDetailPhotoCapture(photo.id)}
@@ -1568,20 +1607,73 @@ function DetailedViewComponent({
             </div>
 
             {/* 📌 AJOUT : Bouton "Charger plus" en mode édition */}
-            {displayLimit < currentDetailPhotos.length && (
-              <div className="mb-4 text-center">
-                <button
-                  onClick={() => setDisplayLimit(prev => prev + 20)}
-                  className={`px-4 py-2 rounded-lg font-semibold transition ${
-                    darkMode
-                      ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  Afficher 20 photos de plus ({currentDetailPhotos.length - displayLimit} restantes)
-                </button>
-              </div>
-            )}
+            {getTotalPages() > 1 && (
+  <div className="mb-4 flex items-center justify-center gap-2">
+    <button
+      onClick={previousPage}
+      disabled={currentPage === 1}
+      className={`px-4 py-2 rounded-lg font-semibold transition ${
+        currentPage === 1
+          ? 'opacity-30 cursor-not-allowed'
+          : darkMode
+            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+      }`}
+    >
+      ← Précédent
+    </button>
+    
+    <div className="flex gap-1">
+      {[...Array(getTotalPages())].map((_, index) => {
+        const pageNum = index + 1;
+        // Afficher max 7 boutons de pages
+        if (
+          pageNum === 1 || 
+          pageNum === getTotalPages() || 
+          (pageNum >= currentPage - 2 && pageNum <= currentPage + 2)
+        ) {
+          return (
+            <button
+              key={pageNum}
+              onClick={() => goToPage(pageNum)}
+              className={`w-10 h-10 rounded-lg font-semibold transition ${
+                currentPage === pageNum
+                  ? darkMode
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-purple-500 text-white'
+                  : darkMode
+                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {pageNum}
+            </button>
+          );
+        } else if (
+          pageNum === currentPage - 3 || 
+          pageNum === currentPage + 3
+        ) {
+          return <span key={pageNum} className="px-2">...</span>;
+        }
+        return null;
+      })}
+    </div>
+    
+    <button
+      onClick={nextPage}
+      disabled={currentPage === getTotalPages()}
+      className={`px-4 py-2 rounded-lg font-semibold transition ${
+        currentPage === getTotalPages()
+          ? 'opacity-30 cursor-not-allowed'
+          : darkMode
+            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+      }`}
+    >
+      Suivant →
+    </button>
+  </div>
+)}
 
             <button
               onClick={addDetailPhoto}
@@ -1609,10 +1701,7 @@ function DetailedViewComponent({
                 
                 {/* 📌 MODIFIÉ : Affichage avec pagination */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {currentDetailPhotos
-                    .filter(p => p.image)
-                    .slice(0, displayLimit)
-                    .map((photo) => {
+                  {getCurrentPagePhotos().map((photo) => {
                       const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
                       return (
                         <div
@@ -1662,20 +1751,73 @@ function DetailedViewComponent({
                 </div>
 
                 {/* 📌 AJOUT : Bouton "Charger plus" en mode consultation */}
-                {displayLimit < currentDetailPhotos.filter(p => p.image).length && (
-                  <div className="mt-6 text-center">
-                    <button
-                      onClick={() => setDisplayLimit(prev => prev + 20)}
-                      className={`px-6 py-3 rounded-xl font-semibold transition ${
-                        darkMode
-                          ? 'bg-purple-600 text-white hover:bg-purple-700'
-                          : 'bg-purple-500 text-white hover:bg-purple-600'
-                      }`}
-                    >
-                      Afficher 20 photos de plus ({currentDetailPhotos.filter(p => p.image).length - displayLimit} restantes)
-                    </button>
-                  </div>
-                )}
+                {getTotalPages() > 1 && (
+  <div className="mb-4 flex items-center justify-center gap-2">
+    <button
+      onClick={previousPage}
+      disabled={currentPage === 1}
+      className={`px-4 py-2 rounded-lg font-semibold transition ${
+        currentPage === 1
+          ? 'opacity-30 cursor-not-allowed'
+          : darkMode
+            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+      }`}
+    >
+      ← Précédent
+    </button>
+    
+    <div className="flex gap-1">
+      {[...Array(getTotalPages())].map((_, index) => {
+        const pageNum = index + 1;
+        // Afficher max 7 boutons de pages
+        if (
+          pageNum === 1 || 
+          pageNum === getTotalPages() || 
+          (pageNum >= currentPage - 2 && pageNum <= currentPage + 2)
+        ) {
+          return (
+            <button
+              key={pageNum}
+              onClick={() => goToPage(pageNum)}
+              className={`w-10 h-10 rounded-lg font-semibold transition ${
+                currentPage === pageNum
+                  ? darkMode
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-purple-500 text-white'
+                  : darkMode
+                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {pageNum}
+            </button>
+          );
+        } else if (
+          pageNum === currentPage - 3 || 
+          pageNum === currentPage + 3
+        ) {
+          return <span key={pageNum} className="px-2">...</span>;
+        }
+        return null;
+      })}
+    </div>
+    
+    <button
+      onClick={nextPage}
+      disabled={currentPage === getTotalPages()}
+      className={`px-4 py-2 rounded-lg font-semibold transition ${
+        currentPage === getTotalPages()
+          ? 'opacity-30 cursor-not-allowed'
+          : darkMode
+            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+      }`}
+    >
+      Suivant →
+    </button>
+  </div>
+)}
               </div>
             )}
           </>
