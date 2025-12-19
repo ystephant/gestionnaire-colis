@@ -532,10 +532,10 @@ const fetchGames = async () => {
       const imgUrl = await uploadToImgBB(base64);
       
       newPhotos.push({
-        id: `photo_${Date.now()}_${i}`,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        image: imgUrl // URL ImgBB au lieu de base64
-      });
+  id: `photo_${Date.now()}_${i}`,
+  name: '', // ⬅️ CHANGEZ de file.name.replace() à ''
+  image: imgUrl
+});
       
       uploadedCount++;
       setUploadProgress(Math.round((uploadedCount / files.length) * 100));
@@ -622,10 +622,10 @@ const handleDrop = async (e) => {
       const imgUrl = await uploadToImgBB(base64);
       
       newPhotos.push({
-        id: `photo_${Date.now()}_${i}`,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        image: imgUrl
-      });
+  id: `photo_${Date.now()}_${i}`,
+  name: '', // ⬅️ CHANGEZ de file.name.replace() à ''
+  image: imgUrl
+});
       
       uploadedCount++;
       setUploadProgress(Math.round((uploadedCount / files.length) * 100));
@@ -692,7 +692,6 @@ const handleDrop = async (e) => {
       throw error;
     }
 
-    // ⬇️ AJOUTEZ CES LIGNES IMPORTANTES
     const updatedGame = {
       ...selectedGame,
       itemDetails: updatedItemDetails
@@ -704,11 +703,11 @@ const handleDrop = async (e) => {
 
     setAllGames(updatedGames);
     setSelectedGame(updatedGame);
-    setItemDetails(updatedItemDetails); // ⬅️ TRÈS IMPORTANT : Mettre à jour itemDetails
-    //setEditingDetails(false);
-    //setDetailedView(null); // ⬅️ FERMEZ la vue détaillée pour revenir à la liste
+    setItemDetails(updatedItemDetails);
+    // ⬇️ NE PAS CHANGER editingDetails - rester en mode édition
+    // setEditingDetails(false); // ⬅️ COMMENTEZ OU SUPPRIMEZ CETTE LIGNE
     
-    alert('✅ Photos enregistrées !');
+    alert('✅ Photos enregistrées ! Vous pouvez continuer à ajouter des photos.');
   } catch (error) {
     console.error('❌ Erreur sauvegarde complète:', error);
     alert(`❌ Erreur lors de la sauvegarde: ${error.message || 'Erreur inconnue'}`);
