@@ -110,8 +110,41 @@ const loadGames = async () => {
 };
 
   useEffect(() => {
-    localStorage.setItem('darkMode', darkMode.toString());
-  }, [darkMode]);
+  const savedDarkMode = localStorage.getItem('darkMode');
+  if (savedDarkMode !== null) {
+    setDarkMode(savedDarkMode === 'true');
+  }
+  
+  loadGames();
+  
+  // 📡 Synchronisation temps réel AMÉLIORÉE
+  const channel = supabase
+    .channel('games-realtime')
+    .on('postgres_changes', 
+      { event: '*', schema: 'public', table: 'games' }, 
+      (payload) => {
+        console.log('🔄 Changement détecté:', payload);
+        
+        // Recharger uniquement si c'est un autre utilisateur ou une autre session
+        if (payload.new && selectedGame && payload.new.id === selectedGame.id) {
+          // Mise à jour en direct du jeu sélectionné
+          setSelectedGame(payload.new);
+          setCheckedItems(payload.new.checked_items || {});
+          setMissingItems(payload.new.missing_items || '');
+          setItemDetails(payload.new.item_details || {});
+          
+          setSyncStatus('🔄 Synchronisé avec autre appareil');
+          setTimeout(() => setSyncStatus(''), 2000);
+        } else {
+          // Recharger toute la liste
+          loadGames();
+        }
+      }
+    )
+    .subscribe();
+  
+  return () => supabase.removeChannel(channel);
+}, [selectedGame]); // Ajouter selectedGame comme dépendance
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -223,17 +256,16 @@ const loadGames = async () => {
   };
 
   const selectGame = (game) => {
-    setSelectedGame(game);
-    setSearchQuery('');
-    setShowResults(false);
-    setCheckedItems({});
-    setMissingItems('');
-    setEditMode(false);
-    setShowAllGamesList(false);
-    setDetailedView(null);
-    setItemDetails(game.itemDetails || {});
-  };
-
+  setSelectedGame(game);
+  setSearchQuery('');
+  setShowResults(false);
+  setCheckedItems(game.checked_items || {});
+  setMissingItems(game.missing_items || '');
+  setEditMode(false);
+  setShowAllGamesList(false);
+  setDetailedView(null);
+  setItemDetails(game.item_details || {});
+};
   const deleteGame = async (gameId, gameName) => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
     
@@ -256,35 +288,68 @@ const loadGames = async () => {
 }
   };
 
-  const toggleItem = (index) => {
-    const hasDetailPhotos = itemDetails[index]?.filter(p => p.image).length > 0;
-    const newCheckedItems = { ...checkedItems };
-    
-    if (hasDetailPhotos) {
-      const isChecking = !checkedItems[index];
-      newCheckedItems[index] = isChecking;
-      itemDetails[index].forEach(photo => {
-        if (photo.image) {
-          newCheckedItems[`detail_${index}_${photo.id}`] = isChecking;
-        }
-      });
-    } else {
-      newCheckedItems[index] = !checkedItems[index];
-    }
-    
-    setCheckedItems(newCheckedItems);
-  };
+  const toggleItem = async (index) => {
+  const hasDetailPhotos = itemDetails[index]?.filter(p => p.image).length > 0;
+  const newCheckedItems = { ...checkedItems };
+  
+  if (hasDetailPhotos) {
+    const isChecking = !checkedItems[index];
+    newCheckedItems[index] = isChecking;
+    itemDetails[index].forEach(photo => {
+      if (photo.image) {
+        newCheckedItems[`detail_${index}_${photo.id}`] = isChecking;
+      }
+    });
+  } else {
+    newCheckedItems[index] = !checkedItems[index];
+  }
+  
+  setCheckedItems(newCheckedItems);
+  
+  // 💾 Sauvegarder dans Supabase en temps réel
+  try {
+    const { error } = await supabase
+      .from('games')
+      .update({ checked_items: newCheckedItems })
+      .eq('id', selectedGame.id);
 
-  const toggleDetailPhoto = (itemIndex, photoId) => {
-    const newCheckedItems = {
-      ...checkedItems,
-      [`detail_${itemIndex}_${photoId}`]: !checkedItems[`detail_${itemIndex}_${photoId}`]
-    };
+    if (error) throw error;
     
-    const photos = itemDetails[itemIndex] || [];
-    const allPhotosChecked = photos.filter(p => p.image).every(p => 
-      newCheckedItems[`detail_${itemIndex}_${p.id}`]
-    );
+    setSyncStatus('✅ Sauvegardé');
+    setTimeout(() => setSyncStatus(''), 1500);
+  } catch (error) {
+    console.error('Erreur sauvegarde:', error);
+  }
+};
+  const toggleDetailPhoto = async (itemIndex, photoId) => {
+  const newCheckedItems = {
+    ...checkedItems,
+    [`detail_${itemIndex}_${photoId}`]: !checkedItems[`detail_${itemIndex}_${photoId}`]
+  };
+  
+  const photos = itemDetails[itemIndex] || [];
+  const allPhotosChecked = photos.filter(p => p.image).every(p => 
+    newCheckedItems[`detail_${itemIndex}_${p.id}`]
+  );
+  
+  newCheckedItems[itemIndex] = allPhotosChecked;
+  setCheckedItems(newCheckedItems);
+  
+  // 💾 Sauvegarder dans Supabase
+  try {
+    const { error } = await supabase
+      .from('games')
+      .update({ checked_items: newCheckedItems })
+      .eq('id', selectedGame.id);
+
+    if (error) throw error;
+    
+    setSyncStatus('✅ Sauvegardé');
+    setTimeout(() => setSyncStatus(''), 1500);
+  } catch (error) {
+    console.error('Erreur sauvegarde:', error);
+  }
+};
     
     newCheckedItems[itemIndex] = allPhotosChecked;
     setCheckedItems(newCheckedItems);
@@ -852,16 +917,37 @@ const loadGames = async () => {
               </h3>
               
               <textarea
-                value={missingItems}
-                onChange={(e) => setMissingItems(e.target.value)}
-                placeholder="Notez ici les éléments manquants ou endommagés..."
-                rows="6"
-                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none ${
-                  darkMode 
-                    ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                    : 'bg-white border-gray-200 text-gray-900'
-                }`}
-              />
+  value={missingItems}
+  onChange={async (e) => {
+    const newValue = e.target.value;
+    setMissingItems(newValue);
+    
+    // 💾 Sauvegarder automatiquement après 1 seconde d'inactivité
+    clearTimeout(window.missingItemsTimer);
+    window.missingItemsTimer = setTimeout(async () => {
+      try {
+        const { error } = await supabase
+          .from('games')
+          .update({ missing_items: newValue })
+          .eq('id', selectedGame.id);
+
+        if (error) throw error;
+        
+        setSyncStatus('✅ Notes sauvegardées');
+        setTimeout(() => setSyncStatus(''), 1500);
+      } catch (error) {
+        console.error('Erreur sauvegarde:', error);
+      }
+    }, 1000);
+  }}
+  placeholder="Notez ici les éléments manquants ou endommagés..."
+  rows="6"
+  className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none ${
+    darkMode 
+      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+      : 'bg-white border-gray-200 text-gray-900'
+  }`}
+/>
 
               {missingItems && (
                 <div className={`mt-4 p-4 rounded-lg ${
@@ -1305,26 +1391,28 @@ function DetailedViewComponent({
                     const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
                     return (
                       <div
-                        key={photo.id}
-                        onClick={(e) => {
-                          const now = Date.now();
-                          if (now - lastTap < 300) {
-                            e.stopPropagation();
-                            setFullscreenPhoto(photo);
-                            setLastTap(0);
-                          } else {
-                            setLastTap(now);
-                            toggleDetailPhoto(detailedView.itemIndex, photo.id);
-                          }
-                        }}
-                        className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
-                          isChecked
-                            ? 'border-green-500 opacity-60'
-                            : darkMode
-                              ? 'border-gray-600 hover:border-purple-500'
-                              : 'border-gray-200 hover:border-purple-500'
-                        }`}
-                      >
+  key={photo.id}
+  onClick={(e) => {
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      // Double-clic détecté
+      e.stopPropagation();
+      setFullscreenPhoto(photo);
+      setLastTap(0);
+    } else {
+      // Simple clic
+      setLastTap(now);
+      toggleDetailPhoto(detailedView.itemIndex, photo.id);
+    }
+  }}
+  className={`relative aspect-square rounded-lg cursor-pointer transition-all border-4 overflow-hidden ${
+    isChecked
+      ? 'border-green-500 opacity-60'
+      : darkMode
+        ? 'border-gray-600 hover:border-purple-500'
+        : 'border-gray-200 hover:border-purple-500'
+  }`}
+>
                         <img 
                           src={photo.image} 
                           alt={photo.name || 'Photo'}
