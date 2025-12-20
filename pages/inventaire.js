@@ -7,6 +7,12 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
+
+// 📸 Optimiser les images Cloudinary
+const getOptimizedImage = (url, width = 400) => {
+  if (!url) return url;
+  return url.replace('/upload/', `/upload/w_${width},q_auto,f_auto/`);
+};
 // ⚙️ CONFIGURATION CLOUDINARY - REMPLACEZ PAR VOS VALEURS
 const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey'; // ← Changez ici
 const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload'; // ← Changez ici
@@ -716,7 +722,13 @@ setAllGames(prev =>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => window.location.href = '/'}
+                onClick={() => {
+                  setSelectedGame(null);
+                  setDetailedView(null);
+                  setEditMode(false);
+                  setSearchQuery('');
+                  setShowResults(false);
+                }}
                 className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1303,6 +1315,16 @@ function DetailedViewComponent({
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
   uploadingPhotos, uploadProgress
 }) {
+const [currentPage, setCurrentPage] = useState(1);
+  const PHOTOS_PER_PAGE = 20;
+
+  // 🚀 AJOUTEZ CES LIGNES ICI :
+  const paginatedPhotos = React.useMemo(() => {
+    return currentDetailPhotos
+      .filter(p => p.image)
+      .slice((currentPage - 1) * PHOTOS_PER_PAGE, currentPage * PHOTOS_PER_PAGE);
+  }, [currentDetailPhotos, currentPage, PHOTOS_PER_PAGE]);
+  
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const [lastTap, setLastTap] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1451,7 +1473,13 @@ function DetailedViewComponent({
                     } transition`}
                   >
                     {photo.image ? (
-                      <img src={photo.image} alt={photo.name || 'Photo'} className="w-full h-full object-cover" loading="lazy" />
+                      <img 
+                        src={getOptimizedImage(photo.image, 400)} 
+                        alt={photo.name || 'Photo'} 
+                        className="w-full h-full object-cover" 
+                        loading="lazy"
+                        decoding="async"
+                      />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center gap-2">
                         <Camera size={32} className={darkMode ? 'text-gray-500' : 'text-gray-400'} />
@@ -1510,9 +1538,7 @@ function DetailedViewComponent({
                 </div>
                 
                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {currentDetailPhotos.filter(p => p.image)
-                    .slice((currentPage - 1) * PHOTOS_PER_PAGE, currentPage * PHOTOS_PER_PAGE)
-                    .map((photo) => {
+                  {paginatedPhotos.map((photo) => {
                     const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
                     return (
                       <div
@@ -1539,10 +1565,11 @@ function DetailedViewComponent({
   }`}
 >
                         <img 
-                          src={photo.image} 
+                          src={getOptimizedImage(photo.image, 400)} 
                           alt={photo.name || 'Photo'}
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          decoding="async"
                         />
                         
                         {isChecked && (
@@ -1612,9 +1639,10 @@ function DetailedViewComponent({
         >
           <div className="relative max-w-full max-h-full">
             <img 
-              src={fullscreenPhoto.image} 
+              src={getOptimizedImage(fullscreenPhoto.image, 1920)} 
               alt={fullscreenPhoto.name || 'Photo'} 
               className="max-w-full max-h-[90vh] object-contain"
+              loading="eager"
             />
             {fullscreenPhoto.name && (
               <div className="absolute bottom-4 left-0 right-0 text-center">
