@@ -1315,20 +1315,17 @@ function DetailedViewComponent({
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
   uploadingPhotos, uploadProgress
 }) {
-const [currentPage, setCurrentPage] = useState(1);
+const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
+  const [lastTap, setLastTap] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   const PHOTOS_PER_PAGE = 20;
 
-  // 🚀 AJOUTEZ CES LIGNES ICI :
+  // 🚀 Mémoïser la pagination
   const paginatedPhotos = React.useMemo(() => {
     return currentDetailPhotos
       .filter(p => p.image)
       .slice((currentPage - 1) * PHOTOS_PER_PAGE, currentPage * PHOTOS_PER_PAGE);
-  }, [currentDetailPhotos, currentPage, PHOTOS_PER_PAGE]);
-  
-  const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
-  const [lastTap, setLastTap] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const PHOTOS_PER_PAGE = 20;
+  }, [currentDetailPhotos, currentPage]);
 
   const handlePhotoClick = (e, photo) => {
     const now = Date.now();
