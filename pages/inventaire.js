@@ -274,27 +274,7 @@ useEffect(() => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?\n\nToutes les photos et inventaires associés seront également supprimés.`)) return;
     
     try {
-      // 1️⃣ Supprimer les photos liées (si la table existe)
-      const { error: photosError } = await supabase
-        .from('game_photos')
-        .delete()
-        .eq('game_id', gameId);
-      
-      if (photosError && photosError.code !== '42P01') { // 42P01 = table n'existe pas
-        console.warn('Erreur suppression photos:', photosError);
-      }
-
-      // 2️⃣ Supprimer les inventaires liés (si la table existe)
-      const { error: inventoriesError } = await supabase
-        .from('game_inventories')
-        .delete()
-        .eq('game_id', gameId);
-      
-      if (inventoriesError && inventoriesError.code !== '42P01') {
-        console.warn('Erreur suppression inventaires:', inventoriesError);
-      }
-
-      // 3️⃣ Supprimer le jeu
+      // Suppression simple - CASCADE s'occupe du reste
       const { error } = await supabase
         .from('games')
         .delete()
@@ -308,8 +288,8 @@ useEffect(() => {
       if (selectedGame?.id === gameId) setSelectedGame(null);
       await loadGames();
     } catch (error) {
-      console.error('Erreur:', error);
-      alert(`❌ Erreur suppression: ${error.message}`);
+      console.error('Erreur suppression:', error);
+      alert(`❌ Erreur: ${error.message}\n\nVérifiez les contraintes CASCADE dans Supabase.`);
     }
   };
 
