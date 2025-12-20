@@ -291,14 +291,13 @@ useEffect(() => {
         setSelectedGame(null);
       }
 
-      // Supprimer localement AVANT le rechargement
+      // Supprimer localement (la synchro temps réel confirmera)
       setAllGames(prev => prev.filter(g => g.id !== gameId));
 
       setSyncStatus('✅ Supprimé');
       setTimeout(() => setSyncStatus(''), 2000);
       
-      // Recharger pour être sûr
-      setTimeout(() => loadGames(), 500);
+      // ✅ PAS DE loadGames() ! La synchro temps réel s'en occupe
     } catch (error) {
       console.error('Erreur suppression:', error);
       alert(`❌ Erreur: ${error.message}`);
