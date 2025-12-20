@@ -271,25 +271,46 @@ useEffect(() => {
   setItemDetails(game.item_details || {});
 };
   const deleteGame = async (gameId, gameName) => {
-    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
+    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?\n\nToutes les photos et inventaires associés seront également supprimés.`)) return;
     
     try {
-  const { error } = await supabase
-    .from('games')
-    .delete()
-    .eq('id', gameId);
+      // 1️⃣ Supprimer les photos liées (si la table existe)
+      const { error: photosError } = await supabase
+        .from('game_photos')
+        .delete()
+        .eq('game_id', gameId);
+      
+      if (photosError && photosError.code !== '42P01') { // 42P01 = table n'existe pas
+        console.warn('Erreur suppression photos:', photosError);
+      }
 
-  if (error) throw error;
+      // 2️⃣ Supprimer les inventaires liés (si la table existe)
+      const { error: inventoriesError } = await supabase
+        .from('game_inventories')
+        .delete()
+        .eq('game_id', gameId);
+      
+      if (inventoriesError && inventoriesError.code !== '42P01') {
+        console.warn('Erreur suppression inventaires:', inventoriesError);
+      }
 
-  setSyncStatus('✅ Supprimé');
-  setTimeout(() => setSyncStatus(''), 2000);
-  
-  if (selectedGame?.id === gameId) setSelectedGame(null);
-  await loadGames();
-} catch (error) {
-  console.error('Erreur:', error);
-  alert('❌ Erreur suppression');
-}
+      // 3️⃣ Supprimer le jeu
+      const { error } = await supabase
+        .from('games')
+        .delete()
+        .eq('id', gameId);
+
+      if (error) throw error;
+
+      setSyncStatus('✅ Supprimé');
+      setTimeout(() => setSyncStatus(''), 2000);
+      
+      if (selectedGame?.id === gameId) setSelectedGame(null);
+      await loadGames();
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert(`❌ Erreur suppression: ${error.message}`);
+    }
   };
 
   const toggleItem = async (index) => {
