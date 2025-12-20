@@ -134,10 +134,15 @@ useEffect(() => {
         } else if (payload.eventType === 'INSERT') {
           await loadGames();
         } else if (payload.eventType === 'DELETE') {
+          console.log('🗑️ Suppression détectée:', payload.old);
+          
+          // Supprimer de la liste
           setAllGames(prev => prev.filter(g => g.id !== payload.old.id));
-          setSelectedGame(prev => 
-            prev?.id === payload.old.id ? null : prev
-          );
+          
+          // Désélectionner si c'était le jeu actif
+          if (selectedGame?.id === payload.old.id) {
+            setSelectedGame(null);
+          }
         }
       }
     )
@@ -273,30 +278,30 @@ useEffect(() => {
   const deleteGame = async (gameId, gameName) => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
     
-    setLoading(true);
     try {
       const { error } = await supabase
         .from('games')
         .delete()
         .eq('id', gameId);
 
-      if (error) {
-        console.error('Erreur Supabase:', error);
-        throw error;
+      if (error) throw error;
+
+      // Désélectionner immédiatement
+      if (selectedGame?.id === gameId) {
+        setSelectedGame(null);
       }
 
-      if (selectedGame?.id === gameId) setSelectedGame(null);
-      
-      // Recharger immédiatement
-      await loadGames();
-      
-      setSyncStatus('✅ Jeu supprimé');
+      // Supprimer localement AVANT le rechargement
+      setAllGames(prev => prev.filter(g => g.id !== gameId));
+
+      setSyncStatus('✅ Supprimé');
       setTimeout(() => setSyncStatus(''), 2000);
+      
+      // Recharger pour être sûr
+      setTimeout(() => loadGames(), 500);
     } catch (error) {
-      console.error('Erreur suppression complète:', error);
-      alert(`❌ Impossible de supprimer: ${error.message || error.hint || 'Erreur inconnue'}`);
-    } finally {
-      setLoading(false);
+      console.error('Erreur suppression:', error);
+      alert(`❌ Erreur: ${error.message}`);
     }
   };
 
