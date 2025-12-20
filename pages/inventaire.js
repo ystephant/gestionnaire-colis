@@ -599,6 +599,7 @@ setAllGames(prev =>
     .from('games')
     .insert({
       name: newGameName.trim(),
+      search_name: newGameName.trim().toLowerCase(),
       items: validItems,
       item_details: {},
       created_by: username
