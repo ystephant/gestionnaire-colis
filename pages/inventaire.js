@@ -408,30 +408,38 @@ useEffect(() => {
   };
 
   const getProgress = () => {
-    if (!selectedGame) return 0;
+  if (!selectedGame) return 0;
+  
+  const totalElements = selectedGame.items.length;
+  if (totalElements === 0) return 0;
+  
+  const percentagePerElement = 100 / totalElements;
+  let totalProgress = 0;
+  
+  selectedGame.items.forEach((item, index) => {
+    const photos = itemDetails[index] || [];
+    const photoCount = photos.filter(p => p.image).length;
     
-    let totalItems = 0;
-    let checkedCount = 0;
-    
-    selectedGame.items.forEach((item, index) => {
-      const photos = itemDetails[index] || [];
-      const photoCount = photos.filter(p => p.image).length;
-      
-      if (photoCount > 0) {
-        totalItems += photoCount;
-        photos.forEach(photo => {
-          if (photo.image && checkedItems[`detail_${index}_${photo.id}`]) {
-            checkedCount++;
-          }
-        });
-      } else {
-        totalItems += 1;
-        if (checkedItems[index]) checkedCount++;
+    if (photoCount > 0) {
+      // L'élément a des photos : calculer le pourcentage de photos cochées
+      let checkedPhotosCount = 0;
+      photos.forEach(photo => {
+        if (photo.image && checkedItems[`detail_${index}_${photo.id}`]) {
+          checkedPhotosCount++;
+        }
+      });
+      const photoProgress = (checkedPhotosCount / photoCount) * percentagePerElement;
+      totalProgress += photoProgress;
+    } else {
+      // L'élément n'a pas de photos : vaut 100% du pourcentage si coché
+      if (checkedItems[index]) {
+        totalProgress += percentagePerElement;
       }
-    });
-    
-    return totalItems > 0 ? Math.round((checkedCount / totalItems) * 100) : 0;
-  };
+    }
+  });
+  
+  return Math.round(totalProgress);
+};
 
   const openCreateModal = () => {
     setNewGameName(searchQuery);
@@ -722,19 +730,12 @@ setAllGames(prev =>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => {
-                  setSelectedGame(null);
-                  setDetailedView(null);
-                  setEditMode(false);
-                  setSearchQuery('');
-                  setShowResults(false);
-                }}
-                className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-              </button>
+  onClick={() => window.location.href = '/'}
+  className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
+  title="Retour à l'accueil"
+>
+  <Home size={24} />
+</button>
               <div className="bg-orange-600 p-3 rounded-xl">
                 <Package size={28} color="white" />
               </div>
