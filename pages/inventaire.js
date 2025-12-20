@@ -1344,7 +1344,7 @@ function DetailedViewComponent({
                 {detailedView.itemName}
               </h2>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''} • Scroll infini fluide ⚡
+                {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''} • Pagination active
               </p>
             </div>
           </div>
@@ -1393,7 +1393,7 @@ function DetailedViewComponent({
                 ⚡ Upload ultra-rapide avec Cloudinary ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
               </p>
               <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
-                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Scroll infini (pas de pagination !)
+                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Pagination 20 par page
               </p>
             </div>
 
@@ -1505,7 +1505,7 @@ function DetailedViewComponent({
               <div>
                 <div className={`mb-4 p-3 rounded-xl ${darkMode ? 'bg-purple-900 bg-opacity-30' : 'bg-purple-50'}`}>
                   <p className={`text-xs ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>
-                    💡 Double-cliquez sur une photo pour la voir en plein écran • Scroll fluide, pas de pagination !
+                    💡 Double-cliquez sur une photo pour la voir en plein écran • Navigation par pages
                   </p>
                 </div>
                 
@@ -1599,9 +1599,6 @@ function DetailedViewComponent({
                     </button>
                   </div>
                 )}
-              </div>
-            )}
-                </div>
               </div>
             )}
           </>
