@@ -565,8 +565,14 @@ useEffect(() => {
 
   if (error) throw error;
 
-  setSyncStatus('✅ Photos synchronisées');
-  setTimeout(() => setSyncStatus(''), 2000);
+  setSyncStatus('✅ Photos enregistrées avec succès !');
+  setTimeout(() => setSyncStatus(''), 3000);
+  
+  // Message de confirmation
+  alert(`✅ ${validPhotos.length} photo(s) enregistrée(s) avec succès !`);
+  
+  // Fermer le mode édition
+  setEditingDetails(false);
   
   setItemDetails(updatedItemDetails);
 
@@ -709,6 +715,14 @@ setAllGames(prev =>
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => window.location.href = '/'}
+                className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
               <div className="bg-orange-600 p-3 rounded-xl">
                 <Package size={28} color="white" />
               </div>
@@ -725,8 +739,25 @@ setAllGames(prev =>
                   ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
                   : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
               }`}
+              title={darkMode ? 'Mode clair' : 'Mode sombre'}
             >
-              {darkMode ? '☀️' : '🌙'}
+              {darkMode ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
             </button>
           </div>
         </div>
@@ -1274,6 +1305,8 @@ function DetailedViewComponent({
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const [lastTap, setLastTap] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PHOTOS_PER_PAGE = 20;
 
   const handlePhotoClick = (e, photo) => {
     const now = Date.now();
@@ -1476,8 +1509,10 @@ function DetailedViewComponent({
                   </p>
                 </div>
                 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {currentDetailPhotos.filter(p => p.image).map((photo) => {
+               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {currentDetailPhotos.filter(p => p.image)
+                    .slice((currentPage - 1) * PHOTOS_PER_PAGE, currentPage * PHOTOS_PER_PAGE)
+                    .map((photo) => {
                     const isChecked = checkedItems[`detail_${detailedView.itemIndex}_${photo.id}`];
                     return (
                       <div
@@ -1526,6 +1561,46 @@ function DetailedViewComponent({
                       </div>
                     );
                   })}
+</div>
+                
+                {/* Pagination */}
+                {currentDetailPhotos.filter(p => p.image).length > PHOTOS_PER_PAGE && (
+                  <div className="flex items-center justify-center gap-2 mt-6">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className={`px-4 py-2 rounded-lg font-semibold transition ${
+                        currentPage === 1
+                          ? 'opacity-30 cursor-not-allowed'
+                          : darkMode
+                            ? 'bg-purple-600 text-white hover:bg-purple-700'
+                            : 'bg-purple-500 text-white hover:bg-purple-600'
+                      }`}
+                    >
+                      ← Précédent
+                    </button>
+                    
+                    <span className={`px-4 py-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-semibold`}>
+                      Page {currentPage} / {Math.ceil(currentDetailPhotos.filter(p => p.image).length / PHOTOS_PER_PAGE)}
+                    </span>
+                    
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(Math.ceil(currentDetailPhotos.filter(p => p.image).length / PHOTOS_PER_PAGE), p + 1))}
+                      disabled={currentPage >= Math.ceil(currentDetailPhotos.filter(p => p.image).length / PHOTOS_PER_PAGE)}
+                      className={`px-4 py-2 rounded-lg font-semibold transition ${
+                        currentPage >= Math.ceil(currentDetailPhotos.filter(p => p.image).length / PHOTOS_PER_PAGE)
+                          ? 'opacity-30 cursor-not-allowed'
+                          : darkMode
+                            ? 'bg-purple-600 text-white hover:bg-purple-700'
+                            : 'bg-purple-500 text-white hover:bg-purple-600'
+                      }`}
+                    >
+                      Suivant →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
                 </div>
               </div>
             )}
