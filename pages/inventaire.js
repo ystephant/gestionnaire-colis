@@ -271,25 +271,32 @@ useEffect(() => {
   setItemDetails(game.item_details || {});
 };
   const deleteGame = async (gameId, gameName) => {
-    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?\n\nToutes les photos et inventaires associés seront également supprimés.`)) return;
+    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
     
+    setLoading(true);
     try {
-      // Suppression simple - CASCADE s'occupe du reste
       const { error } = await supabase
         .from('games')
         .delete()
         .eq('id', gameId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erreur Supabase:', error);
+        throw error;
+      }
 
-      setSyncStatus('✅ Supprimé');
-      setTimeout(() => setSyncStatus(''), 2000);
-      
       if (selectedGame?.id === gameId) setSelectedGame(null);
+      
+      // Recharger immédiatement
       await loadGames();
+      
+      setSyncStatus('✅ Jeu supprimé');
+      setTimeout(() => setSyncStatus(''), 2000);
     } catch (error) {
-      console.error('Erreur suppression:', error);
-      alert(`❌ Erreur: ${error.message}\n\nVérifiez les contraintes CASCADE dans Supabase.`);
+      console.error('Erreur suppression complète:', error);
+      alert(`❌ Impossible de supprimer: ${error.message || error.hint || 'Erreur inconnue'}`);
+    } finally {
+      setLoading(false);
     }
   };
 
