@@ -58,9 +58,9 @@ export default function LockerParcelApp() {
       }
       loadParcels();
       if (isOnline) { 
-        setupRealtimeSubscription(); 
-        requestNotificationPermission(); 
-      }
+  setupRealtimeSubscription();
+  // requestNotificationPermission supprimé - OneSignal gère les permissions
+}
       trackCollectedToday();
       loadOfflineQueue();
     }
@@ -143,8 +143,11 @@ export default function LockerParcelApp() {
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
               
               if (payload.new.collected && !payload.old?.collected) {
-                showNotification(`Colis ${payload.new.code} récupéré ! 🎉`);
-              }
+  showNotification(
+    `Colis ${payload.new.code} récupéré ! 🎉`,
+    `collected-${payload.new.id}`
+  );
+}
               
               return updated;
             });
@@ -171,27 +174,21 @@ export default function LockerParcelApp() {
     window.realtimeChannel = channel;
   };
 
-  const showNotification = (message) => {
-    if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
-      navigator.serviceWorker.ready.then(registration => {
-        registration.showNotification('Gestionnaire de Colis', { 
-          body: message, 
-          icon: '/icons/package-icon.png', 
-          badge: '/icons/badge-icon.png', 
-          vibrate: [200, 100, 200], 
-          tag: 'parcel-update', 
-          requireInteraction: false 
-        });
+  const showNotification = (message, tag = `parcel-${Date.now()}`) => {
+  if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
+    navigator.serviceWorker.ready.then(registration => {
+      registration.showNotification('Gestionnaire de Colis', { 
+        body: message, 
+        icon: '/icons/package-icon.png', 
+        badge: '/icons/badge-icon.png', 
+        vibrate: [200, 100, 200], 
+        tag: tag,
+        requireInteraction: false,
+        renotify: true
       });
-    }
-  };
-
-  const requestNotificationPermission = async () => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') console.log('✅ Notifications autorisées');
-    }
-  };
+    });
+  }
+};
 
   const trackCollectedToday = async () => {
     try {
