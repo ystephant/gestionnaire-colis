@@ -45,13 +45,16 @@ export default function TransactionsTracker() {
     if (savedUsername && savedPassword) {
       setUsername(savedUsername);
       setIsLoggedIn(true);
+      setLoading(false);
     } else {
       router.push('/');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadTransactions = async () => {
+    if (!username) return;
+    
     try {
       const { data: buys, error: buyError } = await supabase
         .from('transactions')
@@ -113,12 +116,16 @@ export default function TransactionsTracker() {
 
   const addBuy = async () => {
     if (!buyPrice.trim()) return;
+    if (!username) {
+      alert('Erreur: utilisateur non connecté');
+      return;
+    }
 
     const price = parsePrice(buyPrice);
     if (price <= 0) return;
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('transactions')
         .insert([{
           user_id: username,
@@ -126,24 +133,32 @@ export default function TransactionsTracker() {
           game_name: gameName.trim() || null,
           price: price,
           created_at: new Date().toISOString()
-        }]);
+        }])
+        .select();
 
       if (error) throw error;
+      
+      console.log('Transaction ajoutée:', data);
       setBuyPrice('');
       setGameName('');
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
+      alert('Erreur lors de l\'ajout: ' + error.message);
     }
   };
 
   const addSell = async () => {
     if (!sellPrice.trim()) return;
+    if (!username) {
+      alert('Erreur: utilisateur non connecté');
+      return;
+    }
 
     const price = parsePrice(sellPrice);
     if (price <= 0) return;
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('transactions')
         .insert([{
           user_id: username,
@@ -151,13 +166,17 @@ export default function TransactionsTracker() {
           game_name: gameName.trim() || null,
           price: price,
           created_at: new Date().toISOString()
-        }]);
+        }])
+        .select();
 
       if (error) throw error;
+      
+      console.log('Transaction ajoutée:', data);
       setSellPrice('');
       setGameName('');
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
+      alert('Erreur lors de l\'ajout: ' + error.message);
     }
   };
 
