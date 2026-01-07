@@ -26,6 +26,9 @@ export default function TransactionsTracker() {
   const [expandedBuyMonths, setExpandedBuyMonths] = useState(new Set());
   const [expandedSellMonths, setExpandedSellMonths] = useState(new Set());
   const [statsView, setStatsView] = useState(false);
+  const [gameNameSuggestions, setGameNameSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedGameFilter, setSelectedGameFilter] = useState('');
 
   useEffect(() => {
     checkAuth();
@@ -76,6 +79,14 @@ export default function TransactionsTracker() {
 
       setBuyTransactions(buys || []);
       setSellTransactions(sells || []);
+
+      // Extract unique game names for autocomplete
+      const allTransactions = [...(buys || []), ...(sells || [])];
+      const uniqueNames = [...new Set(allTransactions
+        .map(t => t.game_name)
+        .filter(name => name && name.trim() !== '')
+      )].sort();
+      setGameNameSuggestions(uniqueNames);
 
       // Auto-expand current month
       const currentMonth = new Date().toISOString().slice(0, 7);
@@ -234,6 +245,127 @@ export default function TransactionsTracker() {
     }
   };
 
+  const exportToExcel = () => {
+    // Prepare data for export
+    const allData = [];
+    
+    // Header row
+    allData.push(['TYPE', 'NOM DU JEU', 'PRIX (€)', 'DATE']);
+    allData.push([]); // Empty row
+    
+    // Buy transactions
+    allData.push(['ACHATS']);
+    buyTransactions.forEach(t => {
+      allData.push([
+        'Achat',
+        t.game_name || 'Jeu non renseigné',
+        t.price.toFixed(2),
+        formatDate(t.created_at)
+      ]);
+    });
+    
+    allData.push([]); // Empty row
+    allData.push(['Total Achats', '', globalStats.totalBuy.toFixed(2) + '€']);
+    allData.push([]); // Empty row
+    
+    // Sell transactions
+    allData.push(['VENTES']);
+    sellTransactions.forEach(t => {
+      allData.push([
+        'Vente',
+        t.game_name || 'Jeu non renseigné',
+        t.price.toFixed(2),
+        formatDate(t.created_at)
+      ]);
+    });
+    
+    allData.push([]); // Empty row
+    allData.push(['Total Ventes', '', globalStats.totalSell.toFixed(2) + '€']);
+    allData.push([]); // Empty row
+    
+    // Summary
+    allData.push(['RÉSUMÉ']);
+    allData.push(['Total Achats', globalStats.buyCount + ' transactions', globalStats.totalBuy.toFixed(2) + '€']);
+    allData.push(['Total Ventes', globalStats.sellCount + ' transactions', globalStats.totalSell.toFixed(2) + '€']);
+    allData.push(['Bénéfice', '', (globalStats.profit >= 0 ? '+' : '') + globalStats.profit.toFixed(2) + '€']);
+    allData.push(['Marge', '', (globalStats.profitPercent >= 0 ? '+' : '') + globalStats.profitPercent.toFixed(1) + '%']);
+    
+    // Convert to CSV format
+    const csvContent = allData.map(row => row.join('\t')).join('\n');
+    
+    // Create blob and download
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `transactions_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getTop10MostBoughtGames = () => {
+    const gameCounts = {};
+    
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        gameCounts[name] = (gameCounts[name] || 0) + 1;
+      });
+    
+    return Object.entries(gameCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+  };
+
+  const getTop10MostProfitableGames = () => {
+    const gameStats = {};
+    
+    // Calculate buys per game
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0 };
+        gameStats[name].buys += t.price;
+      });
+    
+    // Calculate sells per game
+    sellTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0 };
+        gameStats[name].sells += t.price;
+      });
+    
+    // Calculate profit
+    return Object.entries(gameStats)
+      .map(([name, stats]) => ({
+        name,
+        profit: stats.sells - stats.buys
+      }))
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 10);
+  };
+
+  const handleGameNameChange = (value) => {
+    setGameName(value);
+    setShowSuggestions(value.length > 0);
+  };
+
+  const selectSuggestion = (suggestion) => {
+    setGameName(suggestion);
+    setShowSuggestions(false);
+  };
+
+  const filteredSuggestions = gameNameSuggestions.filter(name => 
+    name.toLowerCase().includes(gameName.toLowerCase())
+  );
+
   const groupByMonth = (transactions) => {
     const groups = {};
     transactions.forEach(t => {
@@ -261,16 +393,25 @@ export default function TransactionsTracker() {
   };
 
   const getChartData = () => {
+    let buysToUse = buyTransactions;
+    let sellsToUse = sellTransactions;
+    
+    // Filter by selected game if any
+    if (selectedGameFilter) {
+      buysToUse = buyTransactions.filter(t => t.game_name === selectedGameFilter);
+      sellsToUse = sellTransactions.filter(t => t.game_name === selectedGameFilter);
+    }
+    
     const allMonths = new Set([
-      ...Object.keys(groupByMonth(buyTransactions)),
-      ...Object.keys(groupByMonth(sellTransactions))
+      ...Object.keys(groupByMonth(buysToUse)),
+      ...Object.keys(groupByMonth(sellsToUse))
     ]);
 
     const sortedMonths = Array.from(allMonths).sort();
     
     return sortedMonths.map(month => {
-      const buyMonth = groupByMonth(buyTransactions)[month] || [];
-      const sellMonth = groupByMonth(sellTransactions)[month] || [];
+      const buyMonth = groupByMonth(buysToUse)[month] || [];
+      const sellMonth = groupByMonth(sellsToUse)[month] || [];
       
       const buyTotal = buyMonth.reduce((sum, t) => sum + t.price, 0);
       const sellTotal = sellMonth.reduce((sum, t) => sum + t.price, 0);
@@ -325,8 +466,10 @@ export default function TransactionsTracker() {
   const sellMonthlyGroups = groupByMonth(sellTransactions);
   const globalStats = calculateStats(buyTransactions, sellTransactions);
   const chartData = getChartData();
+  const top10MostBought = getTop10MostBoughtGames();
+  const top10MostProfitable = getTop10MostProfitableGames();
 
-  const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6'];
+  const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#8b5cf6'];
 
   if (loading) {
     return (
@@ -369,15 +512,15 @@ export default function TransactionsTracker() {
             
             <div className="flex items-center gap-3">
               <button
-                onClick={archiveOldData}
+                onClick={exportToExcel}
                 className={`px-4 py-2 rounded-xl font-semibold transition text-sm ${
                   darkMode 
-                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-green-700 text-white hover:bg-green-600' 
+                    : 'bg-green-600 text-white hover:bg-green-700'
                 }`}
-                title="Archiver les données de plus de 2 ans"
+                title="Exporter en CSV"
               >
-                📦 Archiver
+                📥 Exporter
               </button>
               
               <button
@@ -412,21 +555,42 @@ export default function TransactionsTracker() {
             {/* Input Section */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
               <div className="grid md:grid-cols-3 gap-4">
-                <div>
+                <div className="relative">
                   <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                     Nom du jeu (optionnel)
                   </label>
                   <input
                     type="text"
                     value={gameName}
-                    onChange={(e) => setGameName(e.target.value)}
-                    placeholder="Ex: FIFA 24"
+                    onChange={(e) => handleGameNameChange(e.target.value)}
+                    onFocus={() => setShowSuggestions(gameName.length > 0)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    placeholder="Ex: Catane"
                     className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
                       darkMode 
                         ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
                         : 'bg-white border-gray-200 text-gray-900'
                     }`}
                   />
+                  
+                  {/* Autocomplete suggestions */}
+                  {showSuggestions && filteredSuggestions.length > 0 && (
+                    <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                      darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                    }`}>
+                      {filteredSuggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          onClick={() => selectSuggestion(suggestion)}
+                          className={`w-full text-left px-4 py-2 hover:bg-indigo-500 hover:text-white transition ${
+                            darkMode ? 'text-gray-200' : 'text-gray-800'
+                          }`}
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -735,6 +899,27 @@ export default function TransactionsTracker() {
         ) : (
           /* Statistics View with Charts */
           <div className="space-y-6">
+            {/* Game Filter */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+              <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Filtrer par jeu
+              </label>
+              <select
+                value={selectedGameFilter}
+                onChange={(e) => setSelectedGameFilter(e.target.value)}
+                className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                  darkMode 
+                    ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                    : 'bg-white border-gray-200 text-gray-900'
+                }`}
+              >
+                <option value="">Tous les jeux</option>
+                {gameNameSuggestions.map((name, index) => (
+                  <option key={index} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+            
             {/* Line Chart - Evolution */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
               <h2 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
@@ -845,6 +1030,72 @@ export default function TransactionsTracker() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* Top 10 Charts */}
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Top 10 Most Bought Games */}
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+                <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  🔥 Top 10 Jeux les Plus Achetés
+                </h2>
+                {top10MostBought.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={top10MostBought} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                      <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                          borderRadius: '8px',
+                          color: darkMode ? '#f3f4f6' : '#111827'
+                        }}
+                      />
+                      <Bar dataKey="count" fill="#ef4444" name="Nombre d'achats" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Aucun jeu avec nom renseigné
+                  </p>
+                )}
+              </div>
+
+              {/* Top 10 Most Profitable Games */}
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+                <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  💰 Top 10 Jeux les Plus Rentables
+                </h2>
+                {top10MostProfitable.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={top10MostProfitable} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                      <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                          borderRadius: '8px',
+                          color: darkMode ? '#f3f4f6' : '#111827'
+                        }}
+                        formatter={(value) => [`${value.toFixed(2)}€`, 'Bénéfice']}
+                      />
+                      <Bar dataKey="profit" name="Bénéfice">
+                        {top10MostProfitable.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Aucun jeu avec nom renseigné
+                  </p>
+                )}
               </div>
             </div>
           </div>
