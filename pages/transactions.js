@@ -246,59 +246,111 @@ export default function TransactionsTracker() {
   };
 
   const exportToExcel = () => {
-    // Prepare data for export
-    const allData = [];
+    // Create a clean, structured CSV with proper columns
+    const csvRows = [];
     
-    // Header row
-    allData.push(['TYPE', 'NOM DU JEU', 'PRIX (€)', 'DATE']);
-    allData.push([]); // Empty row
+    // Title and summary section
+    csvRows.push(['SUIVI ACHATS/VENTES - ' + new Date().toLocaleDateString('fr-FR')]);
+    csvRows.push([]);
+    csvRows.push(['STATISTIQUES GLOBALES']);
+    csvRows.push(['Indicateur', 'Valeur']);
+    csvRows.push(['Total Achats', globalStats.totalBuy.toFixed(2) + '€']);
+    csvRows.push(['Nombre d\'achats', globalStats.buyCount]);
+    csvRows.push(['Total Ventes', globalStats.totalSell.toFixed(2) + '€']);
+    csvRows.push(['Nombre de ventes', globalStats.sellCount]);
+    csvRows.push(['Bénéfice', (globalStats.profit >= 0 ? '+' : '') + globalStats.profit.toFixed(2) + '€']);
+    csvRows.push(['Marge', (globalStats.profitPercent >= 0 ? '+' : '') + globalStats.profitPercent.toFixed(1) + '%']);
+    csvRows.push([]);
+    csvRows.push([]);
     
-    // Buy transactions
-    allData.push(['ACHATS']);
-    buyTransactions.forEach(t => {
-      allData.push([
-        'Achat',
-        t.game_name || 'Jeu non renseigné',
+    // All transactions in one table
+    csvRows.push(['LISTE COMPLÈTE DES TRANSACTIONS']);
+    csvRows.push(['Type', 'Nom du Jeu', 'Prix (€)', 'Date', 'Mois/Année']);
+    
+    // Combine and sort all transactions by date
+    const allTransactions = [
+      ...buyTransactions.map(t => ({ ...t, typeLabel: 'ACHAT' })),
+      ...sellTransactions.map(t => ({ ...t, typeLabel: 'VENTE' }))
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    
+    allTransactions.forEach(t => {
+      csvRows.push([
+        t.typeLabel,
+        t.game_name || 'Non renseigné',
         t.price.toFixed(2),
-        formatDate(t.created_at)
+        formatDate(t.created_at),
+        formatMonthYear(t.created_at.slice(0, 7))
       ]);
     });
     
-    allData.push([]); // Empty row
-    allData.push(['Total Achats', '', globalStats.totalBuy.toFixed(2) + '€']);
-    allData.push([]); // Empty row
+    csvRows.push([]);
+    csvRows.push([]);
     
-    // Sell transactions
-    allData.push(['VENTES']);
-    sellTransactions.forEach(t => {
-      allData.push([
-        'Vente',
-        t.game_name || 'Jeu non renseigné',
-        t.price.toFixed(2),
-        formatDate(t.created_at)
+    // Monthly breakdown
+    csvRows.push(['DÉTAIL PAR MOIS']);
+    csvRows.push(['Mois', 'Achats (€)', 'Nb Achats', 'Ventes (€)', 'Nb Ventes', 'Bénéfice (€)', 'Marge (%)']);
+    
+    const allMonths = new Set([
+      ...Object.keys(groupByMonth(buyTransactions)),
+      ...Object.keys(groupByMonth(sellTransactions))
+    ]);
+    
+    Array.from(allMonths).sort().reverse().forEach(month => {
+      const buyMonth = groupByMonth(buyTransactions)[month] || [];
+      const sellMonth = groupByMonth(sellTransactions)[month] || [];
+      
+      const buyTotal = buyMonth.reduce((sum, t) => sum + t.price, 0);
+      const sellTotal = sellMonth.reduce((sum, t) => sum + t.price, 0);
+      const profit = sellTotal - buyTotal;
+      const margin = buyTotal > 0 ? ((profit / buyTotal) * 100) : 0;
+      
+      csvRows.push([
+        formatMonthYear(month),
+        buyTotal.toFixed(2),
+        buyMonth.length,
+        sellTotal.toFixed(2),
+        sellMonth.length,
+        (profit >= 0 ? '+' : '') + profit.toFixed(2),
+        (margin >= 0 ? '+' : '') + margin.toFixed(1)
       ]);
     });
     
-    allData.push([]); // Empty row
-    allData.push(['Total Ventes', '', globalStats.totalSell.toFixed(2) + '€']);
-    allData.push([]); // Empty row
+    csvRows.push([]);
+    csvRows.push([]);
     
-    // Summary
-    allData.push(['RÉSUMÉ']);
-    allData.push(['Total Achats', globalStats.buyCount + ' transactions', globalStats.totalBuy.toFixed(2) + '€']);
-    allData.push(['Total Ventes', globalStats.sellCount + ' transactions', globalStats.totalSell.toFixed(2) + '€']);
-    allData.push(['Bénéfice', '', (globalStats.profit >= 0 ? '+' : '') + globalStats.profit.toFixed(2) + '€']);
-    allData.push(['Marge', '', (globalStats.profitPercent >= 0 ? '+' : '') + globalStats.profitPercent.toFixed(1) + '%']);
+    // Top 10 most bought games
+    if (top10MostBought.length > 0) {
+      csvRows.push(['TOP 10 JEUX LES PLUS ACHETÉS']);
+      csvRows.push(['Rang', 'Nom du Jeu', 'Nombre d\'achats']);
+      top10MostBought.forEach((game, index) => {
+        csvRows.push([index + 1, game.name, game.count]);
+      });
+      csvRows.push([]);
+      csvRows.push([]);
+    }
     
-    // Convert to CSV format
-    const csvContent = allData.map(row => row.join('\t')).join('\n');
+    // Top 10 most profitable games
+    if (top10MostProfitable.length > 0) {
+      csvRows.push(['TOP 10 JEUX LES PLUS RENTABLES']);
+      csvRows.push(['Rang', 'Nom du Jeu', 'Bénéfice (€)']);
+      top10MostProfitable.forEach((game, index) => {
+        csvRows.push([
+          index + 1,
+          game.name,
+          (game.profit >= 0 ? '+' : '') + game.profit.toFixed(2)
+        ]);
+      });
+    }
+    
+    // Convert to CSV format with semicolons for Excel
+    const csvContent = csvRows.map(row => row.join(';')).join('\n');
     
     // Create blob and download
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `transactions_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `suivi_transactions_${new Date().toISOString().slice(0, 10)}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -565,7 +617,7 @@ export default function TransactionsTracker() {
                     onChange={(e) => handleGameNameChange(e.target.value)}
                     onFocus={() => setShowSuggestions(gameName.length > 0)}
                     onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                    placeholder="Ex: Catane"
+                    placeholder="Ex: FIFA 24"
                     className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
                       darkMode 
                         ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
