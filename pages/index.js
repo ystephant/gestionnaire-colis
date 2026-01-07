@@ -189,7 +189,7 @@ export default function MenuPrincipal() {
   // Menu principal
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
@@ -278,8 +278,8 @@ export default function MenuPrincipal() {
           </div>
         )}
 
-        {/* Cartes des applications - Grille 2x2 */}
-        <div className="grid md:grid-cols-2 gap-6">
+        {/* Cartes des applications - Grille adaptative */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Gestionnaire de Colis */}
           <div 
             onClick={() => router.push('/colis')}
@@ -349,7 +349,7 @@ export default function MenuPrincipal() {
             </div>
           </div>
 
-          {/* NOUVEAU : Inventaire de Jeux */}
+          {/* Inventaire de Jeux */}
           <div 
             onClick={() => router.push('/inventaire')}
             className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
@@ -370,6 +370,29 @@ export default function MenuPrincipal() {
               <div className="flex gap-2 flex-wrap justify-center text-sm">
                 <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full">📦 Inventaire</span>
                 <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full">✅ Vérification</span>
+              </div>
+            </div>
+          </div>
+
+          {/* NOUVEAU : Suivi Achats/Ventes */}
+          <div 
+            onClick={() => router.push('/transactions')}
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="bg-gradient-to-br from-blue-500 to-cyan-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <line x1="12" y1="1" x2="12" y2="23"></line>
+                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+              </div>
+              <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Suivi Achats/Ventes</h2>
+              <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                Suivez vos bénéfices en temps réel
+              </p>
+              <div className="flex gap-2 flex-wrap justify-center text-sm">
+                <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full">💰 Bénéfices</span>
+                <span className="bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full">📊 Stats</span>
               </div>
             </div>
           </div>
