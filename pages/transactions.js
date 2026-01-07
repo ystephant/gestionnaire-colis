@@ -32,11 +32,12 @@ export default function TransactionsTracker() {
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && username) {
       loadTransactions();
-      subscribeToChanges();
+      const cleanup = subscribeToChanges();
+      return cleanup;
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, username]);
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
@@ -88,6 +89,10 @@ export default function TransactionsTracker() {
   };
 
   const subscribeToChanges = () => {
+    if (!username) return () => {};
+    
+    console.log('Subscribing to changes for user:', username);
+    
     const channel = supabase
       .channel('transactions_changes')
       .on(
@@ -103,9 +108,12 @@ export default function TransactionsTracker() {
           loadTransactions();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+      });
 
     return () => {
+      console.log('Unsubscribing from changes');
       supabase.removeChannel(channel);
     };
   };
