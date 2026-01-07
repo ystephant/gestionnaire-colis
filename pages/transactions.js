@@ -381,8 +381,9 @@ export default function TransactionsTracker() {
       .filter(t => t.game_name && t.game_name.trim() !== '')
       .forEach(t => {
         const name = t.game_name.trim();
-        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0 };
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
         gameStats[name].buys += t.price;
+        gameStats[name].buyCount += 1;
       });
     
     // Calculate sells per game
@@ -390,16 +391,26 @@ export default function TransactionsTracker() {
       .filter(t => t.game_name && t.game_name.trim() !== '')
       .forEach(t => {
         const name = t.game_name.trim();
-        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0 };
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
         gameStats[name].sells += t.price;
+        gameStats[name].sellCount += 1;
       });
     
-    // Calculate profit
+    // Calculate profit and margin
     return Object.entries(gameStats)
-      .map(([name, stats]) => ({
-        name,
-        profit: stats.sells - stats.buys
-      }))
+      .map(([name, stats]) => {
+        const profit = stats.sells - stats.buys;
+        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        return {
+          name,
+          profit,
+          margin,
+          totalBuy: stats.buys,
+          totalSell: stats.sells,
+          buyCount: stats.buyCount,
+          sellCount: stats.sellCount
+        };
+      })
       .sort((a, b) => b.profit - a.profit)
       .slice(0, 10);
   };
@@ -1105,6 +1116,8 @@ export default function TransactionsTracker() {
                           borderRadius: '8px',
                           color: darkMode ? '#f3f4f6' : '#111827'
                         }}
+                        labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                        itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
                       />
                       <Bar dataKey="count" fill="#ef4444" name="Nombre d'achats" />
                     </BarChart>
@@ -1134,6 +1147,8 @@ export default function TransactionsTracker() {
                           borderRadius: '8px',
                           color: darkMode ? '#f3f4f6' : '#111827'
                         }}
+                        labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                        itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
                         formatter={(value) => [`${value.toFixed(2)}€`, 'Bénéfice']}
                       />
                       <Bar dataKey="profit" name="Bénéfice">
@@ -1150,6 +1165,78 @@ export default function TransactionsTracker() {
                 )}
               </div>
             </div>
+
+            {/* Detailed List of Top 10 Most Profitable Games */}
+            {top10MostProfitable.length > 0 && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+                <h2 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  📋 Détail des Jeux les Plus Rentables
+                </h2>
+                <div className="space-y-3">
+                  {top10MostProfitable.map((game, index) => (
+                    <div 
+                      key={index}
+                      className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} hover:shadow-md transition`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            #{index + 1}
+                          </div>
+                          <div className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                            {game.name}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-xl font-bold ${game.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {game.profit >= 0 ? '+' : ''}{game.profit.toFixed(2)}€
+                          </div>
+                          <div className={`text-sm font-semibold ${game.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            Marge: {game.margin >= 0 ? '+' : ''}{game.margin.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💰 Achats
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-red-500">{game.totalBuy.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.buyCount} transaction{game.buyCount > 1 ? 's' : ''}
+                          </div>
+                          {game.buyCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalBuy / game.buyCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💸 Ventes
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-green-500">{game.totalSell.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.sellCount} transaction{game.sellCount > 1 ? 's' : ''}
+                          </div>
+                          {game.sellCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalSell / game.sellCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
