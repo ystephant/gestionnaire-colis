@@ -29,6 +29,17 @@ export default function TransactionsTracker() {
   const [gameNameSuggestions, setGameNameSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedGameFilter, setSelectedGameFilter] = useState('');
+  const [timeGrouping, setTimeGrouping] = useState('month'); // 'day', 'month', 'year'
+  const [expandedSections, setExpandedSections] = useState({
+    evolution: true,
+    comparison: true,
+    distribution: true,
+    top10Bought: true,
+    top10Profitable: true,
+    top10LeastProfitable: true,
+    detailProfitable: true,
+    detailLosses: true
+  });
 
   useEffect(() => {
     checkAuth();
@@ -415,6 +426,49 @@ export default function TransactionsTracker() {
       .slice(0, 10);
   };
 
+  const getTop10LeastProfitableGames = () => {
+    const gameStats = {};
+    
+    // Calculate buys per game
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].buys += t.price;
+        gameStats[name].buyCount += 1;
+      });
+    
+    // Calculate sells per game
+    sellTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].sells += t.price;
+        gameStats[name].sellCount += 1;
+      });
+    
+    // Calculate profit and margin, filter only losses or break-even
+    return Object.entries(gameStats)
+      .map(([name, stats]) => {
+        const profit = stats.sells - stats.buys;
+        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        return {
+          name,
+          profit,
+          margin,
+          totalBuy: stats.buys,
+          totalSell: stats.sells,
+          buyCount: stats.buyCount,
+          sellCount: stats.sellCount
+        };
+      })
+      .filter(game => game.profit <= 0) // Only losses and break-even
+      .sort((a, b) => a.profit - b.profit) // Worst first
+      .slice(0, 10);
+  };
+
   const handleGameNameChange = (value) => {
     setGameName(value);
     setShowSuggestions(value.length > 0);
@@ -423,6 +477,21 @@ export default function TransactionsTracker() {
   const selectSuggestion = (suggestion) => {
     setGameName(suggestion);
     setShowSuggestions(false);
+  };
+
+  const handleGameNameKeyDown = (e) => {
+    // Tab key: auto-complete if only one suggestion
+    if (e.key === 'Tab' && filteredSuggestions.length === 1) {
+      e.preventDefault();
+      selectSuggestion(filteredSuggestions[0]);
+    }
+  };
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
   };
 
   const filteredSuggestions = gameNameSuggestions.filter(name => 
@@ -435,6 +504,26 @@ export default function TransactionsTracker() {
       const month = t.created_at.slice(0, 7);
       if (!groups[month]) groups[month] = [];
       groups[month].push(t);
+    });
+    return groups;
+  };
+
+  const groupByDay = (transactions) => {
+    const groups = {};
+    transactions.forEach(t => {
+      const day = t.created_at.slice(0, 10);
+      if (!groups[day]) groups[day] = [];
+      groups[day].push(t);
+    });
+    return groups;
+  };
+
+  const groupByYear = (transactions) => {
+    const groups = {};
+    transactions.forEach(t => {
+      const year = t.created_at.slice(0, 4);
+      if (!groups[year]) groups[year] = [];
+      groups[year].push(t);
     });
     return groups;
   };
@@ -465,22 +554,39 @@ export default function TransactionsTracker() {
       sellsToUse = sellTransactions.filter(t => t.game_name === selectedGameFilter);
     }
     
-    const allMonths = new Set([
-      ...Object.keys(groupByMonth(buysToUse)),
-      ...Object.keys(groupByMonth(sellsToUse))
+    let groupFunction;
+    let formatFunction;
+    
+    if (timeGrouping === 'day') {
+      groupFunction = groupByDay;
+      formatFunction = (key) => {
+        const date = new Date(key);
+        return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      };
+    } else if (timeGrouping === 'year') {
+      groupFunction = groupByYear;
+      formatFunction = (key) => key;
+    } else {
+      groupFunction = groupByMonth;
+      formatFunction = formatMonthYear;
+    }
+    
+    const allPeriods = new Set([
+      ...Object.keys(groupFunction(buysToUse)),
+      ...Object.keys(groupFunction(sellsToUse))
     ]);
 
-    const sortedMonths = Array.from(allMonths).sort();
+    const sortedPeriods = Array.from(allPeriods).sort();
     
-    return sortedMonths.map(month => {
-      const buyMonth = groupByMonth(buysToUse)[month] || [];
-      const sellMonth = groupByMonth(sellsToUse)[month] || [];
+    return sortedPeriods.map(period => {
+      const buyPeriod = groupFunction(buysToUse)[period] || [];
+      const sellPeriod = groupFunction(sellsToUse)[period] || [];
       
-      const buyTotal = buyMonth.reduce((sum, t) => sum + t.price, 0);
-      const sellTotal = sellMonth.reduce((sum, t) => sum + t.price, 0);
+      const buyTotal = buyPeriod.reduce((sum, t) => sum + t.price, 0);
+      const sellTotal = sellPeriod.reduce((sum, t) => sum + t.price, 0);
       
       return {
-        month: formatMonthYear(month),
+        month: formatFunction(period),
         achats: parseFloat(buyTotal.toFixed(2)),
         ventes: parseFloat(sellTotal.toFixed(2)),
         benefice: parseFloat((sellTotal - buyTotal).toFixed(2))
@@ -531,6 +637,7 @@ export default function TransactionsTracker() {
   const chartData = getChartData();
   const top10MostBought = getTop10MostBoughtGames();
   const top10MostProfitable = getTop10MostProfitableGames();
+  const top10LeastProfitable = getTop10LeastProfitableGames();
 
   const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#8b5cf6'];
 
@@ -962,136 +1069,206 @@ export default function TransactionsTracker() {
         ) : (
           /* Statistics View with Charts */
           <div className="space-y-6">
-            {/* Game Filter */}
+            {/* Game Filter and Time Grouping */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-              <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Filtrer par jeu
-              </label>
-              <select
-                value={selectedGameFilter}
-                onChange={(e) => setSelectedGameFilter(e.target.value)}
-                className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
-                  darkMode 
-                    ? 'bg-gray-700 border-gray-600 text-gray-100' 
-                    : 'bg-white border-gray-200 text-gray-900'
-                }`}
-              >
-                <option value="">Tous les jeux</option>
-                {gameNameSuggestions.map((name, index) => (
-                  <option key={index} value={name}>{name}</option>
-                ))}
-              </select>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Filtrer par jeu
+                  </label>
+                  <select
+                    value={selectedGameFilter}
+                    onChange={(e) => setSelectedGameFilter(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <option value="">Tous les jeux</option>
+                    {gameNameSuggestions.map((name, index) => (
+                      <option key={index} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Période d'affichage
+                  </label>
+                  <select
+                    value={timeGrouping}
+                    onChange={(e) => setTimeGrouping(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <option value="day">Par jour</option>
+                    <option value="month">Par mois</option>
+                    <option value="year">Par année</option>
+                  </select>
+                </div>
+              </div>
             </div>
             
             {/* Line Chart - Evolution */}
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-              <h2 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                📈 Évolution des transactions
-              </h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
-                  <XAxis dataKey="month" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                  <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-                      border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
-                      borderRadius: '8px',
-                      color: darkMode ? '#f3f4f6' : '#111827'
-                    }}
-                  />
-                  <Legend />
-                  <Line type="monotone" dataKey="achats" stroke="#ef4444" strokeWidth={2} name="Achats" />
-                  <Line type="monotone" dataKey="ventes" stroke="#22c55e" strokeWidth={2} name="Ventes" />
-                  <Line type="monotone" dataKey="benefice" stroke="#3b82f6" strokeWidth={2} name="Bénéfice" />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+              <button
+                onClick={() => toggleSection('evolution')}
+                className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                  darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                }`}
+              >
+                <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  📈 Évolution des transactions
+                </h2>
+                <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {expandedSections.evolution ? '▼' : '▶'}
+                </div>
+              </button>
+              
+              {expandedSections.evolution && (
+                <div className="p-6 pt-0">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                      <XAxis dataKey="month" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                          borderRadius: '8px',
+                          color: darkMode ? '#f3f4f6' : '#111827'
+                        }}
+                      />
+                      <Legend />
+                      <Line type="monotone" dataKey="achats" stroke="#ef4444" strokeWidth={2} name="Achats" />
+                      <Line type="monotone" dataKey="ventes" stroke="#22c55e" strokeWidth={2} name="Ventes" />
+                      <Line type="monotone" dataKey="benefice" stroke="#3b82f6" strokeWidth={2} name="Bénéfice" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             {/* Bar Chart - Comparaison */}
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-              <h2 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                📊 Comparaison mensuelle
-              </h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
-                  <XAxis dataKey="month" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                  <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-                      border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
-                      borderRadius: '8px',
-                      color: darkMode ? '#f3f4f6' : '#111827'
-                    }}
-                  />
-                  <Legend />
-                  <Bar dataKey="achats" fill="#ef4444" name="Achats" />
-                  <Bar dataKey="ventes" fill="#22c55e" name="Ventes" />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+              <button
+                onClick={() => toggleSection('comparison')}
+                className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                  darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                }`}
+              >
+                <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  📊 Comparaison mensuelle
+                </h2>
+                <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {expandedSections.comparison ? '▼' : '▶'}
+                </div>
+              </button>
+              
+              {expandedSections.comparison && (
+                <div className="p-6 pt-0">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                      <XAxis dataKey="month" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                          borderRadius: '8px',
+                          color: darkMode ? '#f3f4f6' : '#111827'
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="achats" fill="#ef4444" name="Achats" />
+                      <Bar dataKey="ventes" fill="#22c55e" name="Ventes" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             {/* Pie Chart - Répartition */}
             <div className="grid md:grid-cols-2 gap-6">
-              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-                <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  🎯 Répartition Achats/Ventes
-                </h2>
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Achats', value: globalStats.totalBuy },
-                        { name: 'Ventes', value: globalStats.totalSell }
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      <Cell fill="#ef4444" />
-                      <Cell fill="#22c55e" />
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('distribution')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    🎯 Répartition Achats/Ventes
+                  </h2>
+                  <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.distribution ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.distribution && (
+                  <div className="p-6 pt-0">
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Achats', value: globalStats.totalBuy },
+                            { name: 'Ventes', value: globalStats.totalSell }
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          <Cell fill="#ef4444" />
+                          <Cell fill="#22c55e" />
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
 
               {/* Monthly Stats Table */}
-              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-                <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  📋 Statistiques détaillées
-                </h2>
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {chartData.reverse().map((data, index) => (
-                    <div key={index} className={`p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                      <div className={`font-bold mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                        {data.month}
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-sm">
-                        <div>
-                          <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Achats:</span>
-                          <div className="font-bold text-red-500">{data.achats.toFixed(2)}€</div>
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <div className="p-6">
+                  <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📋 Statistiques détaillées
+                  </h2>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {chartData.reverse().map((data, index) => (
+                      <div key={index} className={`p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                        <div className={`font-bold mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                          {data.month}
                         </div>
-                        <div>
-                          <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Ventes:</span>
-                          <div className="font-bold text-green-500">{data.ventes.toFixed(2)}€</div>
-                        </div>
-                        <div>
-                          <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Bénéfice:</span>
-                          <div className={`font-bold ${data.benefice >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {data.benefice >= 0 ? '+' : ''}{data.benefice.toFixed(2)}€
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          <div>
+                            <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Achats:</span>
+                            <div className="font-bold text-red-500">{data.achats.toFixed(2)}€</div>
+                          </div>
+                          <div>
+                            <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Ventes:</span>
+                            <div className="font-bold text-green-500">{data.ventes.toFixed(2)}€</div>
+                          </div>
+                          <div>
+                            <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Bénéfice:</span>
+                            <div className={`font-bold ${data.benefice >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {data.benefice >= 0 ? '+' : ''}{data.benefice.toFixed(2)}€
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1099,81 +1276,124 @@ export default function TransactionsTracker() {
             {/* Top 10 Charts */}
             <div className="grid md:grid-cols-2 gap-6">
               {/* Top 10 Most Bought Games */}
-              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-                <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  🔥 Top 10 Jeux les Plus Achetés
-                </h2>
-                {top10MostBought.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={top10MostBought} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
-                      <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                      <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
-                          borderRadius: '8px',
-                          color: darkMode ? '#f3f4f6' : '#111827'
-                        }}
-                        labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
-                        itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
-                      />
-                      <Bar dataKey="count" fill="#ef4444" name="Nombre d'achats" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Aucun jeu avec nom renseigné
-                  </p>
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('top10Bought')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    🔥 Top 10 Jeux les Plus Achetés
+                  </h2>
+                  <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.top10Bought ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.top10Bought && (
+                  <div className="p-6 pt-0">
+                    {top10MostBought.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={top10MostBought} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                          <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                              border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                              borderRadius: '8px',
+                              color: darkMode ? '#f3f4f6' : '#111827'
+                            }}
+                            labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                            itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                          />
+                          <Bar dataKey="count" fill="#ef4444" name="Nombre d'achats" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Aucun jeu avec nom renseigné
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 
               {/* Top 10 Most Profitable Games */}
-              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-                <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  💰 Top 10 Jeux les Plus Rentables
-                </h2>
-                {top10MostProfitable.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={top10MostProfitable} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
-                      <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                      <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
-                          borderRadius: '8px',
-                          color: darkMode ? '#f3f4f6' : '#111827'
-                        }}
-                        labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
-                        itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
-                        formatter={(value) => [`${value.toFixed(2)}€`, 'Bénéfice']}
-                      />
-                      <Bar dataKey="profit" name="Bénéfice">
-                        {top10MostProfitable.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Aucun jeu avec nom renseigné
-                  </p>
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('top10Profitable')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    💰 Top 10 Jeux les Plus Rentables
+                  </h2>
+                  <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.top10Profitable ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.top10Profitable && (
+                  <div className="p-6 pt-0">
+                    {top10MostProfitable.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={top10MostProfitable} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                          <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                              border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                              borderRadius: '8px',
+                              color: darkMode ? '#f3f4f6' : '#111827'
+                            }}
+                            labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                            itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                            formatter={(value) => [`${value.toFixed(2)}€`, 'Bénéfice']}
+                          />
+                          <Bar dataKey="profit" name="Bénéfice">
+                            {top10MostProfitable.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Aucun jeu avec nom renseigné
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
 
             {/* Detailed List of Top 10 Most Profitable Games */}
             {top10MostProfitable.length > 0 && (
-              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-                <h2 className={`text-2xl font-bold mb-6 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  📋 Détail des Jeux les Plus Rentables
-                </h2>
-                <div className="space-y-3">
-                  {top10MostProfitable.map((game, index) => (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('detailProfitable')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📋 Détail des Jeux les Plus Rentables
+                  </h2>
+                  <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.detailProfitable ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.detailProfitable && (
+                  <div className="p-6 pt-0">
+                    <div className="space-y-3">
+                      {top10MostProfitable.map((game, index) => (
                     <div 
                       key={index}
                       className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} hover:shadow-md transition`}
@@ -1235,6 +1455,95 @@ export default function TransactionsTracker() {
                     </div>
                   ))}
                 </div>
+              </div>
+                )}
+              </div>
+            )}
+
+            {/* Detailed List of Top 10 Least Profitable Games */}
+            {top10LeastProfitable.length > 0 && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('detailLosses')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📉 Top 10 des Pertes - Jeux les Moins Rentables
+                  </h2>
+                  <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.detailLosses ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.detailLosses && (
+                  <div className="p-6 pt-0">
+                    <div className="space-y-3">
+                      {top10LeastProfitable.map((game, index) => (
+                    <div 
+                      key={index}
+                      className={`p-4 rounded-lg ${darkMode ? 'bg-red-900 bg-opacity-20 border-2 border-red-900' : 'bg-red-50 border-2 border-red-200'} hover:shadow-md transition`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            #{index + 1}
+                          </div>
+                          <div className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                            {game.name}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-red-500">
+                            {game.profit.toFixed(2)}€
+                          </div>
+                          <div className="text-sm font-semibold text-red-500">
+                            Perte: {game.margin.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💰 Achats
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-red-500">{game.totalBuy.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.buyCount} transaction{game.buyCount > 1 ? 's' : ''}
+                          </div>
+                          {game.buyCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalBuy / game.buyCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💸 Ventes
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-green-500">{game.totalSell.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.sellCount} transaction{game.sellCount > 1 ? 's' : ''}
+                          </div>
+                          {game.sellCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalSell / game.sellCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+                )}
               </div>
             )}
           </div>
