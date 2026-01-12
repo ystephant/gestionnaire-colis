@@ -2,20 +2,25 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, Home, List, ArrowLeft } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
+// 🔗 Connexion Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// 📸 Optimiser les images Cloudinary
 const getOptimizedImage = (url, width = 400) => {
   if (!url) return url;
   return url.replace('/upload/', `/upload/w_${width},q_auto,f_auto/`);
 };
 
+// ⚙️ CONFIGURATION CLOUDINARY
 const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey';
 const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload';
 
+// 🎨 Composant principal
 export default function InventaireJeux() {
+  // States
   const [darkMode, setDarkMode] = useState(false);
   const [username] = useState('demo_user');
   const [loading, setLoading] = useState(false);
@@ -46,6 +51,7 @@ export default function InventaireJeux() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // 📸 Upload vers Cloudinary
   const uploadToCloudinary = async (file, folder = 'boardgames') => {
     const formData = new FormData();
     formData.append('file', file);
@@ -62,6 +68,7 @@ export default function InventaireJeux() {
     return { url: data.secure_url, publicId: data.public_id };
   };
 
+  // 📥 Charger les jeux depuis Supabase
   const loadGames = async () => {
     setLoading(true);
     try {
@@ -78,12 +85,14 @@ export default function InventaireJeux() {
     }
   };
 
+// 1️⃣ Chargement initial
   useEffect(() => {
     const savedDarkMode = localStorage.getItem('darkMode');
     if (savedDarkMode !== null) setDarkMode(savedDarkMode === 'true');
     loadGames();
   }, []);
 
+  // 2️⃣ Synchronisation temps réel
   useEffect(() => {
     const channel = supabase
       .channel('games-realtime')
@@ -132,6 +141,44 @@ export default function InventaireJeux() {
     }
   }, [searchQuery, allGames]);
 
+  // 🆕 FONCTION D'AGRÉGATION AUTOMATIQUE
+  const getAggregatedItems = () => {
+    if (!selectedGame) return {};
+    
+    const aggregated = {};
+    
+    selectedGame.items.forEach(item => {
+      // Regex pour détecter "X nom" ou "X noms" (avec s optionnel)
+      const match = item.match(/^(\d+)\s+(.+?)s?\s*$/i);
+      
+      if (match) {
+        const quantity = parseInt(match[1]);
+        const itemType = match[2].toLowerCase().trim();
+        
+        if (!aggregated[itemType]) {
+          aggregated[itemType] = {
+            total: 0,
+            items: []
+          };
+        }
+        
+        aggregated[itemType].total += quantity;
+        aggregated[itemType].items.push(item);
+      }
+    });
+    
+    // Ne garder que les types avec plusieurs occurrences
+    const filtered = {};
+    Object.keys(aggregated).forEach(key => {
+      if (aggregated[key].items.length > 1) {
+        filtered[key] = aggregated[key];
+      }
+    });
+    
+    return filtered;
+  };
+
+  // 📸 Upload MULTIPLE parallèle
   const handleDetailPhotoCapture = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -180,6 +227,7 @@ export default function InventaireJeux() {
     }
   };
 
+  // Drag & Drop handlers
   const handleDragEnter = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -266,7 +314,9 @@ export default function InventaireJeux() {
       [`detail_${itemIndex}_${photoId}`]: !checkedItems[`detail_${itemIndex}_${photoId}`]
     };
     const photos = itemDetails[itemIndex] || [];
-    const allPhotosChecked = photos.filter(p => p.image).every(p => newCheckedItems[`detail_${itemIndex}_${p.id}`]);
+    const allPhotosChecked = photos.filter(p => p.image).every(p => 
+      newCheckedItems[`detail_${itemIndex}_${p.id}`]
+    );
     newCheckedItems[itemIndex] = allPhotosChecked;
     setCheckedItems(newCheckedItems);
     try {
@@ -324,6 +374,12 @@ export default function InventaireJeux() {
     return Math.round(totalProgress);
   };
 
+  const getDetailPhotoCount = (itemIndex) => {
+    const photos = itemDetails[itemIndex] || [];
+    return photos.filter(p => p.image).length;
+  };
+
+  // Fonctions pour les modales
   const openCreateModal = () => {
     setNewGameName(searchQuery);
     setNewGameItems(['']);
@@ -337,10 +393,12 @@ export default function InventaireJeux() {
   };
 
   const addItemField = () => setNewGameItems([...newGameItems, '']);
+  
   const removeItemField = (index) => {
     if (newGameItems.length <= 1) return;
     setNewGameItems(newGameItems.filter((_, i) => i !== index));
   };
+  
   const updateItemField = (index, value) => {
     const updated = [...newGameItems];
     updated[index] = value;
@@ -361,6 +419,7 @@ export default function InventaireJeux() {
   };
 
   const startEditingDetails = () => setEditingDetails(true);
+  
   const cancelEditingDetails = () => {
     setEditingDetails(false);
     const photos = itemDetails[detailedView.itemIndex] || [];
@@ -378,11 +437,16 @@ export default function InventaireJeux() {
   };
 
   const updateDetailPhotoName = (photoId, name) => {
-    const updated = currentDetailPhotos.map(photo => photo.id === photoId ? { ...photo, name } : photo);
+    const updated = currentDetailPhotos.map(photo =>
+      photo.id === photoId ? { ...photo, name } : photo
+    );
     setCurrentDetailPhotos(updated);
     clearTimeout(window.photoNameTimer);
     window.photoNameTimer = setTimeout(async () => {
-      const updatedItemDetails = { ...itemDetails, [detailedView.itemIndex]: updated.filter(p => p.image !== null) };
+      const updatedItemDetails = {
+        ...itemDetails,
+        [detailedView.itemIndex]: updated.filter(p => p.image !== null)
+      };
       try {
         const { error } = await supabase.from('games').update({ item_details: updatedItemDetails }).eq('id', selectedGame.id);
         if (error) throw error;
@@ -398,7 +462,10 @@ export default function InventaireJeux() {
   const removeDetailPhoto = async (photoId) => {
     const updatedPhotos = currentDetailPhotos.filter(photo => photo.id !== photoId);
     setCurrentDetailPhotos(updatedPhotos);
-    const updatedItemDetails = { ...itemDetails, [detailedView.itemIndex]: updatedPhotos.filter(p => p.image !== null) };
+    const updatedItemDetails = {
+      ...itemDetails,
+      [detailedView.itemIndex]: updatedPhotos.filter(p => p.image !== null)
+    };
     try {
       const { error } = await supabase.from('games').update({ item_details: updatedItemDetails }).eq('id', selectedGame.id);
       if (error) throw error;
@@ -412,7 +479,10 @@ export default function InventaireJeux() {
 
   const saveDetailedView = async () => {
     const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
-    const updatedItemDetails = { ...itemDetails, [detailedView.itemIndex]: validPhotos };
+    const updatedItemDetails = {
+      ...itemDetails,
+      [detailedView.itemIndex]: validPhotos
+    };
     try {
       const { error } = await supabase.from('games').update({ item_details: updatedItemDetails }).eq('id', selectedGame.id);
       if (error) throw error;
@@ -486,34 +556,8 @@ export default function InventaireJeux() {
       alert('❌ Erreur sauvegarde');
     }
   };
-  
-  const getDetailPhotoCount = (itemIndex) => {
-    const photos = itemDetails[itemIndex] || [];
-    return photos.filter(p => p.image).length;
-  };
 
-  const getAggregatedItems = () => {
-    if (!selectedGame) return {};
-    const aggregated = {};
-    selectedGame.items.forEach(item => {
-      const match = item.match(/^(\d+)\s+(.+?)s?\s*$/i);
-      if (match) {
-        const quantity = parseInt(match[1]);
-        const itemType = match[2].toLowerCase().trim();
-        if (!aggregated[itemType]) {
-          aggregated[itemType] = { total: 0, items: [] };
-        }
-        aggregated[itemType].total += quantity;
-        aggregated[itemType].items.push(item);
-      }
-    });
-    const filtered = {};
-    Object.keys(aggregated).forEach(key => {
-      if (aggregated[key].items.length > 1) filtered[key] = aggregated[key];
-    });
-    return filtered;
-  };
-
+// Loading screen
   if (loading) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center`}>
@@ -534,6 +578,7 @@ export default function InventaireJeux() {
           </div>
         )}
 
+        {/* 🆕 HEADER MODIFIÉ avec bouton "Revenir à la recherche" */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1">
@@ -575,6 +620,7 @@ export default function InventaireJeux() {
           </div>
         </div>
 
+        {/* Section recherche - utilise SearchGameSection (voir partie suivante) */}
         {!selectedGame && (
           <SearchGameSection 
             darkMode={darkMode}
@@ -591,6 +637,7 @@ export default function InventaireJeux() {
           />
         )}
 
+        {/* Section inventaire avec agrégation - utilise GameInventorySection */}
         {selectedGame && !editMode && !detailedView && (
           <GameInventorySection
             darkMode={darkMode}
@@ -612,6 +659,7 @@ export default function InventaireJeux() {
           />
         )}
 
+        {/* Section édition - utilise EditGameSection */}
         {selectedGame && editMode && (
           <EditGameSection
             darkMode={darkMode}
@@ -625,6 +673,7 @@ export default function InventaireJeux() {
           />
         )}
 
+        {/* Vue détaillée - utilise DetailedViewComponent */}
         {selectedGame && detailedView && (
           <DetailedViewComponent
             detailedView={detailedView}
@@ -654,6 +703,7 @@ export default function InventaireJeux() {
           />
         )}
 
+        {/* Modal création - utilise CreateGameModal */}
         {showCreateModal && (
           <CreateGameModal
             darkMode={darkMode}
@@ -672,6 +722,7 @@ export default function InventaireJeux() {
   );
 }
 
+// Composant SearchGameSection
 function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults, searchResults, selectGame, deleteGame, allGames, showAllGamesList, setShowAllGamesList, openCreateModal }) {
   return (
     <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
@@ -798,6 +849,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
   );
 }
 
+// Composant GameInventorySection avec AGRÉGATION
 function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, missingItems, setMissingItems, supabase, setSyncStatus }) {
   return (
     <div className="space-y-6">
@@ -858,6 +910,7 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
         </button>
       </div>
 
+      {/* 🆕 BLOC D'AGRÉGATION AUTOMATIQUE */}
       {Object.keys(getAggregatedItems()).length > 0 && (
         <div className={`${darkMode ? 'bg-gradient-to-br from-purple-900 to-indigo-900' : 'bg-gradient-to-br from-purple-50 to-indigo-50'} rounded-2xl shadow-xl p-6 border-2 ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
           <h3 className={`text-lg font-bold ${darkMode ? 'text-purple-200' : 'text-purple-900'} mb-4 flex items-center gap-2`}>
@@ -987,6 +1040,7 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
   );
 }
 
+// Composant EditGameSection
 function EditGameSection({ darkMode, selectedGame, newGameItems, updateItemField, removeItemField, addItemField, saveEdit, cancelEdit }) {
   return (
     <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
@@ -1053,6 +1107,7 @@ function EditGameSection({ darkMode, selectedGame, newGameItems, updateItemField
   );
 }
 
+// Composant CreateGameModal
 function CreateGameModal({ darkMode, newGameName, setNewGameName, newGameItems, updateItemField, removeItemField, addItemField, createGame, closeCreateModal }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1064,7 +1119,9 @@ function CreateGameModal({ darkMode, newGameName, setNewGameName, newGameItems, 
           </h2>
           <button
             onClick={closeCreateModal}
-            className={`p-2 rounded-lg transition ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+            className={`p-2 rounded-lg transition ${
+              darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
+            }`}
           >
             <X size={24} />
           </button>
@@ -1150,6 +1207,7 @@ function CreateGameModal({ darkMode, newGameName, setNewGameName, newGameItems, 
   );
 }
 
+// Composant DetailedViewComponent
 function DetailedViewComponent({ 
   detailedView, currentDetailPhotos, editingDetails, darkMode,
   closeDetailedView, startEditingDetails, saveDetailedView, cancelEditingDetails,
@@ -1362,12 +1420,10 @@ function DetailedViewComponent({
   onClick={(e) => {
     const now = Date.now();
     if (now - lastTap < 300) {
-      // Double-clic détecté
       e.stopPropagation();
       setFullscreenPhoto(photo);
       setLastTap(0);
     } else {
-      // Simple clic
       setLastTap(now);
       toggleDetailPhoto(detailedView.itemIndex, photo.id);
     }
@@ -1406,7 +1462,6 @@ function DetailedViewComponent({
                   })}
 </div>
                 
-                {/* Pagination */}
                 {currentDetailPhotos.filter(p => p.image).length > PHOTOS_PER_PAGE && (
                   <div className="flex items-center justify-center gap-2 mt-6">
                     <button
@@ -1479,3 +1534,9 @@ function DetailedViewComponent({
     </>
   );
 }
+
+
+
+
+
+
