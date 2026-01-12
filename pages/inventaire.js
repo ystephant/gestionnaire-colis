@@ -160,7 +160,12 @@ const getAggregatedItems = () => {
       let itemType = match[2].toLowerCase().trim();
       
       // Extraire le premier mot (le type) si c'est du format "cartes Glace"
-      const firstWord = itemType.split(' ')[0];
+      let firstWord = itemType.split(' ')[0];
+      
+      // 🔥 CORRECTION : Retirer le "s" final s'il existe déjà
+      if (firstWord.endsWith('s')) {
+        firstWord = firstWord.slice(0, -1);
+      }
       
       // Utiliser le premier mot comme clé de regroupement
       const groupKey = firstWord;
@@ -613,9 +618,10 @@ const getAggregatedItems = () => {
                   {selectedGame && !editMode && !detailedView && (
                     <button
                       onClick={changeGame}
-                      className="px-6 py-3 rounded-xl font-semibold transition text-base whitespace-nowrap bg-orange-600 text-white hover:bg-orange-700"
+                      className="px-3 py-2 rounded-lg font-medium transition text-sm whitespace-nowrap bg-orange-600 text-white hover:bg-orange-700 flex items-center gap-1.5"
                     >
-                      Revenir à la recherche de jeux
+                      <Search size={16} />
+                      Rechercher
                     </button>
                   )}
                 </div>
@@ -922,27 +928,19 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
         </button>
       </div>
 
-      {/* 🆕 BLOC D'AGRÉGATION AUTOMATIQUE */}
+      {/* 🆕 BLOC D'AGRÉGATION AUTOMATIQUE - Version compacte */}
       {Object.keys(getAggregatedItems()).length > 0 && (
-        <div className={`${darkMode ? 'bg-gradient-to-br from-purple-900 to-indigo-900' : 'bg-gradient-to-br from-purple-50 to-indigo-50'} rounded-2xl shadow-xl p-6 border-2 ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
-          <h3 className={`text-lg font-bold ${darkMode ? 'text-purple-200' : 'text-purple-900'} mb-4 flex items-center gap-2`}>
-            📊 Récapitulatif des éléments
+        <div className={`${darkMode ? 'bg-purple-900 bg-opacity-20' : 'bg-purple-50'} rounded-xl p-3 border ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
+          <h3 className={`text-xs font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'} mb-2 flex items-center gap-1`}>
+            📊 Récapitulatif
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="flex flex-wrap gap-2">
             {Object.entries(getAggregatedItems()).map(([itemType, data]) => (
               <div 
                 key={itemType} 
-                className={`p-4 rounded-xl ${darkMode ? 'bg-gray-800 bg-opacity-50' : 'bg-white'} border-2 ${darkMode ? 'border-purple-600' : 'border-purple-200'}`}
+                className={`px-2 py-1 rounded-lg text-xs font-medium ${darkMode ? 'bg-purple-800 text-purple-200' : 'bg-purple-100 text-purple-800'}`}
               >
-                <div className={`text-2xl font-bold ${darkMode ? 'text-purple-300' : 'text-purple-600'} mb-1`}>
-                  {data.total}
-                </div>
-                <div className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'} capitalize`}>
-                  {itemType}{data.total > 1 ? 's' : ''}
-                </div>
-                <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mt-2`}>
-                  ({data.items.length} groupe{data.items.length > 1 ? 's' : ''})
-                </div>
+                <span className="font-bold">{data.total}</span> {itemType}{data.total > 1 ? 's' : ''}
               </div>
             ))}
           </div>
