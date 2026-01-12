@@ -196,6 +196,38 @@ const getAggregatedItems = () => {
   return filtered;
 };
 
+  
+  // 📊 Calculer la progression par type d'élément
+  const getAggregatedProgress = () => {
+    if (!selectedGame) return {};
+    
+    const aggregated = getAggregatedItems();
+    const progress = {};
+    
+    Object.keys(aggregated).forEach(itemType => {
+      let checkedCount = 0;
+      
+      // Parcourir tous les items pour compter ceux qui sont cochés
+      selectedGame.items.forEach((item, index) => {
+        const match = item.match(/^(\d+)\s+(.+?)s?\s*$/i);
+        if (match) {
+          let firstWord = match[2].toLowerCase().trim().split(' ')[0];
+          if (firstWord.endsWith('s')) {
+            firstWord = firstWord.slice(0, -1);
+          }
+          
+          if (firstWord === itemType && checkedItems[index]) {
+            checkedCount += parseInt(match[1]);
+          }
+        }
+      });
+      
+      progress[itemType] = checkedCount;
+    });
+    
+    return progress;
+  };
+
   // 📸 Upload MULTIPLE parallèle
   const handleDetailPhotoCapture = async (e) => {
     const files = Array.from(e.target.files);
@@ -679,6 +711,7 @@ const getAggregatedItems = () => {
             getProgress={getProgress}
             resetInventory={resetInventory}
             getAggregatedItems={getAggregatedItems}
+            getAggregatedProgress={getAggregatedProgress}
             checkedItems={checkedItems}
             toggleItem={toggleItem}
             itemDetails={itemDetails}
@@ -886,7 +919,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
 }
 
 // Composant GameInventorySection avec AGRÉGATION
-function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, missingItems, setMissingItems, supabase, setSyncStatus }) {
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, missingItems, setMissingItems, supabase, setSyncStatus }) {
   return (
     <div className="space-y-6">
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
@@ -949,18 +982,22 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
       {/* 🆕 BLOC D'AGRÉGATION AUTOMATIQUE - Version compacte */}
       {Object.keys(getAggregatedItems()).length > 0 && (
         <div className={`${darkMode ? 'bg-purple-900 bg-opacity-20' : 'bg-purple-50'} rounded-xl p-3 border ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
-          <h3 className={`text-xs font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'} mb-2 flex items-center gap-1`}>
+          <h3 className={`text-sm font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'} mb-2 flex items-center gap-1`}>
             📊 Récapitulatif
           </h3>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(getAggregatedItems()).map(([itemType, data]) => (
-              <div 
-                key={itemType} 
-                className={`px-2 py-1 rounded-lg text-xs font-medium ${darkMode ? 'bg-purple-800 text-purple-200' : 'bg-purple-100 text-purple-800'}`}
-              >
-                <span className="font-bold">{data.total}</span> {itemType}{data.total > 1 ? 's' : ''}
-              </div>
-            ))}
+            {Object.entries(getAggregatedItems()).map(([itemType, data]) => {
+              const progress = getAggregatedProgress();
+              const checked = progress[itemType] || 0;
+              return (
+                <div 
+                  key={itemType} 
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${darkMode ? 'bg-purple-800 text-purple-200' : 'bg-purple-100 text-purple-800'}`}
+                >
+                  <span className="font-bold">{checked}/{data.total}</span> {itemType}{data.total > 1 ? 's' : ''}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
