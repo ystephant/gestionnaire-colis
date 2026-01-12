@@ -141,42 +141,54 @@ export default function InventaireJeux() {
     }
   }, [searchQuery, allGames]);
 
-  // 🆕 FONCTION D'AGRÉGATION AUTOMATIQUE
-  const getAggregatedItems = () => {
-    if (!selectedGame) return {};
+  // 🆕 FONCTION D'AGRÉGATION AMÉLIORÉE - Plus flexible et intelligente
+const getAggregatedItems = () => {
+  if (!selectedGame) return {};
+  
+  const aggregated = {};
+  
+  selectedGame.items.forEach(item => {
+    // 🔍 Essayer plusieurs patterns pour détecter les quantités
     
-    const aggregated = {};
+    // Pattern 1: "X nom" ou "X noms" (ex: "8 cartes", "11 cartes Glace")
+    let match = item.match(/^(\d+)\s+(.+?)s?\s*$/i);
     
-    selectedGame.items.forEach(item => {
-      // Regex pour détecter "X nom" ou "X noms" (avec s optionnel)
-      const match = item.match(/^(\d+)\s+(.+?)s?\s*$/i);
+    // Pattern 2: "X nom Y" (ex: "8 cartes Glace", "11 cartes Chapeau")
+    // On extrait juste le type sans le qualificatif
+    if (match) {
+      const quantity = parseInt(match[1]);
+      let itemType = match[2].toLowerCase().trim();
       
-      if (match) {
-        const quantity = parseInt(match[1]);
-        const itemType = match[2].toLowerCase().trim();
-        
-        if (!aggregated[itemType]) {
-          aggregated[itemType] = {
-            total: 0,
-            items: []
-          };
-        }
-        
-        aggregated[itemType].total += quantity;
-        aggregated[itemType].items.push(item);
+      // Extraire le premier mot (le type) si c'est du format "cartes Glace"
+      const firstWord = itemType.split(' ')[0];
+      
+      // Utiliser le premier mot comme clé de regroupement
+      const groupKey = firstWord;
+      
+      if (!aggregated[groupKey]) {
+        aggregated[groupKey] = {
+          total: 0,
+          items: [],
+          fullNames: [] // Pour debug
+        };
       }
-    });
-    
-    // Ne garder que les types avec plusieurs occurrences
-    const filtered = {};
-    Object.keys(aggregated).forEach(key => {
-      if (aggregated[key].items.length > 1) {
-        filtered[key] = aggregated[key];
-      }
-    });
-    
-    return filtered;
-  };
+      
+      aggregated[groupKey].total += quantity;
+      aggregated[groupKey].items.push(item);
+      aggregated[groupKey].fullNames.push(itemType);
+    }
+  });
+  
+  // Ne garder que les types avec plusieurs occurrences
+  const filtered = {};
+  Object.keys(aggregated).forEach(key => {
+    if (aggregated[key].items.length > 1) {
+      filtered[key] = aggregated[key];
+    }
+  });
+  
+  return filtered;
+};
 
   // 📸 Upload MULTIPLE parallèle
   const handleDetailPhotoCapture = async (e) => {
