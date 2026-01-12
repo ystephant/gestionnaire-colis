@@ -36,6 +36,7 @@ export default function InventaireJeux() {
   
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [editingGameName, setEditingGameName] = useState(false);
   const [newGameName, setNewGameName] = useState('');
   const [newGameItems, setNewGameItems] = useState(['']);
   
@@ -543,13 +544,17 @@ const getAggregatedItems = () => {
   };
 
   const startEditMode = () => {
+    setNewGameName(selectedGame.name);
     setNewGameItems([...selectedGame.items]);
+    setEditingGameName(false);
     setEditMode(true);
   };
 
   const cancelEdit = () => {
     setEditMode(false);
+    setEditingGameName(false);
     setNewGameItems([]);
+    setNewGameName('');
   };
 
   const saveEdit = async () => {
@@ -558,14 +563,23 @@ const getAggregatedItems = () => {
       alert('Le jeu doit contenir au moins un élément');
       return;
     }
+    if (!newGameName.trim()) {
+      alert('Le nom du jeu ne peut pas être vide');
+      return;
+    }
     try {
-      const { error } = await supabase.from('games').update({ items: validItems }).eq('id', selectedGame.id);
+      const { error } = await supabase.from('games').update({ 
+        name: newGameName.trim(),
+        search_name: newGameName.trim().toLowerCase(),
+        items: validItems 
+      }).eq('id', selectedGame.id);
       if (error) throw error;
       setSyncStatus('✅ Synchronisé');
       setTimeout(() => setSyncStatus(''), 2000);
       setEditMode(false);
+      setEditingGameName(false);
       setCheckedItems({});
-      const updatedGame = { ...selectedGame, items: validItems };
+      const updatedGame = { ...selectedGame, name: newGameName.trim(), search_name: newGameName.trim().toLowerCase(), items: validItems };
       setSelectedGame(updatedGame);
       setAllGames(prev => prev.map(g => g.id === selectedGame.id ? updatedGame : g));
     } catch (error) {
@@ -573,7 +587,7 @@ const getAggregatedItems = () => {
       alert('❌ Erreur sauvegarde');
     }
   };
-
+  
 // Loading screen
   if (loading) {
     return (
@@ -682,6 +696,10 @@ const getAggregatedItems = () => {
           <EditGameSection
             darkMode={darkMode}
             selectedGame={selectedGame}
+            newGameName={newGameName}
+            setNewGameName={setNewGameName}
+            editingGameName={editingGameName}
+            setEditingGameName={setEditingGameName}
             newGameItems={newGameItems}
             updateItemField={updateItemField}
             removeItemField={removeItemField}
@@ -1051,13 +1069,13 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
 }
 
 // Composant EditGameSection
-function EditGameSection({ darkMode, selectedGame, newGameItems, updateItemField, removeItemField, addItemField, saveEdit, cancelEdit }) {
+function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, editingGameName, setEditingGameName, newGameItems, updateItemField, removeItemField, addItemField, saveEdit, cancelEdit }) {
   return (
     <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
       <div className="flex items-center justify-between mb-6">
         <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
           <Edit size={24} className="text-blue-500" />
-          Éditer : {selectedGame.name}
+          Éditer le jeu
         </h2>
         <div className="flex gap-2">
           <button
@@ -1079,7 +1097,28 @@ function EditGameSection({ darkMode, selectedGame, newGameItems, updateItemField
         </div>
       </div>
 
-      <div className="space-y-3">
+      {/* Section modification du nom */}
+      <div className="mb-6">
+        <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+          Nom du jeu
+        </label>
+        <input
+          type="text"
+          value={newGameName}
+          onChange={(e) => setNewGameName(e.target.value)}
+          placeholder="Nom du jeu"
+          className={`w-full px-4 py-3 border-2 rounded-xl focus:border-blue-500 focus:outline-none text-lg font-semibold ${
+            darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+          }`}
+        />
+      </div>
+
+      {/* Section modification des éléments */}
+      <div>
+        <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+          Contenu du jeu
+        </label>
+        <div className="space-y-3">
         {newGameItems.map((item, index) => (
           <div key={index} className="flex gap-2">
             <input
@@ -1107,12 +1146,13 @@ function EditGameSection({ darkMode, selectedGame, newGameItems, updateItemField
       </div>
 
       <button
-        onClick={addItemField}
-        className="w-full mt-4 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
-      >
-        <Plus size={18} />
-        Ajouter un élément
-      </button>
+          onClick={addItemField}
+          className="w-full mt-4 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+        >
+          <Plus size={18} />
+          Ajouter un élément
+        </button>
+      </div>
     </div>
   );
 }
