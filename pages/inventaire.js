@@ -158,6 +158,11 @@ const getAggregatedItems = () => {
     if (match) {
       const quantity = parseInt(match[1]);
       let itemType = match[2].toLowerCase().trim();
+
+      // Retirer le "s" final s'il existe déjà dans l'itemType
+      if (itemType.endsWith('s')) {
+    itemType = itemType.slice(0, -1);
+    }
       
       // Extraire le premier mot (le type) si c'est du format "cartes Glace"
       const firstWord = itemType.split(' ')[0];
