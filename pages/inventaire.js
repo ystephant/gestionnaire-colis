@@ -2,23 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, Home, List, ArrowLeft } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// 🔗 Connexion Supabase depuis les variables d'environnement Vercel
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// 📸 Optimiser les images Cloudinary
 const getOptimizedImage = (url, width = 400) => {
   if (!url) return url;
   return url.replace('/upload/', `/upload/w_${width},q_auto,f_auto/`);
 };
-// ⚙️ CONFIGURATION CLOUDINARY - REMPLACEZ PAR VOS VALEURS
-const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey'; // ← Changez ici
-const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload'; // ← Changez ici
-const USE_SEPARATE_PHOTO_TABLE = true; // true = nouvelle table game_photos, false = ancien système item_details
 
-// 🎨 Composant principal
+const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey';
+const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload';
+
 export default function InventaireJeux() {
   const [darkMode, setDarkMode] = useState(false);
   const [username] = useState('demo_user');
@@ -45,13 +41,11 @@ export default function InventaireJeux() {
   const detailImageInputRef = useRef(null);
   const [currentEditingPhotoId, setCurrentEditingPhotoId] = useState(null);
   
-  const [activeInventoryId, setActiveInventoryId] = useState(null);
   const [syncStatus, setSyncStatus] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // 📸 Upload vers Cloudinary (parallèle et optimisé)
   const uploadToCloudinary = async (file, folder = 'boardgames') => {
     const formData = new FormData();
     formData.append('file', file);
@@ -60,106 +54,70 @@ export default function InventaireJeux() {
 
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-      {
-        method: 'POST',
-        body: formData
-      }
+      { method: 'POST', body: formData }
     );
 
-    if (!response.ok) {
-      throw new Error(`Cloudinary upload failed: ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`Cloudinary upload failed: ${response.status}`);
     const data = await response.json();
-    return {
-      url: data.secure_url,
-      publicId: data.public_id
-    };
+    return { url: data.secure_url, publicId: data.public_id };
   };
 
-// 📥 Charger les jeux depuis Supabase
-const loadGames = async () => {
-  setLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from('games')
-      .select('*')
-      .order('name', { ascending: true });
+  const loadGames = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      setAllGames(data || []);
+    } catch (error) {
+      console.error('Erreur:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    if (error) throw error;
-    setAllGames(data || []);
-  } catch (error) {
-    console.error('Erreur:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+  useEffect(() => {
+    const savedDarkMode = localStorage.getItem('darkMode');
+    if (savedDarkMode !== null) setDarkMode(savedDarkMode === 'true');
+    loadGames();
+  }, []);
 
-  // 1️⃣ Chargement initial seulement
-useEffect(() => {
-  const savedDarkMode = localStorage.getItem('darkMode');
-  if (savedDarkMode !== null) {
-    setDarkMode(savedDarkMode === 'true');
-  }
-  
-  loadGames();
-}, []); // ✅ Vide = une seule fois au démarrage
-
-// 2️⃣ Synchronisation temps réel SÉPARÉE
-useEffect(() => {
-  const channel = supabase
-    .channel('games-realtime')
-    .on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'games' }, 
-      async (payload) => {
-        console.log('🔄 Changement Supabase détecté:', payload);
-        
-        if (payload.eventType === 'UPDATE' && payload.new) {
-          // ✅ Mettre à jour le jeu dans la liste
-          setAllGames(prev => 
-            prev.map(game => 
-              game.id === payload.new.id ? payload.new : game
-            )
-          );
-          
-          // ✅ Si c'est le jeu actuellement sélectionné, le mettre à jour
-          setSelectedGame(prev => {
-            if (prev && prev.id === payload.new.id) {
-              // 🔥 MISE À JOUR TEMPS RÉEL DES COCHAGES
-              setCheckedItems(payload.new.checked_items || {});
-              setMissingItems(payload.new.missing_items || '');
-              setItemDetails(payload.new.item_details || {});
-              
-              setSyncStatus('🔄 Synchronisé');
-              setTimeout(() => setSyncStatus(''), 2000);
-              
-              return payload.new;
-            }
-            return prev;
-          });
-        } else if (payload.eventType === 'INSERT') {
-          await loadGames();
-        } else if (payload.eventType === 'DELETE') {
-          console.log('🗑️ Suppression détectée:', payload.old);
-          
-          // Supprimer de la liste
-          setAllGames(prev => prev.filter(g => g.id !== payload.old.id));
-          
-          // Désélectionner si c'était le jeu actif
-          if (selectedGame?.id === payload.old.id) {
-            setSelectedGame(null);
+  useEffect(() => {
+    const channel = supabase
+      .channel('games-realtime')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'games' }, 
+        async (payload) => {
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            setAllGames(prev => prev.map(game => game.id === payload.new.id ? payload.new : game));
+            setSelectedGame(prev => {
+              if (prev && prev.id === payload.new.id) {
+                setCheckedItems(payload.new.checked_items || {});
+                setMissingItems(payload.new.missing_items || '');
+                setItemDetails(payload.new.item_details || {});
+                setSyncStatus('🔄 Synchronisé');
+                setTimeout(() => setSyncStatus(''), 2000);
+                return payload.new;
+              }
+              return prev;
+            });
+          } else if (payload.eventType === 'INSERT') {
+            await loadGames();
+          } else if (payload.eventType === 'DELETE') {
+            setAllGames(prev => prev.filter(g => g.id !== payload.old.id));
+            if (selectedGame?.id === payload.old.id) setSelectedGame(null);
           }
         }
-      }
-    )
-    .subscribe();
-  
-  return () => supabase.removeChannel(channel);
-}, []); // ✅ Écoute permanente, pas de dépendance !
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
 
-   useEffect(() => {
-  localStorage.setItem('darkMode', darkMode.toString());
-}, [darkMode]);
+  useEffect(() => {
+    localStorage.setItem('darkMode', darkMode.toString());
+  }, [darkMode]);
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -174,14 +132,12 @@ useEffect(() => {
     }
   }, [searchQuery, allGames]);
 
-  // 📸 Upload MULTIPLE parallèle (10x plus rapide qu'ImgBB)
   const handleDetailPhotoCapture = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    // Vérifier la configuration
     if (CLOUDINARY_CLOUD_NAME === 'VOTRE_CLOUD_NAME') {
-      alert('⚠️ Veuillez configurer Cloudinary dans le code !\n\nÉtapes:\n1. Créez un compte sur cloudinary.com\n2. Notez votre Cloud Name\n3. Créez un Upload Preset "unsigned"\n4. Remplacez CLOUDINARY_CLOUD_NAME et CLOUDINARY_UPLOAD_PRESET dans le code');
+      alert('⚠️ Veuillez configurer Cloudinary !');
       return;
     }
 
@@ -189,25 +145,16 @@ useEffect(() => {
     setUploadProgress(0);
 
     try {
-      // ⚡ UPLOAD PARALLÈLE - toutes les photos en même temps !
       let completed = 0;
       const uploadPromises = files.map(async (file, index) => {
-        // Vérifier la taille (10MB max par défaut)
-        if (file.size > 10 * 1024 * 1024) {
-          console.warn(`⚠️ ${file.name} trop grande, ignorée`);
-          return null;
-        }
-
+        if (file.size > 10 * 1024 * 1024) return null;
         try {
           const folder = selectedGame 
             ? `boardgames/${selectedGame.id}/${detailedView?.itemIndex || 0}`
             : 'boardgames/demo';
-            
           const result = await uploadToCloudinary(file, folder);
-          
           completed++;
           setUploadProgress(Math.round((completed / files.length) * 100));
-          
           return {
             id: `photo_${Date.now()}_${index}`,
             name: '',
@@ -222,13 +169,11 @@ useEffect(() => {
 
       const results = await Promise.all(uploadPromises);
       const newPhotos = results.filter(p => p !== null);
-
       setCurrentDetailPhotos([...currentDetailPhotos, ...newPhotos]);
-      
-      alert(`✅ ${newPhotos.length} photo(s) uploadée(s) sur Cloudinary en ${((Date.now() - performance.now()) / 1000).toFixed(1)}s !`);
+      alert(`✅ ${newPhotos.length} photo(s) uploadée(s) !`);
     } catch (error) {
       console.error('Erreur upload:', error);
-      alert('❌ Erreur lors de l\'upload des photos');
+      alert('❌ Erreur lors de l\'upload');
     } finally {
       setUploadingPhotos(false);
       setUploadProgress(0);
@@ -256,54 +201,34 @@ useEffect(() => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    
     if (!editingDetails) return;
-
-    const files = Array.from(e.dataTransfer.files).filter(file => 
-      file.type.startsWith('image/')
-    );
-    
+    const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
     if (files.length === 0) return;
-
-    // Simuler l'événement file input
     const fakeEvent = { target: { files } };
     await handleDetailPhotoCapture(fakeEvent);
   };
 
   const selectGame = (game) => {
-  setSelectedGame(game);
-  setSearchQuery('');
-  setShowResults(false);
-  setCheckedItems(game.checked_items || {});
-  setMissingItems(game.missing_items || '');
-  setEditMode(false);
-  setShowAllGamesList(false);
-  setDetailedView(null);
-  setItemDetails(game.item_details || {});
-};
+    setSelectedGame(game);
+    setSearchQuery('');
+    setShowResults(false);
+    setCheckedItems(game.checked_items || {});
+    setMissingItems(game.missing_items || '');
+    setEditMode(false);
+    setShowAllGamesList(false);
+    setDetailedView(null);
+    setItemDetails(game.item_details || {});
+  };
+
   const deleteGame = async (gameId, gameName) => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
-    
     try {
-      const { error } = await supabase
-        .from('games')
-        .delete()
-        .eq('id', gameId);
-
+      const { error } = await supabase.from('games').delete().eq('id', gameId);
       if (error) throw error;
-
-      // Désélectionner immédiatement
-      if (selectedGame?.id === gameId) {
-        setSelectedGame(null);
-      }
-
-      // Supprimer localement (la synchro temps réel confirmera)
+      if (selectedGame?.id === gameId) setSelectedGame(null);
       setAllGames(prev => prev.filter(g => g.id !== gameId));
-
       setSyncStatus('✅ Supprimé');
       setTimeout(() => setSyncStatus(''), 2000);
-      
-      // ✅ PAS DE loadGames() ! La synchro temps réel s'en occupe
     } catch (error) {
       console.error('Erreur suppression:', error);
       alert(`❌ Erreur: ${error.message}`);
@@ -311,92 +236,62 @@ useEffect(() => {
   };
 
   const toggleItem = async (index) => {
-  const hasDetailPhotos = itemDetails[index]?.filter(p => p.image).length > 0;
-  const newCheckedItems = { ...checkedItems };
-  
-  if (hasDetailPhotos) {
-    const isChecking = !checkedItems[index];
-    newCheckedItems[index] = isChecking;
-    itemDetails[index].forEach(photo => {
-      if (photo.image) {
-        newCheckedItems[`detail_${index}_${photo.id}`] = isChecking;
-      }
-    });
-  } else {
-    newCheckedItems[index] = !checkedItems[index];
-  }
-  
-  setCheckedItems(newCheckedItems);
-  
-  try {
-    const { error } = await supabase
-      .from('games')
-      .update({ checked_items: newCheckedItems })
-      .eq('id', selectedGame.id);
-
-    if (error) throw error;
+    const hasDetailPhotos = itemDetails[index]?.filter(p => p.image).length > 0;
+    const newCheckedItems = { ...checkedItems };
     
-    setSyncStatus('✅ Sauvegardé');
-    setTimeout(() => setSyncStatus(''), 1500);
-  } catch (error) {
-    console.error('Erreur sauvegarde:', error);
-  }
-  // ✅ PAS DE loadGames() ici ! La synchro temps réel s'en charge
-};
-  const toggleDetailPhoto = async (itemIndex, photoId) => {
-  const newCheckedItems = {
-    ...checkedItems,
-    [`detail_${itemIndex}_${photoId}`]: !checkedItems[`detail_${itemIndex}_${photoId}`]
+    if (hasDetailPhotos) {
+      const isChecking = !checkedItems[index];
+      newCheckedItems[index] = isChecking;
+      itemDetails[index].forEach(photo => {
+        if (photo.image) newCheckedItems[`detail_${index}_${photo.id}`] = isChecking;
+      });
+    } else {
+      newCheckedItems[index] = !checkedItems[index];
+    }
+    
+    setCheckedItems(newCheckedItems);
+    try {
+      const { error } = await supabase.from('games').update({ checked_items: newCheckedItems }).eq('id', selectedGame.id);
+      if (error) throw error;
+      setSyncStatus('✅ Sauvegardé');
+      setTimeout(() => setSyncStatus(''), 1500);
+    } catch (error) {
+      console.error('Erreur sauvegarde:', error);
+    }
   };
-  
-  const photos = itemDetails[itemIndex] || [];
-  const allPhotosChecked = photos.filter(p => p.image).every(p => 
-    newCheckedItems[`detail_${itemIndex}_${p.id}`]
-  );
-  
-  newCheckedItems[itemIndex] = allPhotosChecked;
-  setCheckedItems(newCheckedItems);
-  
-  try {
-    const { error } = await supabase
-      .from('games')
-      .update({ checked_items: newCheckedItems })
-      .eq('id', selectedGame.id);
 
-    if (error) throw error;
-    
-    setSyncStatus('✅ Sauvegardé');
-    setTimeout(() => setSyncStatus(''), 1500);
-  } catch (error) {
-    console.error('Erreur sauvegarde:', error);
-  }
-  // ✅ PAS DE loadGames() ici !
-};
+  const toggleDetailPhoto = async (itemIndex, photoId) => {
+    const newCheckedItems = {
+      ...checkedItems,
+      [`detail_${itemIndex}_${photoId}`]: !checkedItems[`detail_${itemIndex}_${photoId}`]
+    };
+    const photos = itemDetails[itemIndex] || [];
+    const allPhotosChecked = photos.filter(p => p.image).every(p => newCheckedItems[`detail_${itemIndex}_${p.id}`]);
+    newCheckedItems[itemIndex] = allPhotosChecked;
+    setCheckedItems(newCheckedItems);
+    try {
+      const { error } = await supabase.from('games').update({ checked_items: newCheckedItems }).eq('id', selectedGame.id);
+      if (error) throw error;
+      setSyncStatus('✅ Sauvegardé');
+      setTimeout(() => setSyncStatus(''), 1500);
+    } catch (error) {
+      console.error('Erreur sauvegarde:', error);
+    }
+  };
 
   const resetInventory = async () => {
-  if (!confirm('Réinitialiser l\'inventaire ?')) return;
-  
-  setCheckedItems({});
-  setMissingItems('');
-  
-  // 💾 Sauvegarder dans Supabase
-  try {
-    const { error } = await supabase
-      .from('games')
-      .update({ 
-        checked_items: {},
-        missing_items: ''
-      })
-      .eq('id', selectedGame.id);
-
-    if (error) throw error;
-    
-    setSyncStatus('✅ Inventaire réinitialisé');
-    setTimeout(() => setSyncStatus(''), 1500);
-  } catch (error) {
-    console.error('Erreur sauvegarde:', error);
-  }
-};
+    if (!confirm('Réinitialiser l\'inventaire ?')) return;
+    setCheckedItems({});
+    setMissingItems('');
+    try {
+      const { error } = await supabase.from('games').update({ checked_items: {}, missing_items: '' }).eq('id', selectedGame.id);
+      if (error) throw error;
+      setSyncStatus('✅ Inventaire réinitialisé');
+      setTimeout(() => setSyncStatus(''), 1500);
+    } catch (error) {
+      console.error('Erreur sauvegarde:', error);
+    }
+  };
 
   const changeGame = () => {
     setSelectedGame(null);
@@ -408,38 +303,26 @@ useEffect(() => {
   };
 
   const getProgress = () => {
-  if (!selectedGame) return 0;
-  
-  const totalElements = selectedGame.items.length;
-  if (totalElements === 0) return 0;
-  
-  const percentagePerElement = 100 / totalElements;
-  let totalProgress = 0;
-  
-  selectedGame.items.forEach((item, index) => {
-    const photos = itemDetails[index] || [];
-    const photoCount = photos.filter(p => p.image).length;
-    
-    if (photoCount > 0) {
-      // L'élément a des photos : calculer le pourcentage de photos cochées
-      let checkedPhotosCount = 0;
-      photos.forEach(photo => {
-        if (photo.image && checkedItems[`detail_${index}_${photo.id}`]) {
-          checkedPhotosCount++;
-        }
-      });
-      const photoProgress = (checkedPhotosCount / photoCount) * percentagePerElement;
-      totalProgress += photoProgress;
-    } else {
-      // L'élément n'a pas de photos : vaut 100% du pourcentage si coché
-      if (checkedItems[index]) {
-        totalProgress += percentagePerElement;
+    if (!selectedGame) return 0;
+    const totalElements = selectedGame.items.length;
+    if (totalElements === 0) return 0;
+    const percentagePerElement = 100 / totalElements;
+    let totalProgress = 0;
+    selectedGame.items.forEach((item, index) => {
+      const photos = itemDetails[index] || [];
+      const photoCount = photos.filter(p => p.image).length;
+      if (photoCount > 0) {
+        let checkedPhotosCount = 0;
+        photos.forEach(photo => {
+          if (photo.image && checkedItems[`detail_${index}_${photo.id}`]) checkedPhotosCount++;
+        });
+        totalProgress += (checkedPhotosCount / photoCount) * percentagePerElement;
+      } else {
+        if (checkedItems[index]) totalProgress += percentagePerElement;
       }
-    }
-  });
-  
-  return Math.round(totalProgress);
-};
+    });
+    return Math.round(totalProgress);
+  };
 
   const openCreateModal = () => {
     setNewGameName(searchQuery);
@@ -453,15 +336,11 @@ useEffect(() => {
     setNewGameItems(['']);
   };
 
-  const addItemField = () => {
-    setNewGameItems([...newGameItems, '']);
-  };
-
+  const addItemField = () => setNewGameItems([...newGameItems, '']);
   const removeItemField = (index) => {
     if (newGameItems.length <= 1) return;
     setNewGameItems(newGameItems.filter((_, i) => i !== index));
   };
-
   const updateItemField = (index, value) => {
     const updated = [...newGameItems];
     updated[index] = value;
@@ -481,10 +360,7 @@ useEffect(() => {
     setEditingDetails(false);
   };
 
-  const startEditingDetails = () => {
-    setEditingDetails(true);
-  };
-
+  const startEditingDetails = () => setEditingDetails(true);
   const cancelEditingDetails = () => {
     setEditingDetails(false);
     const photos = itemDetails[detailedView.itemIndex] || [];
@@ -502,155 +378,81 @@ useEffect(() => {
   };
 
   const updateDetailPhotoName = (photoId, name) => {
-  const updated = currentDetailPhotos.map(photo =>
-    photo.id === photoId ? { ...photo, name } : photo
-  );
-  setCurrentDetailPhotos(updated);
-  
-  // 💾 Auto-save après 1 seconde d'inactivité
-  clearTimeout(window.photoNameTimer);
-  window.photoNameTimer = setTimeout(async () => {
-    const updatedItemDetails = {
-      ...itemDetails,
-      [detailedView.itemIndex]: updated.filter(p => p.image !== null)
-    };
-    
-    try {
-      const { error } = await supabase
-        .from('games')
-        .update({ item_details: updatedItemDetails })
-        .eq('id', selectedGame.id);
+    const updated = currentDetailPhotos.map(photo => photo.id === photoId ? { ...photo, name } : photo);
+    setCurrentDetailPhotos(updated);
+    clearTimeout(window.photoNameTimer);
+    window.photoNameTimer = setTimeout(async () => {
+      const updatedItemDetails = { ...itemDetails, [detailedView.itemIndex]: updated.filter(p => p.image !== null) };
+      try {
+        const { error } = await supabase.from('games').update({ item_details: updatedItemDetails }).eq('id', selectedGame.id);
+        if (error) throw error;
+        setItemDetails(updatedItemDetails);
+        setSyncStatus('✅ Nom sauvegardé');
+        setTimeout(() => setSyncStatus(''), 1500);
+      } catch (error) {
+        console.error('Erreur:', error);
+      }
+    }, 1000);
+  };
 
+  const removeDetailPhoto = async (photoId) => {
+    const updatedPhotos = currentDetailPhotos.filter(photo => photo.id !== photoId);
+    setCurrentDetailPhotos(updatedPhotos);
+    const updatedItemDetails = { ...itemDetails, [detailedView.itemIndex]: updatedPhotos.filter(p => p.image !== null) };
+    try {
+      const { error } = await supabase.from('games').update({ item_details: updatedItemDetails }).eq('id', selectedGame.id);
       if (error) throw error;
-      
       setItemDetails(updatedItemDetails);
-      setSyncStatus('✅ Nom sauvegardé');
+      setSyncStatus('✅ Photo supprimée');
       setTimeout(() => setSyncStatus(''), 1500);
     } catch (error) {
       console.error('Erreur:', error);
     }
-  }, 1000);
-};
-
-  const removeDetailPhoto = async (photoId) => {
-  const updatedPhotos = currentDetailPhotos.filter(photo => photo.id !== photoId);
-  setCurrentDetailPhotos(updatedPhotos);
-  
-  // 💾 Sauvegarder immédiatement dans Supabase
-  const updatedItemDetails = {
-    ...itemDetails,
-    [detailedView.itemIndex]: updatedPhotos.filter(p => p.image !== null)
   };
-  
-  try {
-    const { error } = await supabase
-      .from('games')
-      .update({ item_details: updatedItemDetails })
-      .eq('id', selectedGame.id);
-
-    if (error) throw error;
-    
-    setItemDetails(updatedItemDetails);
-    setSyncStatus('✅ Photo supprimée');
-    setTimeout(() => setSyncStatus(''), 1500);
-  } catch (error) {
-    console.error('Erreur:', error);
-  }
-};
 
   const saveDetailedView = async () => {
     const validPhotos = currentDetailPhotos.filter(photo => photo.image !== null);
-    
-    const updatedItemDetails = {
-      ...itemDetails,
-      [detailedView.itemIndex]: validPhotos
-    };
-
-    const updatedGame = {
-      ...selectedGame,
-      itemDetails: updatedItemDetails
-    };
-
+    const updatedItemDetails = { ...itemDetails, [detailedView.itemIndex]: validPhotos };
     try {
-  const { error } = await supabase
-    .from('games')
-    .update({ item_details: updatedItemDetails })
-    .eq('id', selectedGame.id);
-
-  if (error) throw error;
-
-  setSyncStatus('✅ Photos enregistrées avec succès !');
-  setTimeout(() => setSyncStatus(''), 3000);
-  
-  // Message de confirmation
-  alert(`✅ ${validPhotos.length} photo(s) enregistrée(s) avec succès !`);
-  
-  // Fermer le mode édition
-  setEditingDetails(false);
-  
-  setItemDetails(updatedItemDetails);
-
-// ✅ Mettre à jour directement sans recharger
-setSelectedGame(prev => ({
-  ...prev,
-  item_details: updatedItemDetails
-}));
-
-setAllGames(prev => 
-  prev.map(g => 
-    g.id === selectedGame.id 
-      ? { ...g, item_details: updatedItemDetails }
-      : g
-  )
-);
-} catch (error) {
-  console.error('Erreur:', error);
-  alert('❌ Erreur sauvegarde photos');
-}
+      const { error } = await supabase.from('games').update({ item_details: updatedItemDetails }).eq('id', selectedGame.id);
+      if (error) throw error;
+      setSyncStatus('✅ Photos enregistrées !');
+      setTimeout(() => setSyncStatus(''), 3000);
+      alert(`✅ ${validPhotos.length} photo(s) enregistrée(s) !`);
+      setEditingDetails(false);
+      setItemDetails(updatedItemDetails);
+      setSelectedGame(prev => ({ ...prev, item_details: updatedItemDetails }));
+      setAllGames(prev => prev.map(g => g.id === selectedGame.id ? { ...g, item_details: updatedItemDetails } : g));
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('❌ Erreur sauvegarde');
+    }
   };
 
   const createGame = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
-    
     if (!newGameName.trim() || validItems.length === 0) {
       alert('Veuillez renseigner le nom du jeu et au moins un élément');
       return;
     }
-
-    const newGame = {
-      id: Date.now(),
-      name: newGameName.trim(),
-      items: validItems,
-      itemDetails: {},
-      created_by: username,
-      created_at: new Date().toISOString()
-    };
-
     try {
-  const { data, error } = await supabase
-    .from('games')
-    .insert({
-      name: newGameName.trim(),
-      search_name: newGameName.trim().toLowerCase(),
-      items: validItems,
-      item_details: {},
-      created_by: username
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  setSyncStatus('✅ Jeu créé');
-  setTimeout(() => setSyncStatus(''), 2000);
-  
-  closeCreateModal();
-  await loadGames();
-  if (data) selectGame(data);
-} catch (error) {
-  console.error('Erreur:', error);
-  alert('❌ Erreur création');
-}
+      const { data, error } = await supabase.from('games').insert({
+        name: newGameName.trim(),
+        search_name: newGameName.trim().toLowerCase(),
+        items: validItems,
+        item_details: {},
+        created_by: username
+      }).select().single();
+      if (error) throw error;
+      setSyncStatus('✅ Jeu créé');
+      setTimeout(() => setSyncStatus(''), 2000);
+      closeCreateModal();
+      await loadGames();
+      if (data) selectGame(data);
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('❌ Erreur création');
+    }
   };
 
   const startEditMode = () => {
@@ -665,45 +467,51 @@ setAllGames(prev =>
 
   const saveEdit = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
-    
     if (validItems.length === 0) {
       alert('Le jeu doit contenir au moins un élément');
       return;
     }
-
-    const updatedGame = { ...selectedGame, items: validItems };
     try {
-  const { error } = await supabase
-    .from('games')
-    .update({ items: validItems })
-    .eq('id', selectedGame.id);
-
-  if (error) throw error;
-
-  setSyncStatus('✅ Synchronisé');
-  setTimeout(() => setSyncStatus(''), 2000);
-  
-  setEditMode(false);
-setCheckedItems({});
-
-// ✅ Mettre à jour directement
-const updatedGame = { ...selectedGame, items: validItems };
-setSelectedGame(updatedGame);
-
-setAllGames(prev => 
-  prev.map(g => 
-    g.id === selectedGame.id ? updatedGame : g
-  )
-);
-} catch (error) {
-  console.error('Erreur:', error);
-  alert('❌ Erreur sauvegarde');
-}
+      const { error } = await supabase.from('games').update({ items: validItems }).eq('id', selectedGame.id);
+      if (error) throw error;
+      setSyncStatus('✅ Synchronisé');
+      setTimeout(() => setSyncStatus(''), 2000);
+      setEditMode(false);
+      setCheckedItems({});
+      const updatedGame = { ...selectedGame, items: validItems };
+      setSelectedGame(updatedGame);
+      setAllGames(prev => prev.map(g => g.id === selectedGame.id ? updatedGame : g));
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('❌ Erreur sauvegarde');
+    }
   };
   
   const getDetailPhotoCount = (itemIndex) => {
     const photos = itemDetails[itemIndex] || [];
     return photos.filter(p => p.image).length;
+  };
+
+  const getAggregatedItems = () => {
+    if (!selectedGame) return {};
+    const aggregated = {};
+    selectedGame.items.forEach(item => {
+      const match = item.match(/^(\d+)\s+(.+?)s?\s*$/i);
+      if (match) {
+        const quantity = parseInt(match[1]);
+        const itemType = match[2].toLowerCase().trim();
+        if (!aggregated[itemType]) {
+          aggregated[itemType] = { total: 0, items: [] };
+        }
+        aggregated[itemType].total += quantity;
+        aggregated[itemType].items.push(item);
+      }
+    });
+    const filtered = {};
+    Object.keys(aggregated).forEach(key => {
+      if (aggregated[key].items.length > 1) filtered[key] = aggregated[key];
+    });
+    return filtered;
   };
 
   if (loading) {
@@ -728,445 +536,93 @@ setAllGames(prev =>
 
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-1">
               <button
-  onClick={() => window.location.href = '/'}
-  className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
-  title="Retour à l'accueil"
->
-  <Home size={24} />
-</button>
+                onClick={() => window.location.href = '/'}
+                className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
+                title="Retour à l'accueil"
+              >
+                <Home size={24} />
+              </button>
               <div className="bg-orange-600 p-3 rounded-xl">
                 <Package size={28} color="white" />
               </div>
-              <div>
-                <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Inventaire de Jeux</h1>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Avec Cloudinary - Upload ultra rapide ⚡</p>
+              <div className="flex-1">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Inventaire de Jeux</h1>
+                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Avec Cloudinary - Upload ultra rapide ⚡</p>
+                  </div>
+                  {selectedGame && !editMode && !detailedView && (
+                    <button
+                      onClick={changeGame}
+                      className="px-6 py-3 rounded-xl font-semibold transition text-base whitespace-nowrap bg-orange-600 text-white hover:bg-orange-700"
+                    >
+                      Revenir à la recherche de jeux
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`p-3 rounded-xl transition-all duration-300 ${
-                darkMode 
-                  ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-              }`}
+              className={`p-3 rounded-xl transition-all ml-4 ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
               title={darkMode ? 'Mode clair' : 'Mode sombre'}
             >
-              {darkMode ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="5"/>
-                  <line x1="12" y1="1" x2="12" y2="3"/>
-                  <line x1="12" y1="21" x2="12" y2="23"/>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                  <line x1="1" y1="12" x2="3" y2="12"/>
-                  <line x1="21" y1="12" x2="23" y2="12"/>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                </svg>
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                </svg>
-              )}
+              {darkMode ? '☀️' : '🌙'}
             </button>
           </div>
         </div>
 
         {!selectedGame && (
-          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-            <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
-              <Search size={24} className="text-orange-600" />
-              Rechercher un jeu
-            </h2>
-            
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tapez le nom d'un jeu..."
-                className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-lg ${
-                  darkMode 
-                    ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                    : 'bg-white border-gray-200 text-gray-900'
-                }`}
-                autoFocus
-              />
-              
-              {showResults && searchResults.length > 0 && (
-                <div className={`absolute w-full mt-2 rounded-xl shadow-xl border-2 max-h-80 overflow-y-auto z-10 ${
-                  darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
-                }`}>
-                  {searchResults.map(game => (
-                    <div key={game.id} className="flex items-center justify-between group">
-                      <button
-                        onClick={() => selectGame(game)}
-                        className={`flex-1 text-left px-4 py-3 transition ${
-                          darkMode 
-                            ? 'hover:bg-gray-600 text-gray-100' 
-                            : 'hover:bg-orange-50 text-gray-800'
-                        } border-b last:border-b-0 ${darkMode ? 'border-gray-600' : 'border-gray-100'}`}
-                      >
-                        <div className="font-semibold">{game.name}</div>
-                        <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {game.items.length} éléments
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => deleteGame(game.id, game.name)}
-                        className={`px-3 py-3 opacity-0 group-hover:opacity-100 transition ${
-                          darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
-                        }`}
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {showResults && searchResults.length === 0 && searchQuery.length > 1 && (
-                <div className={`absolute w-full mt-2 rounded-xl shadow-xl border-2 p-4 ${
-                  darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
-                }`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle size={20} className="text-orange-500" />
-                      <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
-                        Jeu introuvable
-                      </span>
-                    </div>
-                    <button
-                      onClick={openCreateModal}
-                      className="bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center gap-2"
-                    >
-                      <Plus size={18} />
-                      Créer ce jeu
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className={`mt-6 p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-orange-50'}`}>
-              <div className="flex items-center justify-between mb-3">
-                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  💡 <strong>{allGames.length} jeu{allGames.length > 1 ? 'x' : ''}</strong> dans votre collection
-                </p>
-                <button
-                  onClick={() => setShowAllGamesList(!showAllGamesList)}
-                  className={`text-sm font-semibold flex items-center gap-1 ${
-                    darkMode ? 'text-orange-400 hover:text-orange-300' : 'text-orange-600 hover:text-orange-700'
-                  }`}
-                >
-                  <List size={16} />
-                  {showAllGamesList ? 'Masquer' : 'Voir la liste'}
-                </button>
-              </div>
-
-              {showAllGamesList && allGames.length > 0 && (
-                <div className={`mb-3 max-h-60 overflow-y-auto rounded-lg border-2 ${
-                  darkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-200 bg-white'
-                }`}>
-                  {allGames.map(game => (
-                    <div key={game.id} className="flex items-center justify-between group">
-                      <button
-                        onClick={() => selectGame(game)}
-                        className={`flex-1 text-left px-3 py-2 text-sm transition ${
-                          darkMode 
-                            ? 'hover:bg-gray-700 text-gray-200' 
-                            : 'hover:bg-orange-50 text-gray-800'
-                        } border-b last:border-b-0 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}
-                      >
-                        {game.name}
-                      </button>
-                      <button
-                        onClick={() => deleteGame(game.id, game.name)}
-                        className={`px-2 py-2 opacity-0 group-hover:opacity-100 transition ${
-                          darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
-                        }`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              <button
-                onClick={openCreateModal}
-                className="w-full bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
-              >
-                <Plus size={18} />
-                Créer un nouveau jeu
-              </button>
-            </div>
-          </div>
+          <SearchGameSection 
+            darkMode={darkMode}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            showResults={showResults}
+            searchResults={searchResults}
+            selectGame={selectGame}
+            deleteGame={deleteGame}
+            allGames={allGames}
+            showAllGamesList={showAllGamesList}
+            setShowAllGamesList={setShowAllGamesList}
+            openCreateModal={openCreateModal}
+          />
         )}
 
         {selectedGame && !editMode && !detailedView && (
-          <div className="space-y-6">
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-              <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
-                <div className="flex-1 min-w-[200px]">
-                  <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-2`}>
-                    {selectedGame.name}
-                  </h2>
-                  <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {selectedGame.items.length} éléments à vérifier
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={startEditMode}
-                    className={`px-3 py-2 rounded-lg font-medium transition flex items-center gap-2 text-sm ${
-                      darkMode 
-                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                        : 'bg-blue-500 text-white hover:bg-blue-600'
-                    }`}
-                  >
-                    <Edit size={16} />
-                    Éditer
-                  </button>
-                  <button
-                    onClick={() => deleteGame(selectedGame.id, selectedGame.name)}
-                    className={`px-3 py-2 rounded-lg font-medium transition text-sm ${
-                      darkMode 
-                        ? 'bg-red-600 text-white hover:bg-red-700' 
-                        : 'bg-red-500 text-white hover:bg-red-600'
-                    }`}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                  <button
-                    onClick={changeGame}
-                    className={`px-3 py-2 rounded-lg font-medium transition text-sm ${
-                      darkMode 
-                        ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Changer
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <div className="flex justify-between items-center mb-2">
-                  <span className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Progression
-                  </span>
-                  <span className={`text-sm font-bold ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>
-                    {getProgress()}%
-                  </span>
-                </div>
-                <div className={`w-full h-3 rounded-full overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                  <div 
-                    className="h-full bg-gradient-to-r from-orange-500 to-orange-600 transition-all duration-500"
-                    style={{ width: `${getProgress()}%` }}
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={resetInventory}
-                className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
-              >
-                <RotateCcw size={20} />
-                Réinitialiser l'inventaire
-              </button>
-            </div>
-
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-              <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
-                Contenu de la boîte
-              </h3>
-              
-              <div className="space-y-2">
-                {selectedGame.items.map((item, index) => {
-                  const photoCount = getDetailPhotoCount(index);
-                  return (
-                    <div key={index} className="flex items-center gap-2">
-                      <button
-                        onClick={() => openDetailedView(index, item)}
-                        className={`p-2 rounded-lg transition ${
-                          photoCount > 0
-                            ? darkMode
-                              ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                              : 'bg-purple-500 hover:bg-purple-600 text-white'
-                            : darkMode
-                              ? 'bg-gray-700 hover:bg-gray-600 text-gray-400'
-                              : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
-                        }`}
-                        title={photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Ajouter des photos'}
-                      >
-                        <Grid size={16} />
-                      </button>
-                      
-                      <label
-                        className={`flex-1 flex items-start gap-3 p-3 rounded-lg cursor-pointer transition ${
-                          checkedItems[index]
-                            ? darkMode
-                              ? 'bg-green-900 bg-opacity-30 border-2 border-green-700'
-                              : 'bg-green-50 border-2 border-green-300'
-                            : darkMode
-                              ? 'bg-gray-700 hover:bg-gray-650 border-2 border-gray-600'
-                              : 'bg-gray-50 hover:bg-gray-100 border-2 border-gray-200'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checkedItems[index] || false}
-                          onChange={() => toggleItem(index)}
-                          className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 mt-0.5 flex-shrink-0"
-                        />
-                        <div className="flex-1">
-                          <span className={`text-sm ${
-                            checkedItems[index]
-                              ? darkMode ? 'text-green-300 line-through' : 'text-green-700 line-through'
-                              : darkMode ? 'text-gray-200' : 'text-gray-800'
-                          }`}>
-                            {item}
-                          </span>
-                          {photoCount > 0 && (
-                            <div className={`text-xs mt-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
-                              📸 {photoCount} photo{photoCount > 1 ? 's' : ''}
-                            </div>
-                          )}
-                        </div>
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-              <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
-                <AlertCircle size={20} className="text-red-500" />
-                Éléments manquants
-              </h3>
-              
-              <textarea
-  value={missingItems}
-  onChange={async (e) => {
-    const newValue = e.target.value;
-    setMissingItems(newValue);
-    
-    // 💾 Sauvegarder automatiquement après 1 seconde d'inactivité
-    clearTimeout(window.missingItemsTimer);
-    window.missingItemsTimer = setTimeout(async () => {
-      try {
-        const { error } = await supabase
-          .from('games')
-          .update({ missing_items: newValue })
-          .eq('id', selectedGame.id);
-
-        if (error) throw error;
-        
-        setSyncStatus('✅ Notes sauvegardées');
-        setTimeout(() => setSyncStatus(''), 1500);
-      } catch (error) {
-        console.error('Erreur sauvegarde:', error);
-      }
-    }, 1000);
-  }}
-  placeholder="Notez ici les éléments manquants ou endommagés..."
-  rows="6"
-  className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none ${
-    darkMode 
-      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-      : 'bg-white border-gray-200 text-gray-900'
-  }`}
-/>
-
-              {missingItems && (
-                <div className={`mt-4 p-4 rounded-lg ${
-                  darkMode ? 'bg-red-900 bg-opacity-30 border-2 border-red-700' : 'bg-red-50 border-2 border-red-200'
-                }`}>
-                  <p className={`text-sm font-semibold ${darkMode ? 'text-red-300' : 'text-red-700'} mb-2`}>
-                    ⚠️ Attention : Des éléments manquent
-                  </p>
-                  <p className={`text-sm ${darkMode ? 'text-red-200' : 'text-red-600'} whitespace-pre-wrap`}>
-                    {missingItems}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+          <GameInventorySection
+            darkMode={darkMode}
+            selectedGame={selectedGame}
+            startEditMode={startEditMode}
+            deleteGame={deleteGame}
+            getProgress={getProgress}
+            resetInventory={resetInventory}
+            getAggregatedItems={getAggregatedItems}
+            checkedItems={checkedItems}
+            toggleItem={toggleItem}
+            itemDetails={itemDetails}
+            getDetailPhotoCount={getDetailPhotoCount}
+            openDetailedView={openDetailedView}
+            missingItems={missingItems}
+            setMissingItems={setMissingItems}
+            supabase={supabase}
+            setSyncStatus={setSyncStatus}
+          />
         )}
 
         {selectedGame && editMode && (
-          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
-                <Edit size={24} className="text-blue-500" />
-                Éditer : {selectedGame.name}
-              </h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={saveEdit}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition flex items-center gap-2"
-                >
-                  <Check size={18} />
-                  Valider
-                </button>
-                <button
-                  onClick={cancelEdit}
-                  className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 ${
-                    darkMode 
-                      ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  <X size={18} />
-                  Annuler
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {newGameItems.map((item, index) => (
-                <div key={index} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={item}
-                    onChange={(e) => updateItemField(index, e.target.value)}
-                    placeholder={`Élément ${index + 1}`}
-                    className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-blue-500 focus:outline-none ${
-                      darkMode 
-                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                        : 'bg-white border-gray-200 text-gray-900'
-                    }`}
-                  />
-                  <button
-                    onClick={() => removeItemField(index)}
-                    disabled={newGameItems.length <= 1}
-                    className={`p-2 rounded-lg transition ${
-                      newGameItems.length <= 1
-                        ? 'opacity-30 cursor-not-allowed'
-                        : darkMode
-                          ? 'bg-red-600 hover:bg-red-700 text-white'
-                          : 'bg-red-500 hover:bg-red-600 text-white'
-                    }`}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <button
-              onClick={addItemField}
-              className="w-full mt-4 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
-            >
-              <Plus size={18} />
-              Ajouter un élément
-            </button>
-          </div>
+          <EditGameSection
+            darkMode={darkMode}
+            selectedGame={selectedGame}
+            newGameItems={newGameItems}
+            updateItemField={updateItemField}
+            removeItemField={removeItemField}
+            addItemField={addItemField}
+            saveEdit={saveEdit}
+            cancelEdit={cancelEdit}
+          />
         )}
 
         {selectedGame && detailedView && (
@@ -1194,111 +650,336 @@ setAllGames(prev =>
             handleDrop={handleDrop}
             uploadingPhotos={uploadingPhotos}
             uploadProgress={uploadProgress}
+            getOptimizedImage={getOptimizedImage}
           />
         )}
 
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto`}>
-              <div className="flex items-center justify-between mb-6">
-                <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
-                  <Plus size={24} className="text-orange-600" />
-                  Créer un nouveau jeu
-                </h2>
+          <CreateGameModal
+            darkMode={darkMode}
+            newGameName={newGameName}
+            setNewGameName={setNewGameName}
+            newGameItems={newGameItems}
+            updateItemField={updateItemField}
+            removeItemField={removeItemField}
+            addItemField={addItemField}
+            createGame={createGame}
+            closeCreateModal={closeCreateModal}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults, searchResults, selectGame, deleteGame, allGames, showAllGamesList, setShowAllGamesList, openCreateModal }) {
+  return (
+    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+      <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
+        <Search size={24} className="text-orange-600" />
+        Rechercher un jeu
+      </h2>
+      
+      <div className="relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Tapez le nom d'un jeu..."
+          className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-lg ${
+            darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+          }`}
+          autoFocus
+        />
+        
+        {showResults && searchResults.length > 0 && (
+          <div className={`absolute w-full mt-2 rounded-xl shadow-xl border-2 max-h-80 overflow-y-auto z-10 ${
+            darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+          }`}>
+            {searchResults.map(game => (
+              <div key={game.id} className="flex items-center justify-between group">
                 <button
-                  onClick={closeCreateModal}
-                  className={`p-2 rounded-lg transition ${
-                    darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
+                  onClick={() => selectGame(game)}
+                  className={`flex-1 text-left px-4 py-3 transition ${
+                    darkMode ? 'hover:bg-gray-600 text-gray-100' : 'hover:bg-orange-50 text-gray-800'
+                  } border-b last:border-b-0 ${darkMode ? 'border-gray-600' : 'border-gray-100'}`}
+                >
+                  <div className="font-semibold">{game.name}</div>
+                  <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {game.items.length} éléments
+                  </div>
+                </button>
+                <button
+                  onClick={() => deleteGame(game.id, game.name)}
+                  className={`px-3 py-3 opacity-0 group-hover:opacity-100 transition ${
+                    darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
                   }`}
                 >
-                  <X size={24} />
+                  <Trash2 size={18} />
                 </button>
               </div>
+            ))}
+          </div>
+        )}
 
-              <div className="space-y-4">
-                <div>
-                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
-                    Nom du jeu *
-                  </label>
-                  <input
-                    type="text"
-                    value={newGameName}
-                    onChange={(e) => setNewGameName(e.target.value)}
-                    placeholder="Ex: Monopoly, Uno, Detective Club..."
-                    className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none ${
-                      darkMode 
-                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                        : 'bg-white border-gray-200 text-gray-900'
-                    }`}
-                  />
+        {showResults && searchResults.length === 0 && searchQuery.length > 1 && (
+          <div className={`absolute w-full mt-2 rounded-xl shadow-xl border-2 p-4 ${
+            darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={20} className="text-orange-500" />
+                <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Jeu introuvable</span>
+              </div>
+              <button
+                onClick={openCreateModal}
+                className="bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center gap-2"
+              >
+                <Plus size={18} />
+                Créer ce jeu
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className={`mt-6 p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-orange-50'}`}>
+        <div className="flex items-center justify-between mb-3">
+          <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+            💡 <strong>{allGames.length} jeu{allGames.length > 1 ? 'x' : ''}</strong> dans votre collection
+          </p>
+          <button
+            onClick={() => setShowAllGamesList(!showAllGamesList)}
+            className={`text-sm font-semibold flex items-center gap-1 ${
+              darkMode ? 'text-orange-400 hover:text-orange-300' : 'text-orange-600 hover:text-orange-700'
+            }`}
+          >
+            <List size={16} />
+            {showAllGamesList ? 'Masquer' : 'Voir la liste'}
+          </button>
+        </div>
+
+        {showAllGamesList && allGames.length > 0 && (
+          <div className={`mb-3 max-h-60 overflow-y-auto rounded-lg border-2 ${
+            darkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-200 bg-white'
+          }`}>
+            {allGames.map(game => (
+              <div key={game.id} className="flex items-center justify-between group">
+                <button
+                  onClick={() => selectGame(game)}
+                  className={`flex-1 text-left px-3 py-2 text-sm transition ${
+                    darkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-orange-50 text-gray-800'
+                  } border-b last:border-b-0 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}
+                >
+                  {game.name}
+                </button>
+                <button
+                  onClick={() => deleteGame(game.id, game.name)}
+                  className={`px-2 py-2 opacity-0 group-hover:opacity-100 transition ${
+                    darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
+                  }`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        <button
+          onClick={openCreateModal}
+          className="w-full bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
+        >
+          <Plus size={18} />
+          Créer un nouveau jeu
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, missingItems, setMissingItems, supabase, setSyncStatus }) {
+  return (
+    <div className="space-y-6">
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+        <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-2`}>
+              {selectedGame.name}
+            </h2>
+            <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              {selectedGame.items.length} éléments à vérifier
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={startEditMode}
+              className={`px-3 py-2 rounded-lg font-medium transition flex items-center gap-2 text-sm ${
+                darkMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600'
+              }`}
+            >
+              <Edit size={16} />
+              Éditer
+            </button>
+            <button
+              onClick={() => deleteGame(selectedGame.id, selectedGame.name)}
+              className={`px-3 py-2 rounded-lg font-medium transition text-sm ${
+                darkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'
+              }`}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              Progression
+            </span>
+            <span className={`text-sm font-bold ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>
+              {getProgress()}%
+            </span>
+          </div>
+          <div className={`w-full h-3 rounded-full overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
+            <div 
+              className="h-full bg-gradient-to-r from-orange-500 to-orange-600 transition-all duration-500"
+              style={{ width: `${getProgress()}%` }}
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={resetInventory}
+          className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
+        >
+          <RotateCcw size={20} />
+          Réinitialiser l'inventaire
+        </button>
+      </div>
+
+      {Object.keys(getAggregatedItems()).length > 0 && (
+        <div className={`${darkMode ? 'bg-gradient-to-br from-purple-900 to-indigo-900' : 'bg-gradient-to-br from-purple-50 to-indigo-50'} rounded-2xl shadow-xl p-6 border-2 ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
+          <h3 className={`text-lg font-bold ${darkMode ? 'text-purple-200' : 'text-purple-900'} mb-4 flex items-center gap-2`}>
+            📊 Récapitulatif des éléments
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {Object.entries(getAggregatedItems()).map(([itemType, data]) => (
+              <div 
+                key={itemType} 
+                className={`p-4 rounded-xl ${darkMode ? 'bg-gray-800 bg-opacity-50' : 'bg-white'} border-2 ${darkMode ? 'border-purple-600' : 'border-purple-200'}`}
+              >
+                <div className={`text-2xl font-bold ${darkMode ? 'text-purple-300' : 'text-purple-600'} mb-1`}>
+                  {data.total}
                 </div>
-
-                <div>
-                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
-                    Contenu du jeu *
-                  </label>
-                  
-                  <div className="space-y-3">
-                    {newGameItems.map((item, index) => (
-                      <div key={index} className="flex gap-2">
-                        <input
-                          type="text"
-                          value={item}
-                          onChange={(e) => updateItemField(index, e.target.value)}
-                          placeholder={`Ex: 54 cartes, 8 pions loupes...`}
-                          className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none ${
-                            darkMode 
-                              ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                              : 'bg-white border-gray-200 text-gray-900'
-                          }`}
-                        />
-                        <button
-                          onClick={() => removeItemField(index)}
-                          disabled={newGameItems.length <= 1}
-                          className={`p-2 rounded-lg transition ${
-                            newGameItems.length <= 1
-                              ? 'opacity-30 cursor-not-allowed'
-                              : darkMode
-                                ? 'bg-red-600 hover:bg-red-700 text-white'
-                                : 'bg-red-500 hover:bg-red-600 text-white'
-                          }`}
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={addItemField}
-                    className="w-full mt-3 bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
-                  >
-                    <Plus size={18} />
-                    Ajouter un élément
-                  </button>
+                <div className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'} capitalize`}>
+                  {itemType}{data.total > 1 ? 's' : ''}
                 </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={createGame}
-                    className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2"
-                  >
-                    <Check size={20} />
-                    Créer le jeu
-                  </button>
-                  <button
-                    onClick={closeCreateModal}
-                    className={`flex-1 py-3 rounded-xl font-bold transition ${
-                      darkMode 
-                        ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Annuler
-                  </button>
+                <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mt-2`}>
+                  ({data.items.length} groupe{data.items.length > 1 ? 's' : ''})
                 </div>
               </div>
-            </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+        <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
+          Contenu de la boîte
+        </h3>
+        
+        <div className="space-y-2">
+          {selectedGame.items.map((item, index) => {
+            const photoCount = getDetailPhotoCount(index);
+            return (
+              <div key={index} className="flex items-center gap-2">
+                <button
+                  onClick={() => openDetailedView(index, item)}
+                  className={`p-2 rounded-lg transition ${
+                    photoCount > 0
+                      ? darkMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-purple-500 hover:bg-purple-600 text-white'
+                      : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+                  }`}
+                  title={photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Ajouter des photos'}
+                >
+                  <Grid size={16} />
+                </button>
+                
+                <label
+                  className={`flex-1 flex items-start gap-3 p-3 rounded-lg cursor-pointer transition ${
+                    checkedItems[index]
+                      ? darkMode ? 'bg-green-900 bg-opacity-30 border-2 border-green-700' : 'bg-green-50 border-2 border-green-300'
+                      : darkMode ? 'bg-gray-700 hover:bg-gray-650 border-2 border-gray-600' : 'bg-gray-50 hover:bg-gray-100 border-2 border-gray-200'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checkedItems[index] || false}
+                    onChange={() => toggleItem(index)}
+                    className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 mt-0.5 flex-shrink-0"
+                  />
+                  <div className="flex-1">
+                    <span className={`text-sm ${
+                      checkedItems[index]
+                        ? darkMode ? 'text-green-300 line-through' : 'text-green-700 line-through'
+                        : darkMode ? 'text-gray-200' : 'text-gray-800'
+                    }`}>
+                      {item}
+                    </span>
+                    {photoCount > 0 && (
+                      <div className={`text-xs mt-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                        📸 {photoCount} photo{photoCount > 1 ? 's' : ''}
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+        <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
+          <AlertCircle size={20} className="text-red-500" />
+          Éléments manquants
+        </h3>
+        
+        <textarea
+          value={missingItems}
+          onChange={async (e) => {
+            const newValue = e.target.value;
+            setMissingItems(newValue);
+            clearTimeout(window.missingItemsTimer);
+            window.missingItemsTimer = setTimeout(async () => {
+              try {
+                const { error } = await supabase.from('games').update({ missing_items: newValue }).eq('id', selectedGame.id);
+                if (error) throw error;
+                setSyncStatus('✅ Notes sauvegardées');
+                setTimeout(() => setSyncStatus(''), 1500);
+              } catch (error) {
+                console.error('Erreur sauvegarde:', error);
+              }
+            }, 1000);
+          }}
+          placeholder="Notez ici les éléments manquants ou endommagés..."
+          rows="6"
+          className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none ${
+            darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+          }`}
+        />
+
+        {missingItems && (
+          <div className={`mt-4 p-4 rounded-lg ${
+            darkMode ? 'bg-red-900 bg-opacity-30 border-2 border-red-700' : 'bg-red-50 border-2 border-red-200'
+          }`}>
+            <p className={`text-sm font-semibold ${darkMode ? 'text-red-300' : 'text-red-700'} mb-2`}>
+              ⚠️ Attention : Des éléments manquent
+            </p>
+            <p className={`text-sm ${darkMode ? 'text-red-200' : 'text-red-600'} whitespace-pre-wrap`}>
+              {missingItems}
+            </p>
           </div>
         )}
       </div>
@@ -1306,7 +987,169 @@ setAllGames(prev =>
   );
 }
 
-// 🎨 Composant Vue Détaillée - SANS PAGINATION - Scroll infini fluide
+function EditGameSection({ darkMode, selectedGame, newGameItems, updateItemField, removeItemField, addItemField, saveEdit, cancelEdit }) {
+  return (
+    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
+          <Edit size={24} className="text-blue-500" />
+          Éditer : {selectedGame.name}
+        </h2>
+        <div className="flex gap-2">
+          <button
+            onClick={saveEdit}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition flex items-center gap-2"
+          >
+            <Check size={18} />
+            Valider
+          </button>
+          <button
+            onClick={cancelEdit}
+            className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 ${
+              darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <X size={18} />
+            Annuler
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {newGameItems.map((item, index) => (
+          <div key={index} className="flex gap-2">
+            <input
+              type="text"
+              value={item}
+              onChange={(e) => updateItemField(index, e.target.value)}
+              placeholder={`Élément ${index + 1}`}
+              className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-blue-500 focus:outline-none ${
+                darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            />
+            <button
+              onClick={() => removeItemField(index)}
+              disabled={newGameItems.length <= 1}
+              className={`p-2 rounded-lg transition ${
+                newGameItems.length <= 1
+                  ? 'opacity-30 cursor-not-allowed'
+                  : darkMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-500 hover:bg-red-600 text-white'
+              }`}
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={addItemField}
+        className="w-full mt-4 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+      >
+        <Plus size={18} />
+        Ajouter un élément
+      </button>
+    </div>
+  );
+}
+
+function CreateGameModal({ darkMode, newGameName, setNewGameName, newGameItems, updateItemField, removeItemField, addItemField, createGame, closeCreateModal }) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto`}>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
+            <Plus size={24} className="text-orange-600" />
+            Créer un nouveau jeu
+          </h2>
+          <button
+            onClick={closeCreateModal}
+            className={`p-2 rounded-lg transition ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+              Nom du jeu *
+            </label>
+            <input
+              type="text"
+              value={newGameName}
+              onChange={(e) => setNewGameName(e.target.value)}
+              placeholder="Ex: Monopoly, Uno, Detective Club..."
+              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none ${
+                darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            />
+          </div>
+
+          <div>
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+              Contenu du jeu *
+            </label>
+            
+            <div className="space-y-3">
+              {newGameItems.map((item, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={item}
+                    onChange={(e) => updateItemField(index, e.target.value)}
+                    placeholder="Ex: 54 cartes, 8 pions loupes..."
+                    className={`flex-1 px-4 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none ${
+                      darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  />
+                  <button
+                    onClick={() => removeItemField(index)}
+                    disabled={newGameItems.length <= 1}
+                    className={`p-2 rounded-lg transition ${
+                      newGameItems.length <= 1
+                        ? 'opacity-30 cursor-not-allowed'
+                        : darkMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-500 hover:bg-red-600 text-white'
+                    }`}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={addItemField}
+              className="w-full mt-3 bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
+            >
+              <Plus size={18} />
+              Ajouter un élément
+            </button>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={createGame}
+              className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2"
+            >
+              <Check size={20} />
+              Créer le jeu
+            </button>
+            <button
+              onClick={closeCreateModal}
+              className={`flex-1 py-3 rounded-xl font-bold transition ${
+                darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetailedViewComponent({ 
   detailedView, currentDetailPhotos, editingDetails, darkMode,
   closeDetailedView, startEditingDetails, saveDetailedView, cancelEditingDetails,
@@ -1314,36 +1157,20 @@ function DetailedViewComponent({
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto,
   checkedItems, toggleDetailPhoto,
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
-  uploadingPhotos, uploadProgress
+  uploadingPhotos, uploadProgress, getOptimizedImage
 }) {
-const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
+  const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const [lastTap, setLastTap] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const PHOTOS_PER_PAGE = 20;
 
-  // 🚀 Mémoïser la pagination
   const paginatedPhotos = React.useMemo(() => {
     return currentDetailPhotos
       .filter(p => p.image)
       .slice((currentPage - 1) * PHOTOS_PER_PAGE, currentPage * PHOTOS_PER_PAGE);
   }, [currentDetailPhotos, currentPage]);
 
-  const handlePhotoClick = (e, photo) => {
-    const now = Date.now();
-    const DOUBLE_CLICK_DELAY = 300;
-
-    if (now - lastTap < DOUBLE_CLICK_DELAY) {
-      e.stopPropagation();
-      setFullscreenPhoto(photo);
-      setLastTap(0);
-    } else {
-      setLastTap(now);
-    }
-  };
-
-  const closeFullscreen = () => {
-    setFullscreenPhoto(null);
-  };
+  const closeFullscreen = () => setFullscreenPhoto(null);
 
   return (
     <>
@@ -1352,9 +1179,7 @@ const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
           <div className="flex items-center gap-3">
             <button
               onClick={closeDetailedView}
-              className={`p-2 rounded-lg transition ${
-                darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
-              }`}
+              className={`p-2 rounded-lg transition ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
             >
               <ArrowLeft size={24} />
             </button>
@@ -1364,7 +1189,7 @@ const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
                 {detailedView.itemName}
               </h2>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''} • Pagination active
+                {currentDetailPhotos.filter(p => p.image).length} photo{currentDetailPhotos.filter(p => p.image).length > 1 ? 's' : ''}
               </p>
             </div>
           </div>
@@ -1381,9 +1206,7 @@ const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
                 <button
                   onClick={cancelEditingDetails}
                   className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 ${
-                    darkMode 
-                      ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
                   <X size={18} />
@@ -1394,9 +1217,7 @@ const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
               <button
                 onClick={startEditingDetails}
                 className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 ${
-                  darkMode 
-                    ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                    : 'bg-purple-500 text-white hover:bg-purple-600'
+                  darkMode ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-purple-500 text-white hover:bg-purple-600'
                 }`}
               >
                 <Edit size={18} />
@@ -1411,9 +1232,6 @@ const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
             <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
               <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
                 ⚡ Upload ultra-rapide avec Cloudinary ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
-              </p>
-              <p className={`text-xs mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>
-                📸 {currentDetailPhotos.filter(p => p.image).length} photos • Pagination 20 par page
               </p>
             </div>
 
