@@ -375,11 +375,62 @@ const getAggregatedItems = () => {
       setSyncStatus('✅ Sauvegardé');
       setTimeout(() => setSyncStatus(''), 1500);
     } catch (error) {
-      console.error('Erreur sauvegarde:', error);
-    }
-  };
+    console.error('Erreur sauvegarde:', error);
+  }
+};
 
-  const resetInventory = async () => {
+// 👇 AJOUTER ICI
+const toggleAggregatedType = async (itemType) => {
+  const aggregated = getAggregatedItems();
+  const progress = getAggregatedProgress();
+  const checked = progress[itemType] || 0;
+  const total = aggregated[itemType].total;
+  
+  const shouldCheck = checked < total;
+  const newCheckedItems = { ...checkedItems };
+  
+  selectedGame.items.forEach((item, index) => {
+    const match = item.match(/^(\d+)\s+(.+?)s?\s*$/i);
+    if (match) {
+      let firstWord = match[2].toLowerCase().trim().split(' ')[0];
+      if (firstWord.endsWith('s')) {
+        firstWord = firstWord.slice(0, -1);
+      }
+      
+      if (firstWord === itemType) {
+        newCheckedItems[index] = shouldCheck;
+        
+        const photos = itemDetails[index] || [];
+        if (photos.filter(p => p.image).length > 0) {
+          photos.forEach(photo => {
+            if (photo.image) {
+              newCheckedItems[`detail_${index}_${photo.id}`] = shouldCheck;
+            }
+          });
+        }
+      }
+    }
+  });
+  
+  setCheckedItems(newCheckedItems);
+  
+  try {
+    const { error } = await supabase
+      .from('games')
+      .update({ checked_items: newCheckedItems })
+      .eq('id', selectedGame.id);
+    
+    if (error) throw error;
+    
+    setSyncStatus('✅ Sauvegardé');
+    setTimeout(() => setSyncStatus(''), 1500);
+  } catch (error) {
+    console.error('Erreur sauvegarde:', error);
+  }
+};
+// 👆 JUSQU'ICI
+
+const resetInventory = async () => {
     if (!confirm('Réinitialiser l\'inventaire ?')) return;
     setCheckedItems({});
     setMissingItems('');
@@ -721,6 +772,7 @@ const getAggregatedItems = () => {
             setMissingItems={setMissingItems}
             supabase={supabase}
             setSyncStatus={setSyncStatus}
+            toggleAggregatedType={toggleAggregatedType}
           />
         )}
 
@@ -919,7 +971,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
 }
 
 // Composant GameInventorySection avec AGRÉGATION
-function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, missingItems, setMissingItems, supabase, setSyncStatus }) {
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, missingItems, setMissingItems, supabase, setSyncStatus, toggleAggregatedType }) {
   return (
     <div className="space-y-6">
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
@@ -979,7 +1031,7 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
         </button>
       </div>
 
-      {/* 🆕 BLOC D'AGRÉGATION AUTOMATIQUE - Version compacte */}
+      {/* 🆕 BLOC D'AGRÉGATION AUTOMATIQUE - Version compacte cliquable */}
       {Object.keys(getAggregatedItems()).length > 0 && (
         <div className={`${darkMode ? 'bg-purple-900 bg-opacity-20' : 'bg-purple-50'} rounded-xl p-3 border ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
           <h3 className={`text-sm font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'} mb-2 flex items-center gap-1`}>
@@ -989,19 +1041,25 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
             {Object.entries(getAggregatedItems()).map(([itemType, data]) => {
               const progress = getAggregatedProgress();
               const checked = progress[itemType] || 0;
+              const isComplete = checked === data.total;
               return (
-                <div 
-                  key={itemType} 
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${darkMode ? 'bg-purple-800 text-purple-200' : 'bg-purple-100 text-purple-800'}`}
+                <button
+                  key={itemType}
+                  onClick={() => toggleAggregatedType(itemType)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                    isComplete
+                      ? darkMode ? 'bg-green-700 text-green-200' : 'bg-green-200 text-green-800'
+                      : darkMode ? 'bg-purple-800 text-purple-200 hover:bg-purple-700' : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
+                  }`}
                 >
                   <span className="font-bold">{checked}/{data.total}</span> {itemType}{data.total > 1 ? 's' : ''}
-                </div>
+                </button>
               );
             })}
           </div>
         </div>
       )}
-
+        
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
         <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
           Contenu de la boîte
