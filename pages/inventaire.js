@@ -51,6 +51,7 @@ export default function InventaireJeux() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [photoRotations, setPhotoRotations] = useState({});
 
   // 📸 Upload vers Cloudinary
   const uploadToCloudinary = async (file, folder = 'boardgames') => {
@@ -316,6 +317,7 @@ const getAggregatedItems = () => {
     setShowAllGamesList(false);
     setDetailedView(null);
     setItemDetails(game.item_details || {});
+    setPhotoRotations(game.photo_rotations || {});
   };
 
   const deleteGame = async (gameId, gameName) => {
@@ -513,6 +515,18 @@ const resetInventory = async () => {
     setEditingDetails(false);
   };
 
+  const rotatePhoto = (photoId, direction) => {
+    const currentRotation = photoRotations[photoId] || 0;
+    const newRotation = direction === 'right' 
+      ? (currentRotation + 90) % 360 
+      : (currentRotation - 90 + 360) % 360;
+    
+    setPhotoRotations(prev => ({
+      ...prev,
+      [photoId]: newRotation
+    }));
+  };
+  
   const closeDetailedView = () => {
     setDetailedView(null);
     setCurrentDetailPhotos([]);
@@ -585,7 +599,10 @@ const resetInventory = async () => {
       [detailedView.itemIndex]: validPhotos
     };
     try {
-      const { error } = await supabase.from('games').update({ item_details: updatedItemDetails }).eq('id', selectedGame.id);
+      const { error } = await supabase.from('games').update({ 
+        item_details: updatedItemDetails,
+        photo_rotations: photoRotations
+      }).eq('id', selectedGame.id);
       if (error) throw error;
       setSyncStatus('✅ Photos enregistrées !');
       setTimeout(() => setSyncStatus(''), 3000);
@@ -821,6 +838,8 @@ const resetInventory = async () => {
             uploadingPhotos={uploadingPhotos}
             uploadProgress={uploadProgress}
             getOptimizedImage={getOptimizedImage}
+            photoRotations={photoRotations} 
+            rotatePhoto={rotatePhoto}
           />
         )}
 
@@ -1360,7 +1379,8 @@ function DetailedViewComponent({
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto,
   checkedItems, toggleDetailPhoto,
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
-  uploadingPhotos, uploadProgress, getOptimizedImage
+  uploadingPhotos, uploadProgress, getOptimizedImage,
+  photoRotations, rotatePhoto
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const [lastTap, setLastTap] = useState(0);
@@ -1492,13 +1512,42 @@ function DetailedViewComponent({
                     } transition`}
                   >
                     {photo.image ? (
-                      <img 
-                        src={getOptimizedImage(photo.image, 400)} 
-                        alt={photo.name || 'Photo'} 
-                        className="w-full h-full object-cover" 
-                        loading="lazy"
-                        decoding="async"
-                      />
+                      <>
+                        <img 
+                          src={getOptimizedImage(photo.image, 400)} 
+                          alt={photo.name || 'Photo'} 
+                          className="w-full h-full object-cover" 
+                          style={{ transform: `rotate(${photoRotations[photo.id] || 0}deg)` }}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        <div className="absolute bottom-2 left-2 flex gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              rotatePhoto(photo.id, 'left');
+                            }}
+                            className="bg-blue-600 text-white p-1.5 rounded-full hover:bg-blue-700 transition shadow-lg"
+                            title="Pivoter à gauche"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M2.5 2v6h6M2.66 15.57a10 10 0 1 0 .57-8.38"/>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              rotatePhoto(photo.id, 'right');
+                            }}
+                            className="bg-blue-600 text-white p-1.5 rounded-full hover:bg-blue-700 transition shadow-lg"
+                            title="Pivoter à droite"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </>
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center gap-2">
                         <Camera size={32} className={darkMode ? 'text-gray-500' : 'text-gray-400'} />
@@ -1585,6 +1634,7 @@ function DetailedViewComponent({
                           src={getOptimizedImage(photo.image, 400)} 
                           alt={photo.name || 'Photo'}
                           className="w-full h-full object-cover"
+                          style={{ transform: `rotate(${photoRotations[photo.id] || 0}deg)` }}
                           loading="lazy"
                           decoding="async"
                         />
@@ -1658,6 +1708,7 @@ function DetailedViewComponent({
               src={getOptimizedImage(fullscreenPhoto.image, 1920)} 
               alt={fullscreenPhoto.name || 'Photo'} 
               className="max-w-full max-h-[90vh] object-contain"
+              style={{ transform: `rotate(${photoRotations[fullscreenPhoto.id] || 0}deg)` }}
               loading="eager"
             />
             {fullscreenPhoto.name && (
