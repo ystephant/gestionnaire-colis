@@ -568,21 +568,28 @@ export default function LockerParcelApp() {
   };
 
   if (loading) {
-    return (
-      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center transition-colors duration-300`}>
-        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
-      <div className="max-w-2xl mx-auto">
-        {showToast && (
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
-            {toastMessage}
-          </div>
-        )}
+    <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center">
+      {/* Remplacez /logo.png par le chemin de votre logo */}
+      <div className="mb-8">
+        <img 
+          src="/meeple_final.png" 
+          alt="Le Petit Meeple" 
+          className="w-32 h-32 object-contain animate-bounce"
+        />
+      </div>
+
+      <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">
+        Le Petit Meeple arrive !
+      </h1>
+
+      {/* Barre de progression animée */}
+      <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-indigo-600 to-purple-600 animate-pulse"></div>
+      </div>
+    </div>
+  );
+}
 
     {/* ✅ AJOUTER UNIQUEMENT CETTE LIGNE */}
       <NotificationPermission />
