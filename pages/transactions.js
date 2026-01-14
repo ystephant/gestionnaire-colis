@@ -654,7 +654,7 @@ export default function TransactionsTracker() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/')}
@@ -671,19 +671,19 @@ export default function TransactionsTracker() {
                 </svg>
               </div>
               <div>
-                <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                <h1 className={`text-2xl md:text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   Suivi Achats/Ventes
                 </h1>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                <p className={`text-xs md:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   Synchronisation en temps réel
                 </p>
               </div>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <button
                 onClick={exportToExcel}
-                className={`px-4 py-2 rounded-xl font-semibold transition text-sm ${
+                className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
                   darkMode 
                     ? 'bg-green-700 text-white hover:bg-green-600' 
                     : 'bg-green-600 text-white hover:bg-green-700'
@@ -695,7 +695,7 @@ export default function TransactionsTracker() {
               
               <button
                 onClick={() => setStatsView(!statsView)}
-                className={`px-4 py-2 rounded-xl font-semibold transition ${
+                className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
                   statsView
                     ? 'bg-indigo-600 text-white'
                     : darkMode 
@@ -708,7 +708,7 @@ export default function TransactionsTracker() {
               
               <button
                 onClick={toggleDarkMode}
-                className={`p-3 rounded-xl transition ${
+                className={`p-2 md:p-3 rounded-xl transition ${
                   darkMode 
                     ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
                     : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
