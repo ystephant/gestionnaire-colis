@@ -6,28 +6,54 @@ export default function NotificationPermission() {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [oneSignalReady, setOneSignalReady] = useState(false);
+  const [hasChecked, setHasChecked] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const user = localStorage.getItem('username');
       setUsername(user || '');
 
+      // Vérifier si l'utilisateur a déjà été enregistré
+      const alreadyRegistered = localStorage.getItem(`onesignal_registered_${user}`);
+      
       // Vérifier immédiatement la permission du navigateur
       if ('Notification' in window) {
-        setPermission(Notification.permission);
+        const browserPermission = Notification.permission;
+        setPermission(browserPermission);
+        
+        // Si déjà accordé ET déjà enregistré, on considère que c'est bon
+        if (browserPermission === 'granted' && alreadyRegistered === 'true') {
+          setIsSubscribed(true);
+          setOneSignalReady(true);
+          setHasChecked(true);
+          return; // Ne pas redemander
+        }
       }
 
-      // Attendre que OneSignal soit prêt
-      const checkOneSignal = setInterval(() => {
-        if (window.OneSignal) {
+      // Attendre que OneSignal soit VRAIMENT prêt
+      let attempts = 0;
+      const maxAttempts = 30; // 9 secondes max
+      
+      const checkOneSignal = setInterval(async () => {
+        attempts++;
+        
+        if (window.OneSignal && typeof window.OneSignal.Notifications !== 'undefined') {
           clearInterval(checkOneSignal);
           setOneSignalReady(true);
-          checkSubscription();
+          
+          // Attendre un peu plus pour que OneSignal s'initialise complètement
+          setTimeout(async () => {
+            await checkSubscription();
+            setHasChecked(true);
+          }, 1000);
+        }
+        
+        if (attempts >= maxAttempts) {
+          clearInterval(checkOneSignal);
+          console.warn('⚠️ OneSignal n\'a pas pu être initialisé');
+          setHasChecked(true);
         }
       }, 300);
-
-      // Nettoyer après 10 secondes
-      setTimeout(() => clearInterval(checkOneSignal), 10000);
 
       return () => clearInterval(checkOneSignal);
     }
@@ -46,8 +72,10 @@ export default function NotificationPermission() {
       
       setIsSubscribed(isPushEnabled);
       
-      if (isPushEnabled) {
+      if (isPushEnabled && subId) {
         setPermission('granted');
+        // Marquer comme enregistré
+        localStorage.setItem(`onesignal_registered_${username}`, 'true');
       }
     } catch (error) {
       console.error('Erreur vérification:', error);
@@ -75,8 +103,11 @@ export default function NotificationPermission() {
         await window.OneSignal.login(username);
         console.log('✅ Utilisateur enregistré:', username);
         
-        // Attendre un peu que OneSignal s'enregistre
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Marquer comme enregistré dans localStorage
+        localStorage.setItem(`onesignal_registered_${username}`, 'true');
+        
+        // Attendre que OneSignal s'enregistre complètement
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Vérifier la souscription
         await checkSubscription();
@@ -89,7 +120,8 @@ export default function NotificationPermission() {
             body: JSON.stringify({
               userId: username,
               colisCodes: ['BIENVENUE'],
-              location: 'test'
+              location: 'test',
+              lockerType: 'mondial-relay'
             })
           });
 
@@ -112,31 +144,13 @@ export default function NotificationPermission() {
   };
 
   // Pendant la vérification, ne rien afficher
-  if (permission === 'checking' || !oneSignalReady) {
+  if (!hasChecked || permission === 'checking' || !oneSignalReady) {
     return null;
   }
 
-  // Si déjà abonné, ne rien afficher (ou un petit badge discret)
-  if (isSubscribed) {
-    return null; // Masquer complètement le composant
-    
-    // OU afficher un petit badge discret (décommentez si vous voulez) :
-    /*
-    return (
-      <div style={{
-        padding: '10px 15px',
-        backgroundColor: '#d4edda',
-        color: '#155724',
-        borderRadius: '8px',
-        marginBottom: '15px',
-        textAlign: 'center',
-        fontSize: '14px',
-        border: '1px solid #c3e6cb'
-      }}>
-        ✅ Notifications activées
-      </div>
-    );
-    */
+  // Si déjà abonné, ne rien afficher
+  if (isSubscribed && permission === 'granted') {
+    return null;
   }
 
   // Si permission refusée
