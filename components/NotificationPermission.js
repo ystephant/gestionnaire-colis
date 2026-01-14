@@ -21,31 +21,27 @@ export default function NotificationPermission() {
       if ('Notification' in window) {
         const browserPermission = Notification.permission;
         setPermission(browserPermission);
-        setDebugInfo(`Permission navigateur: ${browserPermission}`);
         
         // Si déjà accordé ET déjà enregistré, on considère que c'est bon
         if (browserPermission === 'granted' && alreadyRegistered === 'true') {
           setIsSubscribed(true);
           setOneSignalReady(true);
           setHasChecked(true);
-          return; // Ne pas redemander
+          return;
         }
       }
 
-      // Attendre que OneSignal soit VRAIMENT prêt
+      // Attendre que OneSignal soit prêt
       let attempts = 0;
-      const maxAttempts = 30; // 9 secondes max
+      const maxAttempts = 30;
       
       const checkOneSignal = setInterval(async () => {
         attempts++;
-        setDebugInfo(`Tentative ${attempts}/${maxAttempts} - Chargement OneSignal...`);
         
         if (window.OneSignal && typeof window.OneSignal.Notifications !== 'undefined') {
           clearInterval(checkOneSignal);
           setOneSignalReady(true);
-          setDebugInfo('✅ OneSignal chargé');
           
-          // Attendre un peu plus pour que OneSignal s'initialise complètement
           setTimeout(async () => {
             await checkSubscription();
             setHasChecked(true);
@@ -54,8 +50,6 @@ export default function NotificationPermission() {
         
         if (attempts >= maxAttempts) {
           clearInterval(checkOneSignal);
-          console.warn('⚠️ OneSignal n\'a pas pu être initialisé');
-          setDebugInfo('❌ OneSignal timeout après 9 secondes');
           setHasChecked(true);
         }
       }, 300);
@@ -65,119 +59,114 @@ export default function NotificationPermission() {
   }, []);
 
   const checkSubscription = async () => {
-    if (!window.OneSignal) {
-      setDebugInfo('❌ OneSignal non disponible');
-      return;
-    }
+    if (!window.OneSignal) return;
     
     try {
-      setDebugInfo('🔍 Vérification de la souscription...');
-      
-      // Vérifier si l'utilisateur est souscrit
       const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
       const subId = window.OneSignal.User.PushSubscription.id;
-      
-      console.log('📱 Push enabled:', isPushEnabled);
-      console.log('📱 Subscription ID:', subId);
       
       setIsSubscribed(isPushEnabled);
       
       if (isPushEnabled && subId) {
         setPermission('granted');
-        setDebugInfo(`✅ Déjà abonné (ID: ${subId?.substring(0, 8)}...)`);
-        // Marquer comme enregistré
         localStorage.setItem(`onesignal_registered_${username}`, 'true');
-      } else {
-        setDebugInfo('ℹ️ Pas encore abonné aux notifications');
       }
     } catch (error) {
       console.error('Erreur vérification:', error);
-      setDebugInfo(`❌ Erreur: ${error.message}`);
     }
   };
 
   const handleEnableNotifications = async () => {
-    if (!window.OneSignal) {
-      alert('OneSignal n\'est pas encore chargé. Veuillez rafraîchir la page.');
-      return;
-    }
-
     setLoading(true);
+    setDebugInfo('🔔 Initialisation...');
 
     try {
-      setDebugInfo('🔔 Demande de permission...');
-      console.log('🔔 Demande de permission pour:', username);
-      
-      // Vérifier l'état de OneSignal avant de demander la permission
-      const isInitialized = await window.OneSignal.Notifications.isPushSupported();
-      if (!isInitialized) {
-        throw new Error('Les notifications push ne sont pas supportées');
+      // ÉTAPE 1 : Demander la permission native d'abord
+      if (!('Notification' in window)) {
+        throw new Error('Les notifications ne sont pas supportées sur cet appareil');
       }
+
+      setDebugInfo('📝 Demande de permission...');
       
-      setDebugInfo('📝 Demande de permission au navigateur...');
+      // Demander la permission avec l'API native du navigateur
+      const permission = await Notification.requestPermission();
       
-      // Demander la permission
-      const granted = await window.OneSignal.Notifications.requestPermission();
+      if (permission !== 'granted') {
+        setPermission('denied');
+        setDebugInfo('❌ Permission refusée');
+        setLoading(false);
+        return;
+      }
+
+      setDebugInfo('✅ Permission accordée !');
+      setPermission('granted');
+
+      // ÉTAPE 2 : Attendre que OneSignal soit vraiment prêt
+      if (!window.OneSignal) {
+        setDebugInfo('⏳ Chargement OneSignal...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      if (!window.OneSignal) {
+        throw new Error('OneSignal n\'est pas chargé');
+      }
+
+      // ÉTAPE 3 : Enregistrer l'utilisateur dans OneSignal
+      setDebugInfo('📝 Enregistrement utilisateur...');
       
-      if (granted) {
-        setDebugInfo('✅ Permission accordée, enregistrement...');
-        console.log('✅ Permission accordée');
-        
-        // Enregistrer l'utilisateur
+      try {
         await window.OneSignal.login(username);
         console.log('✅ Utilisateur enregistré:', username);
-        setDebugInfo('✅ Utilisateur enregistré');
-        
-        // Marquer comme enregistré dans localStorage
-        localStorage.setItem(`onesignal_registered_${username}`, 'true');
-        
-        // Attendre que OneSignal s'enregistre complètement
-        setDebugInfo('⏳ Finalisation de l\'inscription...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Vérifier la souscription
-        await checkSubscription();
-        
-        // Notification de test
-        try {
-          setDebugInfo('📤 Envoi notification de test...');
-          const response = await fetch('/api/notify-colis-added', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: username,
-              colisCodes: ['BIENVENUE'],
-              location: 'test',
-              lockerType: 'mondial-relay'
-            })
-          });
-
-          if (response.ok) {
-            console.log('✅ Notification de bienvenue envoyée');
-            setDebugInfo('✅ Notification de test envoyée !');
-          } else {
-            setDebugInfo(`⚠️ Erreur API: ${response.status}`);
-          }
-        } catch (error) {
-          console.warn('⚠️ Erreur notification test:', error);
-          setDebugInfo(`⚠️ Erreur notification: ${error.message}`);
-        }
-      } else {
-        console.log('❌ Permission refusée');
-        setPermission('denied');
-        setDebugInfo('❌ Permission refusée par l\'utilisateur');
+      } catch (error) {
+        console.warn('⚠️ Erreur login OneSignal:', error);
+        // Continuer même si le login échoue
       }
+
+      // Marquer comme enregistré
+      localStorage.setItem(`onesignal_registered_${username}`, 'true');
+      
+      // ÉTAPE 4 : Attendre la synchronisation
+      setDebugInfo('⏳ Synchronisation...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // ÉTAPE 5 : Vérifier la souscription
+      await checkSubscription();
+      
+      // ÉTAPE 6 : Notification de test (optionnel)
+      setDebugInfo('✅ Notifications activées !');
+      
+      try {
+        await fetch('/api/notify-colis-added', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: username,
+            colisCodes: ['BIENVENUE'],
+            location: 'test',
+            lockerType: 'mondial-relay'
+          })
+        });
+        console.log('✅ Notification de test envoyée');
+      } catch (error) {
+        console.warn('⚠️ Erreur notification test:', error);
+      }
+
+      // Forcer le rechargement de l'état
+      setTimeout(() => {
+        setIsSubscribed(true);
+        setLoading(false);
+      }, 1000);
+
     } catch (error) {
-      console.error('❌ Erreur activation:', error);
-      setDebugInfo(`❌ ERREUR: ${error.message}`);
-      alert('Erreur: ' + error.message);
-    } finally {
+      console.error('❌ Erreur:', error);
+      setDebugInfo(`❌ Erreur: ${error.message}`);
+      alert(`Erreur: ${error.message}\n\nEssayez de :\n1. Rafraîchir la page\n2. Vérifier vos paramètres de notifications`);
       setLoading(false);
     }
   };
 
-  // Pendant la vérification, ne rien afficher
-  if (!hasChecked || permission === 'checking' || !oneSignalReady) {
+  // Pendant la vérification, afficher un message de chargement
+  if (!hasChecked || permission === 'checking') {
     return (
       <div style={{
         padding: '15px',
@@ -188,7 +177,7 @@ export default function NotificationPermission() {
         textAlign: 'center',
         fontSize: '13px'
       }}>
-        {debugInfo || 'Chargement...'}
+        ⏳ Vérification des notifications...
       </div>
     );
   }
@@ -213,16 +202,24 @@ export default function NotificationPermission() {
         <div style={{ fontSize: '20px', marginBottom: '5px' }}>🔕</div>
         <strong>Notifications bloquées</strong>
         <p style={{ margin: '5px 0 0 0', fontSize: '13px' }}>
-          Réactivez-les dans les paramètres de votre navigateur
+          Pour les réactiver :
         </p>
-        <p style={{ margin: '10px 0 0 0', fontSize: '11px', opacity: 0.7 }}>
-          {debugInfo}
-        </p>
+        <ol style={{ 
+          margin: '10px 0 0 0', 
+          padding: '0 0 0 20px',
+          fontSize: '12px',
+          textAlign: 'left'
+        }}>
+          <li>Allez dans les paramètres de votre navigateur</li>
+          <li>Cherchez "Notifications" ou "Autorisations"</li>
+          <li>Autorisez les notifications pour ce site</li>
+          <li>Rafraîchissez la page</li>
+        </ol>
       </div>
     );
   }
 
-  // Bouton pour activer (uniquement si pas encore activé)
+  // Bouton pour activer
   return (
     <div style={{
       padding: '20px',
@@ -241,15 +238,15 @@ export default function NotificationPermission() {
         Recevez une alerte à chaque nouveau colis
       </p>
       
-      {/* DEBUG INFO */}
-      {debugInfo && (
+      {/* DEBUG INFO pendant le chargement */}
+      {loading && debugInfo && (
         <div style={{
           backgroundColor: 'rgba(255,255,255,0.2)',
-          padding: '8px',
+          padding: '10px',
           borderRadius: '6px',
           marginBottom: '15px',
-          fontSize: '12px',
-          fontFamily: 'monospace'
+          fontSize: '13px',
+          fontWeight: 'bold'
         }}>
           {debugInfo}
         </div>
@@ -269,17 +266,22 @@ export default function NotificationPermission() {
           fontWeight: 'bold',
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           transition: 'all 0.3s',
-          opacity: loading ? 0.7 : 1
-        }}
-        onMouseOver={(e) => {
-          if (!loading) e.target.style.transform = 'translateY(-2px)';
-        }}
-        onMouseOut={(e) => {
-          if (!loading) e.target.style.transform = 'translateY(0)';
+          opacity: loading ? 0.7 : 1,
+          width: '100%'
         }}
       >
-        {loading ? '⏳ Activation...' : '🔔 Activer maintenant'}
+        {loading ? `⏳ ${debugInfo || 'Activation...'}` : '🔔 Activer maintenant'}
       </button>
+      
+      {!loading && (
+        <p style={{ 
+          margin: '10px 0 0 0', 
+          fontSize: '11px', 
+          opacity: 0.7 
+        }}>
+          Vous pourrez accepter ou refuser dans la popup
+        </p>
+      )}
     </div>
   );
 }
