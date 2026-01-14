@@ -591,27 +591,37 @@ export default function LockerParcelApp() {
   );
 }
 
-    {/* ✅ AJOUTER UNIQUEMENT CETTE LIGNE */}
-      <NotificationPermission />
-        
-        {syncStatus && (
-          <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
-            isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-          }`}>
-            {syncStatus}
-            {offlineQueue.length > 0 && (
-              <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
-                {offlineQueue.length} en attente
-              </span>
-            )}
-          </div>
-        )}
+// ⬇️ IMPORTANT: Le return principal commence ICI
+return (
+  <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
+    <div className="max-w-2xl mx-auto">
+      {showToast && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+          {toastMessage}
+        </div>
+      )}
 
-        {oneSignalReady && (
-          <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
-            🔔 Notifications actives
-          </div>
-        )}
+      {/* ✅ Notification Permission */}
+      <NotificationPermission />
+      
+      {syncStatus && (
+        <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+          isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+        }`}>
+          {syncStatus}
+          {offlineQueue.length > 0 && (
+            <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
+              {offlineQueue.length} en attente
+            </span>
+          )}
+        </div>
+      )}
+
+      {oneSignalReady && (
+        <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
+          🔔 Notifications actives
+        </div>
+      )}
         
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between mb-6">
