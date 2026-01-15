@@ -76,7 +76,10 @@ export default function LockerParcelApp() {
   // checkAuth, loadParcels, setupRealtimeSubscription, showNotification, etc.
   // COPIEZ-COLLEZ TOUTES VOS FONCTIONS ICI SANS MODIFICATION
   
-  const checkAuth = () => {
+  const checkAuth = async () => {
+    // Délai minimum de 800ms pour voir l'écran de chargement
+    const startTime = Date.now();
+    
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
     if (savedUsername && savedPassword) { 
@@ -86,9 +89,16 @@ export default function LockerParcelApp() {
     } else {
       router.push('/');
     }
+    
+    // Attendre le délai minimum si le chargement est trop rapide
+    const elapsedTime = Date.now() - startTime;
+    if (elapsedTime < 800) {
+      await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
+    }
+    
     setLoading(false);
   };
-
+  
   const loadParcels = async () => {
     try {
       const { data, error} = await supabase
@@ -568,28 +578,48 @@ export default function LockerParcelApp() {
   };
 
   if (loading) {
-  return (
-    <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center">
-      {/* Remplacez /logo.png par le chemin de votre logo */}
-      <div className="mb-8">
-        <img 
-          src="/meeple_final.png" 
-          alt="Le Petit Meeple" 
-          className="w-32 h-32 object-contain animate-bounce"
-        />
-      </div>
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center">
+        {/* Logo animé */}
+        <div className="mb-8 animate-bounce">
+          <img 
+            src="/meeple_final.png" 
+            alt="Le Petit Meeple" 
+            className="w-32 h-32 object-contain drop-shadow-2xl"
+            onError={(e) => {
+              console.error('Erreur chargement logo');
+              e.target.style.display = 'none';
+            }}
+          />
+        </div>
 
-      <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">
-        Le Petit Meeple arrive !
-      </h1>
+        <h1 className="text-4xl font-bold text-white mb-6 tracking-tight animate-fade-in">
+          Le Petit Meeple arrive !
+        </h1>
 
-      {/* Barre de progression animée */}
-      <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
-        <div className="h-full bg-gradient-to-r from-indigo-600 to-purple-600 animate-pulse"></div>
+        {/* Barre de progression animée */}
+        <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-indigo-600 to-purple-600 animate-loading-bar"
+            style={{
+              animation: 'loading 1.5s ease-in-out infinite'
+            }}
+          ></div>
+        </div>
+
+        <style jsx>{`
+          @keyframes loading {
+            0% { width: 0%; }
+            50% { width: 70%; }
+            100% { width: 100%; }
+          }
+          .animate-loading-bar {
+            animation: loading 1.5s ease-in-out infinite;
+          }
+        `}</style>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
 // ⬇️ IMPORTANT: Le return principal commence ICI
 return (
