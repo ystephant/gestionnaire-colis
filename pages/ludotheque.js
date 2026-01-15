@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
-import { Search, GripVertical, Trash2, Plus, Grid3x3, Moon, Sun, Copy, Users, Clock, BookOpen, X, Sparkles, Filter } from 'lucide-react';
+import { Search, GripVertical, Trash2, Plus, Grid3x3, Moon, Sun, Copy, Users, Clock, BookOpen, X, Sparkles, Filter, Edit2 } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,23 +28,66 @@ export default function Ludotheque() {
   const [searchTerm, setSearchTerm] = useState('');
   const [newGameName, setNewGameName] = useState('');
   const [draggedGame, setDraggedGame] = useState(null);
+  const [draggedShelf, setDraggedShelf] = useState(null);
   const [selectedGame, setSelectedGame] = useState(null);
   const [isLoadingRules, setIsLoadingRules] = useState(false);
   const [gameRules, setGameRules] = useState({});
   const [shelfViewFilter, setShelfViewFilter] = useState('all');
   const [dropZoneActive, setDropZoneActive] = useState(false);
+  const [copyMessage, setCopyMessage] = useState('');
+  const [editingGameId, setEditingGameId] = useState(null);
+  const [editGameName, setEditGameName] = useState('');
+  
+  // États pour la synchronisation temps réel
+  const [isOnline, setIsOnline] = useState(true);
+  const [syncStatus, setSyncStatus] = useState('');
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
+  // Gestion du statut en ligne/hors ligne
   useEffect(() => {
     checkAuth();
+    
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncStatus('🟢 En ligne');
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncStatus('🔴 Hors ligne - Mode lecture seule');
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    setIsOnline(navigator.onLine);
+    setSyncStatus(navigator.onLine ? '🟢 En ligne' : '🔴 Hors ligne');
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && username) {
       loadData();
+      if (isOnline) {
+        setupRealtimeSubscription();
+      }
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, isOnline, username]);
 
-  const checkAuth = () => {
+  useEffect(() => {
+    return () => {
+      if (window.shelvesChannel) supabase.removeChannel(window.shelvesChannel);
+      if (window.gamesChannel) supabase.removeChannel(window.gamesChannel);
+    };
+  }, []);
+
+  const checkAuth = async () => {
+    const startTime = Date.now();
+    
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
     
@@ -54,7 +97,30 @@ export default function Ludotheque() {
     } else {
       router.push('/');
     }
+    
+    const elapsedTime = Date.now() - startTime;
+    if (elapsedTime < 800) {
+      await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
+    }
+    
     setLoading(false);
+  };
+
+  const loadShelfOrder = () => {
+    const saved = localStorage.getItem(`shelfOrder_${username}`);
+    if (saved) {
+      try {
+        const order = JSON.parse(saved);
+        return order;
+      } catch (e) {
+        console.error('Erreur de chargement de l\'ordre:', e);
+      }
+    }
+    return null;
+  };
+
+  const saveShelfOrder = (newOrder) => {
+    localStorage.setItem(`shelfOrder_${username}`, JSON.stringify(newOrder.map(s => s.id)));
   };
 
   const loadData = async () => {
@@ -68,7 +134,6 @@ export default function Ludotheque() {
 
       if (shelvesError) throw shelvesError;
 
-      // Si aucune étagère, en créer une par défaut
       if (!shelvesData || shelvesData.length === 0) {
         const { data: newShelf, error: createError } = await supabase
           .from('shelves')
@@ -77,33 +142,177 @@ export default function Ludotheque() {
         
         if (createError) throw createError;
         setShelves(newShelf || []);
+        localStorage.setItem(`shelves_${username}`, JSON.stringify(newShelf || []));
       } else {
-        setShelves(shelvesData);
+        const savedOrder = loadShelfOrder();
+        if (savedOrder) {
+          const orderedShelves = savedOrder
+            .map(id => shelvesData.find(s => s.id === id))
+            .filter(Boolean)
+            .concat(shelvesData.filter(s => !savedOrder.includes(s.id)));
+          setShelves(orderedShelves);
+          localStorage.setItem(`shelves_${username}`, JSON.stringify(orderedShelves));
+        } else {
+          setShelves(shelvesData);
+          localStorage.setItem(`shelves_${username}`, JSON.stringify(shelvesData));
+        }
       }
 
       // Charger les jeux
       const { data: gamesData, error: gamesError } = await supabase
-        .from('games')
+        .from('board_games')
         .select('*')
         .eq('user_id', username)
         .order('created_at', { ascending: true });
 
       if (gamesError) throw gamesError;
       setGames(gamesData || []);
+      localStorage.setItem(`games_${username}`, JSON.stringify(gamesData || []));
 
     } catch (error) {
       console.error('Erreur de chargement:', error);
+      
+      // Charger depuis le cache en cas d'erreur
+      const cachedShelves = localStorage.getItem(`shelves_${username}`);
+      const cachedGames = localStorage.getItem(`games_${username}`);
+      
+      if (cachedShelves) {
+        setShelves(JSON.parse(cachedShelves));
+        setSyncStatus('🟡 Données en cache');
+      }
+      if (cachedGames) {
+        setGames(JSON.parse(cachedGames));
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const setupRealtimeSubscription = () => {
+    // Canal pour les étagères
+    const shelvesChannel = supabase
+      .channel(`shelves-${username}`)
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'shelves',
+          filter: `user_id=eq.${username}`
+        },
+        (payload) => {
+          console.log('📡 Changement étagère temps réel:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            setShelves(prev => {
+              const exists = prev.some(s => s.id === payload.new.id);
+              if (exists) {
+                console.log('⚠️ Doublon étagère évité:', payload.new.id);
+                return prev;
+              }
+              const updated = [...prev, payload.new];
+              localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setShelves(prev => {
+              const updated = prev.map(s => s.id === payload.new.id ? payload.new : s);
+              localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setShelves(prev => {
+              const updated = prev.filter(s => s.id !== payload.old.id);
+              localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Temps réel étagères activé');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Erreur canal étagères');
+          setSyncStatus('⚠️ Erreur de synchronisation');
+        }
+      });
+
+    // Canal pour les jeux
+    const gamesChannel = supabase
+      .channel(`games-${username}`)
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'board_games',
+          filter: `user_id=eq.${username}`
+        },
+        (payload) => {
+          console.log('📡 Changement jeu temps réel:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            setGames(prev => {
+              const exists = prev.some(g => g.id === payload.new.id);
+              if (exists) {
+                console.log('⚠️ Doublon jeu évité:', payload.new.id);
+                return prev;
+              }
+              const updated = [payload.new, ...prev];
+              localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              showToastMessage('✅ Nouveau jeu ajouté');
+              return updated;
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setGames(prev => {
+              const updated = prev.map(g => g.id === payload.new.id ? payload.new : g);
+              localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setGames(prev => {
+              const updated = prev.filter(g => g.id !== payload.old.id);
+              localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Temps réel jeux activé');
+          setSyncStatus('🟢 Synchronisé en temps réel');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Erreur canal jeux');
+          setSyncStatus('⚠️ Erreur de synchronisation');
+        }
+      });
+
+    window.shelvesChannel = shelvesChannel;
+    window.gamesChannel = gamesChannel;
+  };
+
+  const showToastMessage = (message) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const showCopyMessage = (message) => {
+    setCopyMessage(message);
+    setTimeout(() => setCopyMessage(''), 3000);
+  };
+
   const addNewGame = async () => {
     if (!newGameName.trim()) return;
+    
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible d\'ajouter');
+      return;
+    }
 
     try {
       const { data, error } = await supabase
-        .from('games')
+        .from('board_games')
         .insert([{
           user_id: username,
           name: newGameName.trim(),
@@ -115,17 +324,24 @@ export default function Ludotheque() {
         .select();
 
       if (error) throw error;
-      setGames([...games, ...data]);
+      
       setNewGameName('');
+      showToastMessage(`✅ "${newGameName.trim()}" ajouté`);
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
+      showToastMessage('❌ Erreur lors de l\'ajout');
     }
   };
 
   const duplicateGame = async (game) => {
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible de dupliquer');
+      return;
+    }
+
     try {
       const { data, error } = await supabase
-        .from('games')
+        .from('board_games')
         .insert([{
           user_id: username,
           name: game.name,
@@ -137,56 +353,115 @@ export default function Ludotheque() {
         .select();
 
       if (error) throw error;
-      setGames([...games, ...data]);
+      showToastMessage(`✅ "${game.name}" dupliqué`);
     } catch (error) {
       console.error('Erreur de duplication:', error);
+      showToastMessage('❌ Erreur de duplication');
     }
   };
 
   const deleteGame = async (gameId) => {
     if (!confirm('Supprimer ce jeu définitivement ?')) return;
+    
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible de supprimer');
+      return;
+    }
+
+    // Optimistic update
+    const gameToDelete = games.find(g => g.id === gameId);
+    setGames(prev => prev.filter(g => g.id !== gameId));
 
     try {
       const { error } = await supabase
-        .from('games')
+        .from('board_games')
         .delete()
         .eq('id', gameId);
 
-      if (error) throw error;
-      setGames(games.filter(g => g.id !== gameId));
+      if (error) {
+        // Rollback en cas d'erreur
+        setGames(prev => [...prev, gameToDelete]);
+        throw error;
+      }
+      
+      showToastMessage('✅ Jeu supprimé');
     } catch (error) {
       console.error('Erreur de suppression:', error);
+      showToastMessage('❌ Erreur de suppression');
     }
   };
 
   const updateGameInfo = async (gameId, field, value) => {
+    if (!isOnline) return;
+
     try {
       const { error } = await supabase
-        .from('games')
+        .from('board_games')
         .update({ [field]: value })
         .eq('id', gameId);
 
       if (error) throw error;
-      setGames(games.map(g => g.id === gameId ? { ...g, [field]: value } : g));
     } catch (error) {
       console.error('Erreur de mise à jour:', error);
     }
   };
 
-  const handleDrop = async (row, col, shelfId) => {
-    if (!draggedGame) return;
-    const position = `${row}-${col}`;
+  const startEditGame = (game) => {
+    setEditingGameId(game.id);
+    setEditGameName(game.name);
+  };
+
+  const saveGameEdit = async (gameId) => {
+    if (!editGameName.trim()) return;
+    
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible de modifier');
+      setEditingGameId(null);
+      setEditGameName('');
+      return;
+    }
 
     try {
       const { error } = await supabase
-        .from('games')
+        .from('board_games')
+        .update({ name: editGameName.trim() })
+        .eq('id', gameId);
+
+      if (error) throw error;
+      
+      setEditingGameId(null);
+      setEditGameName('');
+      showToastMessage('✅ Nom modifié');
+    } catch (error) {
+      console.error('Erreur de modification:', error);
+      showToastMessage('❌ Erreur de modification');
+    }
+  };
+
+  const handleDrop = async (row, col, shelfId) => {
+    if (!draggedGame) return;
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible de déplacer');
+      setDraggedGame(null);
+      return;
+    }
+    
+    const position = `${row}-${col}`;
+
+    // Optimistic update
+    setGames(games.map(g => g.id === draggedGame.id ? { ...g, position, shelf_id: shelfId } : g));
+
+    try {
+      const { error } = await supabase
+        .from('board_games')
         .update({ position, shelf_id: shelfId })
         .eq('id', draggedGame.id);
 
       if (error) throw error;
-      setGames(games.map(g => g.id === draggedGame.id ? { ...g, position, shelf_id: shelfId } : g));
     } catch (error) {
       console.error('Erreur de déplacement:', error);
+      // Rollback
+      await loadData();
     }
 
     setDraggedGame(null);
@@ -195,37 +470,57 @@ export default function Ludotheque() {
 
   const handleDropToDelete = async () => {
     if (draggedGame && draggedGame.position) {
+      if (!isOnline) {
+        showToastMessage('❌ Hors ligne - Impossible de retirer');
+        setDraggedGame(null);
+        setDropZoneActive(false);
+        return;
+      }
+
+      // Optimistic update
+      setGames(games.map(g => g.id === draggedGame.id ? { ...g, position: null, shelf_id: null } : g));
+
       try {
         const { error } = await supabase
-          .from('games')
+          .from('board_games')
           .update({ position: null, shelf_id: null })
           .eq('id', draggedGame.id);
 
         if (error) throw error;
-        setGames(games.map(g => g.id === draggedGame.id ? { ...g, position: null, shelf_id: null } : g));
       } catch (error) {
         console.error('Erreur:', error);
+        await loadData();
       }
+      
       setDraggedGame(null);
       setDropZoneActive(false);
     }
   };
 
   const removeGameFromShelf = async (gameId) => {
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible de retirer');
+      return;
+    }
+
     try {
       const { error } = await supabase
-        .from('games')
+        .from('board_games')
         .update({ position: null, shelf_id: null })
         .eq('id', gameId);
 
       if (error) throw error;
-      setGames(games.map(g => g.id === gameId ? { ...g, position: null, shelf_id: null } : g));
     } catch (error) {
       console.error('Erreur:', error);
     }
   };
 
   const addShelf = async () => {
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible d\'ajouter');
+      return;
+    }
+
     try {
       const maxPosition = shelves.length > 0 ? Math.max(...shelves.map(s => s.position || 0)) : 0;
       const { data, error } = await supabase
@@ -239,24 +534,30 @@ export default function Ludotheque() {
         .select();
 
       if (error) throw error;
-      setShelves([...shelves, ...data]);
+      showToastMessage('✅ Étagère ajoutée');
     } catch (error) {
       console.error('Erreur d\'ajout d\'étagère:', error);
+      showToastMessage('❌ Erreur d\'ajout');
     }
   };
 
   const deleteShelf = async (shelfId) => {
     if (shelves.length === 1) {
-      alert('Vous devez garder au moins une étagère');
+      showToastMessage('⚠️ Gardez au moins une étagère');
       return;
     }
     
     if (!confirm('Supprimer cette étagère ? Les jeux seront replacés dans la liste.')) return;
+    
+    if (!isOnline) {
+      showToastMessage('❌ Hors ligne - Impossible de supprimer');
+      return;
+    }
 
     try {
       // Retirer les jeux de l'étagère
       await supabase
-        .from('games')
+        .from('board_games')
         .update({ position: null, shelf_id: null })
         .eq('shelf_id', shelfId);
 
@@ -267,15 +568,17 @@ export default function Ludotheque() {
         .eq('id', shelfId);
 
       if (error) throw error;
-
-      setShelves(shelves.filter(s => s.id !== shelfId));
-      setGames(games.map(g => g.shelf_id === shelfId ? { ...g, position: null, shelf_id: null } : g));
+      
+      showToastMessage('✅ Étagère supprimée');
     } catch (error) {
       console.error('Erreur de suppression d\'étagère:', error);
+      showToastMessage('❌ Erreur de suppression');
     }
   };
 
   const updateShelfSize = async (shelfId, size) => {
+    if (!isOnline) return;
+
     try {
       const { error } = await supabase
         .from('shelves')
@@ -283,13 +586,14 @@ export default function Ludotheque() {
         .eq('id', shelfId);
 
       if (error) throw error;
-      setShelves(shelves.map(s => s.id === shelfId ? { ...s, size } : s));
     } catch (error) {
       console.error('Erreur:', error);
     }
   };
 
   const updateShelfName = async (shelfId, name) => {
+    if (!isOnline) return;
+
     try {
       const { error } = await supabase
         .from('shelves')
@@ -297,25 +601,50 @@ export default function Ludotheque() {
         .eq('id', shelfId);
 
       if (error) throw error;
-      setShelves(shelves.map(s => s.id === shelfId ? { ...s, name } : s));
     } catch (error) {
       console.error('Erreur:', error);
     }
   };
 
-  // Suite du code ludotheque.js...
+  const handleShelfDragStart = (e, shelf) => {
+    setDraggedShelf(shelf);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleShelfDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleShelfDrop = (e, targetShelf) => {
+    e.preventDefault();
+    
+    if (!draggedShelf || draggedShelf.id === targetShelf.id) {
+      setDraggedShelf(null);
+      return;
+    }
+
+    const newShelves = [...shelves];
+    const draggedIndex = newShelves.findIndex(s => s.id === draggedShelf.id);
+    const targetIndex = newShelves.findIndex(s => s.id === targetShelf.id);
+
+    newShelves.splice(draggedIndex, 1);
+    newShelves.splice(targetIndex, 0, draggedShelf);
+
+    setShelves(newShelves);
+    saveShelfOrder(newShelves);
+    setDraggedShelf(null);
+  };
 
   const generateGameRules = async (game) => {
     setSelectedGame(game);
     setIsLoadingRules(true);
     
-    // Vérifier le cache local
     if (gameRules[game.name]) {
       setIsLoadingRules(false);
       return;
     }
 
-    // Vérifier le cache Supabase
     try {
       const { data: cachedRules, error: cacheError } = await supabase
         .from('game_rules')
@@ -329,10 +658,9 @@ export default function Ludotheque() {
         return;
       }
     } catch (e) {
-      // Pas de cache, on continue
+      // Pas de cache
     }
 
-    // Générer avec l'IA
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -363,7 +691,6 @@ Sois concis et clair (maximum 500 mots).`
       const data = await response.json();
       const rulesText = data.content.find(c => c.type === 'text')?.text || 'Règles non disponibles';
       
-      // Sauvegarder dans le cache Supabase
       await supabase
         .from('game_rules')
         .upsert({ game_name: game.name, rules_text: rulesText });
@@ -377,7 +704,6 @@ Sois concis et clair (maximum 500 mots).`
     setIsLoadingRules(false);
   };
 
-  // Fonctions utilitaires
   const getPlayerColor = (players) => {
     const min = parseInt(players.split('-')[0]);
     if (min === 1) return 'bg-purple-300';
@@ -436,9 +762,32 @@ Sois concis et clair (maximum 500 mots).`
 
   return (
     <div className={`min-h-screen ${bgClass} p-4 sm:p-6 transition-colors duration-300`}>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
+        {/* Toast de notification */}
+        {showToast && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+            {toastMessage}
+          </div>
+        )}
+
+        {/* Message de copie */}
+        {copyMessage && (
+          <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-2xl font-bold text-lg z-50 animate-bounce">
+            {copyMessage}
+          </div>
+        )}
+
+        {/* Statut de synchronisation */}
+        {syncStatus && (
+          <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+            isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+          }`}>
+            {syncStatus}
+          </div>
+        )}
+
         {/* Header */}
-        <div className={`${cardBg} rounded-2xl shadow-xl p-6 sm:p-8 mb-6 transition-colors duration-300`}>
+        <div className={`${cardBg} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -454,7 +803,9 @@ Sois concis et clair (maximum 500 mots).`
               </div>
               <div>
                 <h1 className={`text-2xl sm:text-3xl font-bold ${textPrimary}`}>Ma Ludothèque</h1>
-                <p className={`text-xs sm:text-sm ${textSecondary}`}>Organisez votre collection</p>
+                <p className={`text-xs sm:text-sm ${textSecondary}`}>
+                  Glissez-déposez pour réorganiser • Sync temps réel {isOnline ? '🟢' : '🔴'}
+                </p>
               </div>
             </div>
             <button
@@ -470,8 +821,6 @@ Sois concis et clair (maximum 500 mots).`
           </div>
         </div>
 
-        // Suite du return() dans ludotheque.js après le Header...
-
         {/* Jeux disponibles */}
         <div className={`${cardBg} rounded-xl shadow-lg p-4 sm:p-6 mb-6 transition-colors duration-300`}>
           <h2 className={`text-xl sm:text-2xl font-bold ${textPrimary} mb-4`}>Jeux disponibles</h2>
@@ -485,10 +834,16 @@ Sois concis et clair (maximum 500 mots).`
                 onKeyPress={(e) => e.key === 'Enter' && addNewGame()}
                 placeholder="Nom du jeu..."
                 className={`flex-1 px-4 py-2 border-2 ${inputBg} rounded-lg focus:border-indigo-500 focus:outline-none ${textPrimary} text-sm sm:text-base transition-colors`}
+                disabled={!isOnline}
               />
               <button
                 onClick={addNewGame}
-                className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                disabled={!isOnline}
+                className={`p-2 rounded-lg transition-colors ${
+                  isOnline 
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                }`}
               >
                 <Plus size={24} />
               </button>
@@ -506,7 +861,6 @@ Sois concis et clair (maximum 500 mots).`
             />
           </div>
 
-          {/* Zone de suppression par drag & drop */}
           {draggedGame && draggedGame.position && (
             <div
               onDragOver={(e) => {
@@ -537,56 +891,116 @@ Sois concis et clair (maximum 500 mots).`
               </p>
             ) : (
               filteredUnplacedGames.map(game => (
-                <div
-                  key={game.id}
-                  draggable
-                  onDragStart={() => handleDragStart(game)}
-                  className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white p-3 rounded-lg cursor-move hover:from-indigo-600 hover:to-indigo-700 transition-all group"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <GripVertical size={20} className="flex-shrink-0" />
-                      <span className="font-medium truncate text-sm sm:text-base">{game.name}</span>
+                <div key={game.id} className="relative group">
+                  {editingGameId === game.id ? (
+                    <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-3 rounded-lg">
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={editGameName}
+                          onChange={(e) => setEditGameName(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && saveGameEdit(game.id)}
+                          className={`flex-1 px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm ${
+                            darkMode 
+                              ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                              : 'bg-white border-gray-200 text-gray-900'
+                          }`}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => saveGameEdit(game.id)}
+                          className="flex-1 bg-white text-indigo-600 py-1.5 rounded-lg font-semibold hover:bg-gray-100 transition text-xs"
+                        >
+                          OK
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingGameId(null);
+                            setEditGameName('');
+                          }}
+                          className="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg font-semibold hover:bg-gray-400 transition text-xs"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => duplicateGame(game)}
-                        className="opacity-0 group-hover:opacity-100 hover:bg-indigo-700 p-1 rounded transition-all"
-                        title="Dupliquer"
-                      >
-                        <Copy size={16} />
-                      </button>
-                      <button
-                        onClick={() => deleteGame(game.id)}
-                        className="opacity-0 group-hover:opacity-100 hover:bg-red-500 p-1 rounded transition-all"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                  ) : (
+                    <div
+                      draggable={isOnline}
+                      onDragStart={() => handleDragStart(game)}
+                      className={`bg-gradient-to-r from-indigo-500 to-indigo-600 text-white p-3 rounded-lg transition-all ${
+                        isOnline ? 'cursor-move hover:from-indigo-600 hover:to-indigo-700' : 'cursor-not-allowed opacity-70'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <GripVertical size={20} className="flex-shrink-0" />
+                          <span className="font-medium truncate text-sm sm:text-base">{game.name}</span>
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEditGame(game);
+                            }}
+                            disabled={!isOnline}
+                            className={`p-1 rounded transition-all ${
+                              isOnline ? 'hover:bg-indigo-700' : 'opacity-50 cursor-not-allowed'
+                            }`}
+                            title="Modifier"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => duplicateGame(game)}
+                            disabled={!isOnline}
+                            className={`p-1 rounded transition-all ${
+                              isOnline ? 'hover:bg-indigo-700' : 'opacity-50 cursor-not-allowed'
+                            }`}
+                            title="Dupliquer"
+                          >
+                            <Copy size={16} />
+                          </button>
+                          <button
+                            onClick={() => deleteGame(game.id)}
+                            disabled={!isOnline}
+                            className={`p-1 rounded transition-all ${
+                              isOnline ? 'hover:bg-red-500' : 'opacity-50 cursor-not-allowed'
+                            }`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex gap-3 sm:gap-4 text-xs">
+                        <div className="flex items-center gap-1">
+                          <Users size={12} />
+                          <input
+                            type="text"
+                            value={game.players}
+                            onChange={(e) => updateGameInfo(game.id, 'players', e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={!isOnline}
+                            className="w-12 bg-indigo-700 px-1 rounded"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Clock size={12} />
+                          <input
+                            type="number"
+                            value={game.duration}
+                            onChange={(e) => updateGameInfo(game.id, 'duration', parseInt(e.target.value) || 0)}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={!isOnline}
+                            className="w-12 bg-indigo-700 px-1 rounded"
+                          />
+                          min
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-3 sm:gap-4 text-xs">
-                    <div className="flex items-center gap-1">
-                      <Users size={12} />
-                      <input
-                        type="text"
-                        value={game.players}
-                        onChange={(e) => updateGameInfo(game.id, 'players', e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-12 bg-indigo-700 px-1 rounded"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Clock size={12} />
-                      <input
-                        type="number"
-                        value={game.duration}
-                        onChange={(e) => updateGameInfo(game.id, 'duration', parseInt(e.target.value) || 0)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-12 bg-indigo-700 px-1 rounded"
-                      />
-                      min
-                    </div>
-                  </div>
+                  )}
                 </div>
               ))
             )}
@@ -659,9 +1073,7 @@ Sois concis et clair (maximum 500 mots).`
           </div>
         </div>
 
-        // Suite du JSX (après la section Jeux disponibles)...
-
-        {/* Filtre d'affichage - Boutons */}
+        {/* Filtre d'affichage */}
         <div className={`${cardBg} rounded-xl shadow-lg p-4 mb-6 transition-colors duration-300`}>
           <div className="flex items-center gap-2 mb-3">
             <Filter className="text-indigo-600" size={20} />
@@ -707,7 +1119,12 @@ Sois concis et clair (maximum 500 mots).`
         <div className="space-y-6">
           <button
             onClick={addShelf}
-            className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-colors font-semibold flex items-center justify-center gap-2 text-sm sm:text-base"
+            disabled={!isOnline}
+            className={`w-full py-3 rounded-lg font-semibold flex items-center justify-center gap-2 text-sm sm:text-base transition-colors ${
+              isOnline 
+                ? 'bg-green-600 text-white hover:bg-green-700' 
+                : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+            }`}
           >
             <Plus size={20} />
             Ajouter une étagère
@@ -717,21 +1134,39 @@ Sois concis et clair (maximum 500 mots).`
             const { rows, cols } = shelfConfigs[shelf.size];
             
             return (
-              <div key={shelf.id} className={`${cardBg} rounded-xl shadow-lg p-4 sm:p-6 transition-colors duration-300`}>
+              <div 
+                key={shelf.id} 
+                draggable={isOnline}
+                onDragStart={(e) => handleShelfDragStart(e, shelf)}
+                onDragOver={handleShelfDragOver}
+                onDrop={(e) => handleShelfDrop(e, shelf)}
+                className={`${cardBg} rounded-xl shadow-lg p-4 sm:p-6 transition-all duration-300 ${
+                  draggedShelf?.id === shelf.id ? 'opacity-50' : ''
+                } ${isOnline ? 'cursor-move' : 'cursor-not-allowed opacity-70'}`}
+              >
                 <div className="flex items-center justify-between mb-4">
-                  <input
-                    type="text"
-                    value={shelf.name}
-                    onChange={(e) => updateShelfName(shelf.id, e.target.value)}
-                    className={`text-lg sm:text-xl font-bold ${textPrimary} bg-transparent border-b-2 border-transparent hover:border-indigo-500 focus:border-indigo-500 focus:outline-none px-2 flex-1 transition-colors`}
-                  />
+                  <div className="flex items-center gap-2 flex-1">
+                    <GripVertical className={textSecondary} size={20} />
+                    <input
+                      type="text"
+                      value={shelf.name}
+                      onChange={(e) => updateShelfName(shelf.id, e.target.value)}
+                      disabled={!isOnline}
+                      className={`text-lg sm:text-xl font-bold ${textPrimary} bg-transparent border-b-2 border-transparent hover:border-indigo-500 focus:border-indigo-500 focus:outline-none px-2 flex-1 transition-colors ${
+                        !isOnline ? 'cursor-not-allowed' : ''
+                      }`}
+                    />
+                  </div>
                   {shelves.length > 1 && (
                     <button
                       onClick={() => deleteShelf(shelf.id)}
+                      disabled={!isOnline}
                       className={`p-2 rounded transition-all ml-2 ${
-                        darkMode 
-                          ? 'text-red-400 hover:text-red-300 hover:bg-red-900/20' 
-                          : 'text-red-500 hover:text-red-700 hover:bg-red-50'
+                        isOnline
+                          ? darkMode 
+                            ? 'text-red-400 hover:text-red-300 hover:bg-red-900/20' 
+                            : 'text-red-500 hover:text-red-700 hover:bg-red-50'
+                          : 'opacity-50 cursor-not-allowed'
                       }`}
                     >
                       <Trash2 size={20} />
@@ -743,7 +1178,10 @@ Sois concis et clair (maximum 500 mots).`
                   <select
                     value={shelf.size}
                     onChange={(e) => updateShelfSize(shelf.id, e.target.value)}
-                    className={`w-full px-4 py-2 border-2 ${inputBg} rounded-lg focus:border-indigo-500 focus:outline-none ${textPrimary} text-sm sm:text-base transition-colors`}
+                    disabled={!isOnline}
+                    className={`w-full px-4 py-2 border-2 ${inputBg} rounded-lg focus:border-indigo-500 focus:outline-none ${textPrimary} text-sm sm:text-base transition-colors ${
+                      !isOnline ? 'cursor-not-allowed' : ''
+                    }`}
                   >
                     {Object.entries(shelfConfigs).map(([key, config]) => (
                       <option key={key} value={key}>{config.label}</option>
@@ -778,10 +1216,12 @@ Sois concis et clair (maximum 500 mots).`
                                 {gamesInCell.map((game) => (
                                   <div
                                     key={game.id}
-                                    draggable
+                                    draggable={isOnline}
                                     onDragStart={() => handleDragStart(game)}
                                     onClick={() => generateGameRules(game)}
-                                    className={`${getGameColor(game)} ${shelfViewFilter === 'all' ? (darkMode ? 'hover:bg-gray-600' : 'hover:bg-indigo-50') : ''} p-1.5 sm:p-2 rounded shadow-sm cursor-pointer transition-all group relative ${shelfViewFilter !== 'all' ? 'text-gray-800' : ''}`}
+                                    className={`${getGameColor(game)} ${shelfViewFilter === 'all' ? (darkMode ? 'hover:bg-gray-600' : 'hover:bg-indigo-50') : ''} p-1.5 sm:p-2 rounded shadow-sm cursor-pointer transition-all group relative ${shelfViewFilter !== 'all' ? 'text-gray-800' : ''} ${
+                                      !isOnline ? 'cursor-not-allowed' : ''
+                                    }`}
                                   >
                                     <div className="flex items-start justify-between gap-1">
                                       <span className={`text-[10px] sm:text-xs font-medium ${shelfViewFilter === 'all' ? textPrimary : 'text-gray-800'} line-clamp-2 flex-1`}>
@@ -792,7 +1232,10 @@ Sois concis et clair (maximum 500 mots).`
                                           e.stopPropagation();
                                           removeGameFromShelf(game.id);
                                         }}
-                                        className="opacity-0 group-hover:opacity-100 bg-red-500 text-white p-0.5 rounded hover:bg-red-600 transition-all flex-shrink-0"
+                                        disabled={!isOnline}
+                                        className={`bg-red-500 text-white p-0.5 rounded hover:bg-red-600 transition-all flex-shrink-0 ${
+                                          isOnline ? 'opacity-0 group-hover:opacity-100' : 'opacity-50 cursor-not-allowed'
+                                        }`}
                                       >
                                         <Trash2 size={10} />
                                       </button>
