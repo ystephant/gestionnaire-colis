@@ -1,6 +1,6 @@
 {
-  "name": "Le Petit Meeple - Gestionnaire de Colis",
-  "short_name": "Mes Colis",
+  "name": "Le Petit Meeple",
+  "short_name": "LePetitMeeple",
   "description": "Gérez vos colis de lockers",
   "start_url": "/colis",
   "display": "standalone",
