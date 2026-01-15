@@ -578,48 +578,8 @@ export default function LockerParcelApp() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center">
-        {/* Logo animé */}
-        <div className="mb-8 animate-bounce">
-          <img 
-            src="/meeple_final.png" 
-            alt="Le Petit Meeple" 
-            className="w-32 h-32 object-contain drop-shadow-2xl"
-            onError={(e) => {
-              console.error('Erreur chargement logo');
-              e.target.style.display = 'none';
-            }}
-          />
-        </div>
-
-        <h1 className="text-4xl font-bold text-white mb-6 tracking-tight animate-fade-in">
-          Le Petit Meeple arrive !
-        </h1>
-
-        {/* Barre de progression animée */}
-        <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-gradient-to-r from-indigo-600 to-purple-600 animate-loading-bar"
-            style={{
-              animation: 'loading 1.5s ease-in-out infinite'
-            }}
-          ></div>
-        </div>
-
-        <style jsx>{`
-          @keyframes loading {
-            0% { width: 0%; }
-            50% { width: 70%; }
-            100% { width: 100%; }
-          }
-          .animate-loading-bar {
-            animation: loading 1.5s ease-in-out infinite;
-          }
-        `}</style>
-      </div>
-    );
-  }
+  return null; // L'écran de chargement est géré par _app.js
+}
 
 // ⬇️ IMPORTANT: Le return principal commence ICI
 return (
