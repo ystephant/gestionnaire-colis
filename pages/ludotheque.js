@@ -1049,7 +1049,7 @@ Sois concis et clair (maximum 500 mots).`
                 <div className="grid grid-cols-2 gap-2">
                   <div className="flex items-center gap-2">
                     <div className="w-5 h-5 rounded bg-emerald-300 flex-shrink-0"></div>
-                    <span className={textSecondary}>≤ 30 min</span>
+                    <span className={textSecondary}>{'≤'} 30 min</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-5 h-5 rounded bg-lime-300 flex-shrink-0"></div>
