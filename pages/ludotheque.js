@@ -1,13 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
 import { Search, GripVertical, Trash2, Plus, Grid3x3, Moon, Sun, Copy, Users, Clock, BookOpen, X, Sparkles, Filter, Edit2 } from 'lucide-react';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+// Vérification des variables d'environnement
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Variables d\'environnement Supabase manquantes');
+}
+
+const supabase = supabaseUrl && supabaseKey 
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
 
 const shelfConfigs = {
   '2x2': { rows: 2, cols: 2, label: '77x77 cm (2x2)' },
@@ -38,22 +45,31 @@ export default function Ludotheque() {
   const [editingGameId, setEditingGameId] = useState(null);
   const [editGameName, setEditGameName] = useState('');
   
-  // États pour la synchronisation temps réel
   const [isOnline, setIsOnline] = useState(true);
   const [syncStatus, setSyncStatus] = useState('');
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
+  // Utilisation de useRef au lieu de window pour les canaux
+  const shelvesChannelRef = useRef(null);
+  const gamesChannelRef = useRef(null);
+  const isMountedRef = useRef(false);
+
   // Gestion du statut en ligne/hors ligne
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    isMountedRef.current = true;
     checkAuth();
     
     const handleOnline = () => {
+      if (!isMountedRef.current) return;
       setIsOnline(true);
       setSyncStatus('🟢 En ligne');
     };
     
     const handleOffline = () => {
+      if (!isMountedRef.current) return;
       setIsOnline(false);
       setSyncStatus('🔴 Hors ligne - Mode lecture seule');
     };
@@ -64,54 +80,70 @@ export default function Ludotheque() {
     setSyncStatus(navigator.onLine ? '🟢 En ligne' : '🔴 Hors ligne');
     
     return () => {
+      isMountedRef.current = false;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn && username) {
+    if (!isMountedRef.current) return;
+    
+    if (isLoggedIn && username && supabase) {
       loadData();
       if (isOnline) {
         setupRealtimeSubscription();
       }
     }
+    
+    return () => {
+      if (shelvesChannelRef.current && supabase) {
+        supabase.removeChannel(shelvesChannelRef.current);
+        shelvesChannelRef.current = null;
+      }
+      if (gamesChannelRef.current && supabase) {
+        supabase.removeChannel(gamesChannelRef.current);
+        gamesChannelRef.current = null;
+      }
+    };
   }, [isLoggedIn, isOnline, username]);
 
-  useEffect(() => {
-    return () => {
-      if (window.shelvesChannel) supabase.removeChannel(window.shelvesChannel);
-      if (window.gamesChannel) supabase.removeChannel(window.gamesChannel);
-    };
-  }, []);
-
   const checkAuth = async () => {
+    if (typeof window === 'undefined') return;
+    
     const startTime = Date.now();
     
-    const savedUsername = localStorage.getItem('username');
-    const savedPassword = localStorage.getItem('password');
-    
-    if (savedUsername && savedPassword) {
-      setUsername(savedUsername);
-      setIsLoggedIn(true);
-    } else {
+    try {
+      const savedUsername = localStorage.getItem('username');
+      const savedPassword = localStorage.getItem('password');
+      
+      if (savedUsername && savedPassword) {
+        setUsername(savedUsername);
+        setIsLoggedIn(true);
+      } else {
+        router.push('/');
+        return;
+      }
+      
+      const elapsedTime = Date.now() - startTime;
+      if (elapsedTime < 800) {
+        await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
+      }
+    } catch (error) {
+      console.error('Erreur checkAuth:', error);
       router.push('/');
+    } finally {
+      setLoading(false);
     }
-    
-    const elapsedTime = Date.now() - startTime;
-    if (elapsedTime < 800) {
-      await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
-    }
-    
-    setLoading(false);
   };
 
   const loadShelfOrder = () => {
+    if (typeof window === 'undefined') return null;
+    
     const saved = localStorage.getItem(`shelfOrder_${username}`);
     if (saved) {
       try {
-        const order = JSON.parse(saved);
-        return order;
+        return JSON.parse(saved);
       } catch (e) {
         console.error('Erreur de chargement de l\'ordre:', e);
       }
@@ -120,12 +152,18 @@ export default function Ludotheque() {
   };
 
   const saveShelfOrder = (newOrder) => {
+    if (typeof window === 'undefined') return;
     localStorage.setItem(`shelfOrder_${username}`, JSON.stringify(newOrder.map(s => s.id)));
   };
 
   const loadData = async () => {
+    if (!supabase) {
+      console.error('Supabase non initialisé');
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Charger les étagères
       const { data: shelvesData, error: shelvesError } = await supabase
         .from('shelves')
         .select('*')
@@ -142,7 +180,9 @@ export default function Ludotheque() {
         
         if (createError) throw createError;
         setShelves(newShelf || []);
-        localStorage.setItem(`shelves_${username}`, JSON.stringify(newShelf || []));
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`shelves_${username}`, JSON.stringify(newShelf || []));
+        }
       } else {
         const savedOrder = loadShelfOrder();
         if (savedOrder) {
@@ -151,14 +191,17 @@ export default function Ludotheque() {
             .filter(Boolean)
             .concat(shelvesData.filter(s => !savedOrder.includes(s.id)));
           setShelves(orderedShelves);
-          localStorage.setItem(`shelves_${username}`, JSON.stringify(orderedShelves));
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(`shelves_${username}`, JSON.stringify(orderedShelves));
+          }
         } else {
           setShelves(shelvesData);
-          localStorage.setItem(`shelves_${username}`, JSON.stringify(shelvesData));
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(`shelves_${username}`, JSON.stringify(shelvesData));
+          }
         }
       }
 
-      // Charger les jeux
       const { data: gamesData, error: gamesError } = await supabase
         .from('board_games')
         .select('*')
@@ -167,29 +210,40 @@ export default function Ludotheque() {
 
       if (gamesError) throw gamesError;
       setGames(gamesData || []);
-      localStorage.setItem(`games_${username}`, JSON.stringify(gamesData || []));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`games_${username}`, JSON.stringify(gamesData || []));
+      }
 
     } catch (error) {
       console.error('Erreur de chargement:', error);
       
-      // Charger depuis le cache en cas d'erreur
-      const cachedShelves = localStorage.getItem(`shelves_${username}`);
-      const cachedGames = localStorage.getItem(`games_${username}`);
-      
-      if (cachedShelves) {
-        setShelves(JSON.parse(cachedShelves));
-        setSyncStatus('🟡 Données en cache');
-      }
-      if (cachedGames) {
-        setGames(JSON.parse(cachedGames));
+      if (typeof window !== 'undefined') {
+        const cachedShelves = localStorage.getItem(`shelves_${username}`);
+        const cachedGames = localStorage.getItem(`games_${username}`);
+        
+        if (cachedShelves) {
+          setShelves(JSON.parse(cachedShelves));
+          setSyncStatus('🟡 Données en cache');
+        }
+        if (cachedGames) {
+          setGames(JSON.parse(cachedGames));
+        }
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const setupRealtimeSubscription = () => {
-    // Canal pour les étagères
+const setupRealtimeSubscription = () => {
+    if (!supabase || !username) return;
+
+    if (shelvesChannelRef.current) {
+      supabase.removeChannel(shelvesChannelRef.current);
+    }
+    if (gamesChannelRef.current) {
+      supabase.removeChannel(gamesChannelRef.current);
+    }
+
     const shelvesChannel = supabase
       .channel(`shelves-${username}`)
       .on('postgres_changes',
@@ -200,6 +254,8 @@ export default function Ludotheque() {
           filter: `user_id=eq.${username}`
         },
         (payload) => {
+          if (!isMountedRef.current) return;
+          
           console.log('📡 Changement étagère temps réel:', payload);
           
           if (payload.eventType === 'INSERT') {
@@ -210,25 +266,33 @@ export default function Ludotheque() {
                 return prev;
               }
               const updated = [...prev, payload.new];
-              localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              }
               return updated;
             });
           } else if (payload.eventType === 'UPDATE') {
             setShelves(prev => {
               const updated = prev.map(s => s.id === payload.new.id ? payload.new : s);
-              localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              }
               return updated;
             });
           } else if (payload.eventType === 'DELETE') {
             setShelves(prev => {
               const updated = prev.filter(s => s.id !== payload.old.id);
-              localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`shelves_${username}`, JSON.stringify(updated));
+              }
               return updated;
             });
           }
         }
       )
       .subscribe((status) => {
+        if (!isMountedRef.current) return;
+        
         if (status === 'SUBSCRIBED') {
           console.log('✅ Temps réel étagères activé');
         } else if (status === 'CHANNEL_ERROR') {
@@ -237,7 +301,6 @@ export default function Ludotheque() {
         }
       });
 
-    // Canal pour les jeux
     const gamesChannel = supabase
       .channel(`games-${username}`)
       .on('postgres_changes',
@@ -248,6 +311,8 @@ export default function Ludotheque() {
           filter: `user_id=eq.${username}`
         },
         (payload) => {
+          if (!isMountedRef.current) return;
+          
           console.log('📡 Changement jeu temps réel:', payload);
           
           if (payload.eventType === 'INSERT') {
@@ -258,26 +323,34 @@ export default function Ludotheque() {
                 return prev;
               }
               const updated = [payload.new, ...prev];
-              localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              }
               showToastMessage('✅ Nouveau jeu ajouté');
               return updated;
             });
           } else if (payload.eventType === 'UPDATE') {
             setGames(prev => {
               const updated = prev.map(g => g.id === payload.new.id ? payload.new : g);
-              localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              }
               return updated;
             });
           } else if (payload.eventType === 'DELETE') {
             setGames(prev => {
               const updated = prev.filter(g => g.id !== payload.old.id);
-              localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`games_${username}`, JSON.stringify(updated));
+              }
               return updated;
             });
           }
         }
       )
       .subscribe((status) => {
+        if (!isMountedRef.current) return;
+        
         if (status === 'SUBSCRIBED') {
           console.log('✅ Temps réel jeux activé');
           setSyncStatus('🟢 Synchronisé en temps réel');
@@ -287,23 +360,33 @@ export default function Ludotheque() {
         }
       });
 
-    window.shelvesChannel = shelvesChannel;
-    window.gamesChannel = gamesChannel;
+    shelvesChannelRef.current = shelvesChannel;
+    gamesChannelRef.current = gamesChannel;
   };
 
   const showToastMessage = (message) => {
+    if (!isMountedRef.current) return;
     setToastMessage(message);
     setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        setShowToast(false);
+      }
+    }, 3000);
   };
 
   const showCopyMessage = (message) => {
+    if (!isMountedRef.current) return;
     setCopyMessage(message);
-    setTimeout(() => setCopyMessage(''), 3000);
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        setCopyMessage('');
+      }
+    }, 3000);
   };
 
   const addNewGame = async () => {
-    if (!newGameName.trim()) return;
+    if (!newGameName.trim() || !supabase) return;
     
     if (!isOnline) {
       showToastMessage('❌ Hors ligne - Impossible d\'ajouter');
@@ -334,7 +417,7 @@ export default function Ludotheque() {
   };
 
   const duplicateGame = async (game) => {
-    if (!isOnline) {
+    if (!isOnline || !supabase) {
       showToastMessage('❌ Hors ligne - Impossible de dupliquer');
       return;
     }
@@ -361,14 +444,13 @@ export default function Ludotheque() {
   };
 
   const deleteGame = async (gameId) => {
-    if (!confirm('Supprimer ce jeu définitivement ?')) return;
+    if (!confirm('Supprimer ce jeu définitivement ?') || !supabase) return;
     
     if (!isOnline) {
       showToastMessage('❌ Hors ligne - Impossible de supprimer');
       return;
     }
 
-    // Optimistic update
     const gameToDelete = games.find(g => g.id === gameId);
     setGames(prev => prev.filter(g => g.id !== gameId));
 
@@ -379,7 +461,6 @@ export default function Ludotheque() {
         .eq('id', gameId);
 
       if (error) {
-        // Rollback en cas d'erreur
         setGames(prev => [...prev, gameToDelete]);
         throw error;
       }
@@ -392,7 +473,7 @@ export default function Ludotheque() {
   };
 
   const updateGameInfo = async (gameId, field, value) => {
-    if (!isOnline) return;
+    if (!isOnline || !supabase) return;
 
     try {
       const { error } = await supabase
@@ -412,7 +493,7 @@ export default function Ludotheque() {
   };
 
   const saveGameEdit = async (gameId) => {
-    if (!editGameName.trim()) return;
+    if (!editGameName.trim() || !supabase) return;
     
     if (!isOnline) {
       showToastMessage('❌ Hors ligne - Impossible de modifier');
@@ -439,7 +520,7 @@ export default function Ludotheque() {
   };
 
   const handleDrop = async (row, col, shelfId) => {
-    if (!draggedGame) return;
+    if (!draggedGame || !supabase) return;
     if (!isOnline) {
       showToastMessage('❌ Hors ligne - Impossible de déplacer');
       setDraggedGame(null);
@@ -447,8 +528,6 @@ export default function Ludotheque() {
     }
     
     const position = `${row}-${col}`;
-
-    // Optimistic update
     setGames(games.map(g => g.id === draggedGame.id ? { ...g, position, shelf_id: shelfId } : g));
 
     try {
@@ -460,7 +539,6 @@ export default function Ludotheque() {
       if (error) throw error;
     } catch (error) {
       console.error('Erreur de déplacement:', error);
-      // Rollback
       await loadData();
     }
 
@@ -469,7 +547,7 @@ export default function Ludotheque() {
   };
 
   const handleDropToDelete = async () => {
-    if (draggedGame && draggedGame.position) {
+    if (draggedGame && draggedGame.position && supabase) {
       if (!isOnline) {
         showToastMessage('❌ Hors ligne - Impossible de retirer');
         setDraggedGame(null);
@@ -477,7 +555,6 @@ export default function Ludotheque() {
         return;
       }
 
-      // Optimistic update
       setGames(games.map(g => g.id === draggedGame.id ? { ...g, position: null, shelf_id: null } : g));
 
       try {
@@ -498,7 +575,7 @@ export default function Ludotheque() {
   };
 
   const removeGameFromShelf = async (gameId) => {
-    if (!isOnline) {
+    if (!isOnline || !supabase) {
       showToastMessage('❌ Hors ligne - Impossible de retirer');
       return;
     }
@@ -516,7 +593,7 @@ export default function Ludotheque() {
   };
 
   const addShelf = async () => {
-    if (!isOnline) {
+    if (!isOnline || !supabase) {
       showToastMessage('❌ Hors ligne - Impossible d\'ajouter');
       return;
     }
@@ -547,7 +624,7 @@ export default function Ludotheque() {
       return;
     }
     
-    if (!confirm('Supprimer cette étagère ? Les jeux seront replacés dans la liste.')) return;
+    if (!confirm('Supprimer cette étagère ? Les jeux seront replacés dans la liste.') || !supabase) return;
     
     if (!isOnline) {
       showToastMessage('❌ Hors ligne - Impossible de supprimer');
@@ -555,13 +632,11 @@ export default function Ludotheque() {
     }
 
     try {
-      // Retirer les jeux de l'étagère
       await supabase
         .from('board_games')
         .update({ position: null, shelf_id: null })
         .eq('shelf_id', shelfId);
 
-      // Supprimer l'étagère
       const { error } = await supabase
         .from('shelves')
         .delete()
@@ -577,7 +652,7 @@ export default function Ludotheque() {
   };
 
   const updateShelfSize = async (shelfId, size) => {
-    if (!isOnline) return;
+    if (!isOnline || !supabase) return;
 
     try {
       const { error } = await supabase
@@ -592,7 +667,7 @@ export default function Ludotheque() {
   };
 
   const updateShelfName = async (shelfId, name) => {
-    if (!isOnline) return;
+    if (!isOnline || !supabase) return;
 
     try {
       const { error } = await supabase
@@ -636,11 +711,16 @@ export default function Ludotheque() {
     setDraggedShelf(null);
   };
 
-  const generateGameRules = async (game) => {
+const generateGameRules = async (game) => {
     setSelectedGame(game);
     setIsLoadingRules(true);
     
     if (gameRules[game.name]) {
+      setIsLoadingRules(false);
+      return;
+    }
+
+    if (!supabase) {
       setIsLoadingRules(false);
       return;
     }
@@ -691,9 +771,11 @@ Sois concis et clair (maximum 500 mots).`
       const data = await response.json();
       const rulesText = data.content.find(c => c.type === 'text')?.text || 'Règles non disponibles';
       
-      await supabase
-        .from('game_rules')
-        .upsert({ game_name: game.name, rules_text: rulesText });
+      if (supabase) {
+        await supabase
+          .from('game_rules')
+          .upsert({ game_name: game.name, rules_text: rulesText });
+      }
 
       setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
     } catch (error) {
@@ -760,24 +842,32 @@ Sois concis et clair (maximum 500 mots).`
     );
   }
 
-  return (
+  if (!supabase) {
+    return (
+      <div className={`min-h-screen ${bgClass} flex items-center justify-center transition-colors`}>
+        <div className={`text-xl ${textPrimary} text-center p-8`}>
+          <p>Erreur de configuration</p>
+          <p className="text-sm mt-2">Vérifiez vos variables d'environnement Supabase</p>
+        </div>
+      </div>
+    );
+  }
+
+return (
     <div className={`min-h-screen ${bgClass} p-4 sm:p-6 transition-colors duration-300`}>
       <div className="max-w-7xl mx-auto">
-        {/* Toast de notification */}
         {showToast && (
           <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
             {toastMessage}
           </div>
         )}
 
-        {/* Message de copie */}
         {copyMessage && (
           <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-2xl font-bold text-lg z-50 animate-bounce">
             {copyMessage}
           </div>
         )}
 
-        {/* Statut de synchronisation */}
         {syncStatus && (
           <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
             isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
@@ -786,7 +876,6 @@ Sois concis et clair (maximum 500 mots).`
           </div>
         )}
 
-        {/* Header */}
         <div className={`${cardBg} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -821,7 +910,6 @@ Sois concis et clair (maximum 500 mots).`
           </div>
         </div>
 
-        {/* Jeux disponibles */}
         <div className={`${cardBg} rounded-xl shadow-lg p-4 sm:p-6 mb-6 transition-colors duration-300`}>
           <h2 className={`text-xl sm:text-2xl font-bold ${textPrimary} mb-4`}>Jeux disponibles</h2>
           
@@ -1006,8 +1094,7 @@ Sois concis et clair (maximum 500 mots).`
             )}
           </div>
 
-          {/* Légende des couleurs */}
-          <div className={`mt-6 pt-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+<div className={`mt-6 pt-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
             <div className="flex items-center gap-2 mb-3">
               <Filter size={16} className={textSecondary} />
               <span className={`text-sm font-semibold ${textSecondary}`}>Légende des couleurs</span>
@@ -1065,7 +1152,7 @@ Sois concis et clair (maximum 500 mots).`
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-5 h-5 rounded bg-red-300 flex-shrink-0"></div>
-                    <span className={textSecondary}>{'>'}  120 min</span>
+                    <span className={textSecondary}>{'>'} 120 min</span>
                   </div>
                 </div>
               </div>
@@ -1073,7 +1160,6 @@ Sois concis et clair (maximum 500 mots).`
           </div>
         </div>
 
-        {/* Filtre d'affichage */}
         <div className={`${cardBg} rounded-xl shadow-lg p-4 mb-6 transition-colors duration-300`}>
           <div className="flex items-center gap-2 mb-3">
             <Filter className="text-indigo-600" size={20} />
@@ -1115,7 +1201,6 @@ Sois concis et clair (maximum 500 mots).`
           </div>
         </div>
 
-        {/* Étagères */}
         <div className="space-y-6">
           <button
             onClick={addShelf}
@@ -1270,7 +1355,6 @@ Sois concis et clair (maximum 500 mots).`
         </div>
       </div>
 
-      {/* Modal des règles */}
       {selectedGame && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className={`${cardBg} rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col transition-colors duration-300`}>
