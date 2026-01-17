@@ -36,6 +36,8 @@ export default function LockerParcelApp() {
   const [toastMessage, setToastMessage] = useState('');
   const [filterLockerType, setFilterLockerType] = useState('all');
   const [filterLocation, setFilterLocation] = useState('all');
+  const [customLocation, setCustomLocation] = useState('');
+  const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [oneSignalReady, setOneSignalReady] = useState(false);
 
   // ⚠️ GARDEZ TOUS VOS useEffect EXACTEMENT COMME ILS SONT
@@ -513,26 +515,33 @@ export default function LockerParcelApp() {
   };
 
   const getPickupLocationName = (location) => { 
-    switch(location) { 
-      case 'hyper-u-locker': return '🏪 Hyper U - Locker'; 
-      case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; 
-      case 'intermarche-locker': return '🛒 Intermarché - Locker'; 
-      case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; 
-      case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; 
-      default: return location; 
-    } 
-  };
+  if (location.startsWith('custom:')) {
+    return `📍 Autre point de retrait (${location.replace('custom:', '')})`;
+  }
+  switch(location) { 
+    case 'hyper-u-locker': return '🏪 Hyper U - Locker'; 
+    case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; 
+    case 'intermarche-locker': return '🛒 Intermarché - Locker'; 
+    case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; 
+    case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; 
+    default: return location; 
+  } 
+};
 
   const getFilteredParcels = (parcelsList) => { 
-    let filtered = parcelsList; 
-    if (filterLockerType !== 'all') {
-      filtered = filtered.filter(p => p.locker_type === filterLockerType); 
+  let filtered = parcelsList; 
+  if (filterLockerType !== 'all') {
+    filtered = filtered.filter(p => p.locker_type === filterLockerType); 
+  }
+  if (filterLocation !== 'all') {
+    if (filterLocation === 'custom') {
+      filtered = filtered.filter(p => p.location.startsWith('custom:'));
+    } else {
+      filtered = filtered.filter(p => p.location === filterLocation);
     }
-    if (filterLocation !== 'all') {
-      filtered = filtered.filter(p => p.location === filterLocation); 
-    }
-    return filtered; 
-  };
+  }
+  return filtered; 
+};
 
   const getCountByLockerType = (type) => { 
     if (type === 'all') return pendingParcels.length; 
@@ -716,36 +725,62 @@ return (
             />
             
             <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4 transition-colors duration-300`}>
-              <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Lieu de récupération du colis :</p>
-              <div className="space-y-2">
-                {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
-                  <label key={loc} className="flex items-center gap-3 cursor-pointer">
-                    <input 
-                      type="radio" 
-                      name="pickupLocation" 
-                      value={loc} 
-                      checked={pickupLocation === loc} 
-                      onChange={(e) => setPickupLocation(e.target.value)} 
-                      className="w-4 h-4 text-indigo-600" 
-                    />
-                    <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>{getPickupLocationName(loc)}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <button 
-              onClick={addParcels} 
-              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              Ajouter les colis
-            </button>
-          </div>
-        </div>
+  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Lieu de récupération du colis :</p>
+  <div className="space-y-2">
+    {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
+      <label key={loc} className="flex items-center gap-3 cursor-pointer">
+        <input 
+          type="radio" 
+          name="pickupLocation" 
+          value={loc} 
+          checked={pickupLocation === loc && !showCustomLocationInput} 
+          onChange={(e) => {
+            setPickupLocation(e.target.value);
+            setShowCustomLocationInput(false);
+            setCustomLocation('');
+          }} 
+          className="w-4 h-4 text-indigo-600" 
+        />
+        <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>{getPickupLocationName(loc)}</span>
+      </label>
+    ))}
+    
+    {/* Nouveau : Autre point de retrait */}
+    <label className="flex items-center gap-3 cursor-pointer">
+      <input 
+        type="radio" 
+        name="pickupLocation" 
+        checked={showCustomLocationInput} 
+        onChange={() => {
+          setShowCustomLocationInput(true);
+          setPickupLocation('custom:');
+        }} 
+        className="w-4 h-4 text-indigo-600" 
+      />
+      <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>📍 Autre point de retrait</span>
+    </label>
+    
+    {/* Champ de saisie du commentaire */}
+    {showCustomLocationInput && (
+      <div className="ml-7 mt-2">
+        <input
+          type="text"
+          value={customLocation}
+          onChange={(e) => {
+            setCustomLocation(e.target.value);
+            setPickupLocation(`custom:${e.target.value}`);
+          }}
+          placeholder="Ex: Ecomiam, Maison, Bureau..."
+          className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm transition-colors duration-300 ${
+            darkMode 
+              ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400' 
+              : 'bg-white border-gray-300 text-gray-900'
+          }`}
+        />
+      </div>
+    )}
+  </div>
+</div>
 
         {/* SECTION FILTRES - GARDEZ LA LOGIQUE MAIS CHANGEZ LES CLASSES */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
@@ -840,7 +875,23 @@ return (
                     {usedLocations.includes('intermarche-locker') && (<button onClick={() => setFilterLocation('intermarche-locker')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-locker' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Locker</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-locker')}</span></button>)}
                     {usedLocations.includes('intermarche-accueil') && (<button onClick={() => setFilterLocation('intermarche-accueil')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-accueil' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Accueil</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-accueil')}</span></button>)}
                     {usedLocations.includes('rond-point-noyal') && (<button onClick={() => setFilterLocation('rond-point-noyal')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>📍 Rond point Noyal</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('rond-point-noyal')}</span></button>)}
+                    {usedLocations.includes('rond-point-noyal') && (<button onClick={() => setFilterLocation('rond-point-noyal')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>📍 Rond point Noyal</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('rond-point-noyal')}</span></button>)}
+                    {usedLocations.some(loc => loc.startsWith('custom:')) && (
+                      <button 
+                        onClick={() => setFilterLocation('custom')} 
+                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                          filterLocation === 'custom' ? 'bg-gray-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>📍 Autres lieux</span>
+                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                          {pendingParcels.filter(p => p.location.startsWith('custom:')).length}
+                        </span>
+                      </button>
+                    )}
                   </div>
+                </div>
+                      </div>
                 </div>
               );
             }
@@ -966,6 +1017,11 @@ return (
                             <option value="intermarche-locker">🛒 Intermarché - Locker</option>
                             <option value="intermarche-accueil">🛒 Intermarché - Accueil</option>
                             <option value="rond-point-noyal">📍 Rond point Noyal - Locker</option>
+                            {parcel.location.startsWith('custom:') && (
+                              <option value={parcel.location}>
+                              📍 Autre point de retrait ({parcel.location.replace('custom:', '')})
+                              </option>
+                            )}
                           </select>
                         </div>
                         
