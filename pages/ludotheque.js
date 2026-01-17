@@ -37,10 +37,10 @@ const gameTypeOptions = [
 ];
 
 export default function Ludotheque() {
-  const [darkMode, setDarkMode] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
-  const [username, setUsername] = useState('demo_user');
-  const [loading, setLoading] = useState(false);
+  const [darkMode, setDarkMode] = useState(true); // Mode sombre par défaut
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState('');
+  const [loading, setLoading] = useState(true);
   
   const [shelves, setShelves] = useState([]);
   const [games, setGames] = useState([]);
@@ -64,6 +64,8 @@ export default function Ludotheque() {
   const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
+    checkAuth();
+    
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     
@@ -82,6 +84,27 @@ export default function Ludotheque() {
       loadData();
     }
   }, [isLoggedIn, username]);
+
+  const checkAuth = async () => {
+    const savedUsername = localStorage.getItem('username');
+    const savedPassword = localStorage.getItem('password');
+    
+    if (savedUsername && savedPassword) {
+      setUsername(savedUsername);
+      setIsLoggedIn(true);
+    } else {
+      // Redirection vers la page d'accueil
+      window.location.href = '/';
+    }
+    
+    setLoading(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('username');
+    localStorage.removeItem('password');
+    window.location.href = '/';
+  };
 
   const loadData = async () => {
     try {
@@ -173,6 +196,7 @@ export default function Ludotheque() {
 
       if (error) throw error;
       setGames([...games, ...data]);
+      showToastMessage(`✅ "${game.name}" dupliqué`);
     } catch (error) {
       console.error('Erreur:', error);
     }
@@ -189,6 +213,7 @@ export default function Ludotheque() {
 
       if (error) throw error;
       setGames(games.filter(g => g.id !== gameId));
+      showToastMessage('🗑️ Jeu supprimé');
     } catch (error) {
       console.error('Erreur:', error);
     }
@@ -357,6 +382,7 @@ export default function Ludotheque() {
       return;
     }
 
+    // Vérifier le cache
     try {
       const { data: cachedRules, error: cacheError } = await supabase
         .from('game_rules')
@@ -374,37 +400,51 @@ export default function Ludotheque() {
       // Pas de cache
     }
 
+    // Générer avec Gemini API
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.NEXT_PUBLIC_GEMINI_API_KEY}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY,
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [
-            { 
-              role: "user", 
-              content: `Génère un résumé des règles du jeu de société "${game.name}" en français avec : But du jeu, Nombre de joueurs (${game.players}), Durée (${game.duration} min), Matériel, Déroulement, Conditions de victoire. Maximum 500 mots.`
-            }
-          ],
+          contents: [{
+            parts: [{
+              text: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français. 
+
+Structure attendue:
+- **But du jeu**: Objectif principal
+- **Nombre de joueurs**: ${game.players}
+- **Durée**: ${game.duration} minutes
+- **Matériel**: Liste du matériel nécessaire
+- **Mise en place**: Comment préparer le jeu
+- **Déroulement**: Tour de jeu détaillé
+- **Conditions de victoire**: Comment gagner
+
+Maximum 600 mots. Sois précis et clair.`
+            }]
+          }]
         })
       });
 
       const data = await response.json();
-      const rulesText = data.content.find(c => c.type === 'text')?.text || 'Règles non disponibles';
       
-      await supabase
-        .from('game_rules')
-        .upsert({ game_name: game.name, rules_text: rulesText });
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        const rulesText = data.candidates[0].content.parts[0].text;
+        
+        // Sauvegarder dans le cache
+        await supabase
+          .from('game_rules')
+          .upsert({ game_name: game.name, rules_text: rulesText });
 
-      setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
-      setEditedRules(rulesText);
+        setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
+        setEditedRules(rulesText);
+      } else {
+        throw new Error('Réponse invalide de Gemini');
+      }
     } catch (error) {
       console.error('Erreur IA:', error);
-      const errorMsg = 'Erreur lors du chargement des règles.';
+      const errorMsg = 'Erreur lors du chargement des règles. Vous pouvez les saisir manuellement.';
       setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
       setEditedRules(errorMsg);
     }
@@ -456,36 +496,21 @@ export default function Ludotheque() {
   };
 
   const matchesFilters = (game) => {
-    // Filtres joueurs
     if (selectedPlayers.length > 0) {
       const playerCat = getPlayerCategory(game.players);
       if (!selectedPlayers.includes(playerCat)) return false;
     }
     
-    // Filtres durée
     if (selectedDurations.length > 0) {
       const durationCat = getDurationCategory(game.duration);
       if (!selectedDurations.includes(durationCat)) return false;
     }
     
-    // Filtres type
     if (selectedTypes.length > 0) {
       if (!selectedTypes.includes(game.game_type)) return false;
     }
     
     return true;
-  };
-
-  const getPlayerColor = (players) => {
-    const category = getPlayerCategory(players);
-    const option = playerOptions.find(o => o.value === category);
-    return option?.color || (darkMode ? 'bg-slate-600' : 'bg-slate-300');
-  };
-
-  const getDurationColor = (duration) => {
-    const category = getDurationCategory(duration);
-    const option = durationOptions.find(o => o.value === category);
-    return option?.color || 'bg-gray-300';
   };
 
   const handleDragStart = (game) => setDraggedGame(game);
@@ -520,7 +545,7 @@ export default function Ludotheque() {
     <div className={`min-h-screen ${bgClass} p-2 sm:p-4 md:p-6`}>
       <div className="max-w-7xl mx-auto">
         {showToast && (
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50">
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
             {toastMessage}
           </div>
         )}
@@ -529,6 +554,15 @@ export default function Ludotheque() {
         <div className={`${cardBg} rounded-2xl shadow-xl p-3 sm:p-6 mb-4 sm:mb-6`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                onClick={handleLogout}
+                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
+                title="Retour à l'accueil"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="sm:w-6 sm:h-6">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
               <div className="bg-indigo-600 p-2 sm:p-3 rounded-xl">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="sm:w-7 sm:h-7">
                   <rect x="3" y="3" width="7" height="7"/>
@@ -540,18 +574,23 @@ export default function Ludotheque() {
               <div>
                 <h1 className={`text-xl sm:text-2xl md:text-3xl font-bold ${textPrimary}`}>Ma Ludothèque</h1>
                 <p className={`text-xs sm:text-sm ${textSecondary}`}>
-                  {isOnline ? '🟢 En ligne' : '🔴 Hors ligne'}
+                  {username} • {isOnline ? '🟢 En ligne' : '🔴 Hors ligne'}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`p-2 sm:p-3 rounded-xl ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+              className={`p-2 sm:p-3 rounded-xl transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
             >
               {darkMode ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="5"/>
                   <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
                 </svg>
               ) : (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -564,7 +603,12 @@ export default function Ludotheque() {
 
         {/* Filtres */}
         <div className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 mb-4 sm:mb-6`}>
-          <h2 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-3 sm:mb-4`}>Filtres</h2>
+          <h2 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-3 sm:mb-4 flex items-center gap-2`}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            </svg>
+            Filtres
+          </h2>
           
           {/* Filtre joueurs */}
           <div className="mb-3 sm:mb-4">
@@ -576,8 +620,8 @@ export default function Ludotheque() {
                   onClick={() => toggleFilter(selectedPlayers, setSelectedPlayers, option.value)}
                   className={`p-2 sm:p-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     selectedPlayers.includes(option.value)
-                      ? `${option.color} ring-2 ring-offset-2 ring-indigo-600 text-gray-800`
-                      : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
+                      ? `${option.color} ring-2 ring-offset-2 ring-indigo-600 text-gray-800 scale-105`
+                      : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   {option.label}
@@ -596,8 +640,8 @@ export default function Ludotheque() {
                   onClick={() => toggleFilter(selectedDurations, setSelectedDurations, option.value)}
                   className={`p-2 sm:p-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     selectedDurations.includes(option.value)
-                      ? `${option.color} ring-2 ring-offset-2 ring-indigo-600 text-gray-800`
-                      : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
+                      ? `${option.color} ring-2 ring-offset-2 ring-indigo-600 text-gray-800 scale-105`
+                      : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   {option.label}
@@ -616,8 +660,8 @@ export default function Ludotheque() {
                   onClick={() => toggleFilter(selectedTypes, setSelectedTypes, option.value)}
                   className={`p-2 sm:p-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     selectedTypes.includes(option.value)
-                      ? 'bg-indigo-600 text-white ring-2 ring-offset-2 ring-indigo-600'
-                      : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
+                      ? 'bg-indigo-600 text-white ring-2 ring-offset-2 ring-indigo-600 scale-105'
+                      : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   {option.label}
@@ -633,9 +677,9 @@ export default function Ludotheque() {
                 setSelectedDurations([]);
                 setSelectedTypes([]);
               }}
-              className="w-full py-2 text-sm text-indigo-600 hover:bg-indigo-50 dark:hover:bg-gray-700 rounded-lg transition"
+              className="w-full py-2 text-sm text-indigo-600 hover:bg-indigo-50 dark:hover:bg-gray-700 rounded-lg transition font-semibold"
             >
-              Réinitialiser les filtres
+              ✕ Réinitialiser les filtres
             </button>
           )}
         </div>
@@ -643,7 +687,9 @@ export default function Ludotheque() {
         {/* Jeux disponibles */}
         {filteredUnplacedGames.length > 0 && (
           <div className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6 mb-4 sm:mb-6`}>
-            <h2 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-3 sm:mb-4`}>Jeux disponibles</h2>
+            <h2 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-3 sm:mb-4`}>
+              Jeux disponibles ({filteredUnplacedGames.length})
+            </h2>
             
             <div className="mb-3 sm:mb-4 flex gap-2">
               <input
@@ -651,14 +697,15 @@ export default function Ludotheque() {
                 value={newGameName}
                 onChange={(e) => setNewGameName(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addNewGame()}
-                placeholder="Nom du jeu..."
-                className={`flex-1 px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base`}
+                placeholder="Ajouter un nouveau jeu..."
+                className={`flex-1 px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
                 disabled={!isOnline}
               />
               <button
                 onClick={addNewGame}
                 disabled={!isOnline}
-                className={`p-2 rounded-lg ${isOnline ? 'bg-indigo-600 text-white' : 'bg-gray-400 text-gray-200'}`}
+                className={`p-2 rounded-lg transition ${isOnline ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-gray-200 cursor-not-allowed'}`}
+                title="Ajouter le jeu"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="12" y1="5" x2="12" y2="19"/>
@@ -676,8 +723,8 @@ export default function Ludotheque() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Rechercher..."
-                className={`w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base`}
+                placeholder="Rechercher un jeu..."
+                className={`w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
               />
             </div>
 
@@ -689,9 +736,9 @@ export default function Ludotheque() {
                 }}
                 onDragLeave={() => setDropZoneActive(false)}
                 onDrop={handleDropToDelete}
-                className={`mb-3 sm:mb-4 p-4 sm:p-6 border-4 border-dashed rounded-lg ${
+                className={`mb-3 sm:mb-4 p-4 sm:p-6 border-4 border-dashed rounded-lg transition-all ${
                   dropZoneActive 
-                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20' 
+                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20 scale-105' 
                     : 'border-gray-300 bg-gray-50 dark:bg-gray-700'
                 }`}
               >
@@ -700,8 +747,8 @@ export default function Ludotheque() {
                     <polyline points="3 6 5 6 21 6"/>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
                   </svg>
-                  <span className={dropZoneActive ? 'text-red-500' : textSecondary}>
-                    Glissez ici pour retirer
+                  <span className={dropZoneActive ? 'text-red-500 font-bold' : textSecondary}>
+                    Glissez ici pour retirer de l'étagère
                   </span>
                 </div>
               </div>
@@ -713,7 +760,7 @@ export default function Ludotheque() {
                   key={game.id}
                   draggable={isOnline}
                   onDragStart={() => handleDragStart(game)}
-                  className={`bg-gradient-to-r from-indigo-500 to-indigo-600 text-white p-2 sm:p-3 rounded-lg group ${isOnline ? 'cursor-move' : 'opacity-70'}`}
+                  className={`bg-gradient-to-r from-indigo-500 to-indigo-600 text-white p-2 sm:p-3 rounded-lg group transition-all hover:shadow-lg ${isOnline ? 'cursor-move hover:scale-102' : 'opacity-70'}`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium flex-1 text-sm sm:text-base">{game.name}</span>
@@ -721,7 +768,8 @@ export default function Ludotheque() {
                       <button
                         onClick={() => duplicateGame(game)}
                         disabled={!isOnline}
-                        className="p-1 rounded hover:bg-indigo-700"
+                        className="p-1 rounded hover:bg-indigo-700 transition"
+                        title="Dupliquer"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <rect x="9" y="9" width="13" height="13" rx="2"/>
@@ -731,7 +779,8 @@ export default function Ludotheque() {
                       <button
                         onClick={() => deleteGame(game.id)}
                         disabled={!isOnline}
-                        className="p-1 rounded hover:bg-red-500"
+                        className="p-1 rounded hover:bg-red-500 transition"
+                        title="Supprimer"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <polyline points="3 6 5 6 21 6"/>
@@ -751,7 +800,8 @@ export default function Ludotheque() {
                         value={game.players}
                         onChange={(e) => updateGameInfo(game.id, 'players', e.target.value)}
                         disabled={!isOnline}
-                        className="w-12 bg-indigo-700 px-1 rounded"
+                        className="w-14 bg-indigo-700 px-1 rounded focus:ring-2 focus:ring-white"
+                        placeholder="2-4"
                       />
                     </div>
                     <div className="flex items-center gap-1">
@@ -764,16 +814,17 @@ export default function Ludotheque() {
                         value={game.duration}
                         onChange={(e) => updateGameInfo(game.id, 'duration', parseInt(e.target.value) || 0)}
                         disabled={!isOnline}
-                        className="w-12 bg-indigo-700 px-1 rounded"
+                        className="w-14 bg-indigo-700 px-1 rounded focus:ring-2 focus:ring-white"
+                        placeholder="60"
                       />
-                      min
+                      <span>min</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <select
                         value={game.game_type || 'Versus'}
                         onChange={(e) => updateGameInfo(game.id, 'game_type', e.target.value)}
                         disabled={!isOnline}
-                        className="bg-indigo-700 px-1 rounded text-xs"
+                        className="bg-indigo-700 px-1 rounded text-xs focus:ring-2 focus:ring-white"
                       >
                         {gameTypeOptions.map(opt => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -792,8 +843,8 @@ export default function Ludotheque() {
           <button
             onClick={addShelf}
             disabled={!isOnline}
-            className={`w-full py-2 sm:py-3 rounded-lg font-semibold flex items-center justify-center gap-2 text-sm sm:text-base ${
-              isOnline ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-gray-200'
+            className={`w-full py-2 sm:py-3 rounded-lg font-semibold flex items-center justify-center gap-2 text-sm sm:text-base transition ${
+              isOnline ? 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg' : 'bg-gray-400 text-gray-200 cursor-not-allowed'
             }`}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -820,11 +871,12 @@ export default function Ludotheque() {
                     <button
                       onClick={() => deleteShelf(shelf.id)}
                       disabled={!isOnline}
-                      className={`p-2 rounded ml-2 ${
+                      className={`p-2 rounded ml-2 transition ${
                         isOnline
                           ? darkMode ? 'text-red-400 hover:bg-red-900/20' : 'text-red-500 hover:bg-red-50'
-                          : 'opacity-50'
+                          : 'opacity-50 cursor-not-allowed'
                       }`}
+                      title="Supprimer l'étagère"
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3 6 5 6 21 6"/>
@@ -839,7 +891,7 @@ export default function Ludotheque() {
                     value={shelf.size}
                     onChange={(e) => updateShelfSize(shelf.id, e.target.value)}
                     disabled={!isOnline}
-                    className={`w-full px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base`}
+                    className={`w-full px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
                   >
                     {Object.entries(shelfConfigs).map(([key, config]) => (
                       <option key={key} value={key}>{config.label}</option>
@@ -856,21 +908,20 @@ export default function Ludotheque() {
                       const row = Math.floor(index / cols);
                       const col = index % cols;
                       const gamesInCell = getGamesAtPosition(row, col, shelf.id);
-                      const filteredGamesInCell = gamesInCell.filter(matchesFilters);
 
                       return (
                         <div
                           key={`${row}-${col}`}
                           onDragOver={handleDragOver}
                           onDrop={() => handleDrop(row, col, shelf.id)}
-                          className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden ${
+                          className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden transition-all ${
                             gamesInCell.length > 0
                               ? darkMode ? 'border-indigo-600 bg-gray-600' : 'border-indigo-500 bg-indigo-50'
-                              : darkMode ? 'border-gray-600 border-dashed' : 'border-gray-300 border-dashed'
+                              : darkMode ? 'border-gray-600 border-dashed hover:border-gray-500' : 'border-gray-300 border-dashed hover:border-gray-400'
                           }`}
                         >
                           {gamesInCell.length > 0 ? (
-                            <div className="w-full h-full p-0.5 sm:p-1 md:p-2 overflow-y-auto">
+                            <div className="w-full h-full p-0.5 sm:p-1 md:p-2 overflow-y-auto scrollbar-thin">
                               <div className="space-y-0.5 sm:space-y-1">
                                 {gamesInCell.map((game) => {
                                   const isHighlighted = matchesFilters(game);
@@ -883,13 +934,13 @@ export default function Ludotheque() {
                                       onClick={() => generateGameRules(game)}
                                       className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-pointer group relative transition-all ${
                                         isHighlighted
-                                          ? 'bg-yellow-300 ring-2 ring-yellow-500 scale-105'
-                                          : darkMode ? 'bg-slate-700 opacity-50' : 'bg-white opacity-50'
+                                          ? 'bg-yellow-300 ring-2 ring-yellow-500 scale-105 z-10'
+                                          : darkMode ? 'bg-slate-700 opacity-50 hover:opacity-70' : 'bg-white opacity-50 hover:opacity-70'
                                       }`}
                                     >
                                       <div className="flex items-start justify-between gap-0.5 sm:gap-1">
                                         <span className={`text-[8px] sm:text-[10px] md:text-xs font-medium line-clamp-2 flex-1 ${
-                                          isHighlighted ? 'text-gray-800' : textPrimary
+                                          isHighlighted ? 'text-gray-800 font-bold' : textPrimary
                                         }`}>
                                           {game.name}
                                         </span>
@@ -899,7 +950,7 @@ export default function Ludotheque() {
                                             removeGameFromShelf(game.id);
                                           }}
                                           disabled={!isOnline}
-                                          className={`bg-red-500 text-white p-0.5 rounded flex-shrink-0 ${
+                                          className={`bg-red-500 text-white p-0.5 rounded flex-shrink-0 transition ${
                                             isOnline ? 'opacity-0 group-hover:opacity-100' : 'opacity-50'
                                           }`}
                                         >
@@ -910,7 +961,7 @@ export default function Ludotheque() {
                                         </button>
                                       </div>
                                       <div className={`flex gap-1 text-[7px] sm:text-[9px] mt-0.5 sm:mt-1 ${
-                                        isHighlighted ? 'text-gray-700' : textSecondary
+                                        isHighlighted ? 'text-gray-700 font-semibold' : textSecondary
                                       }`}>
                                         <span className="flex items-center gap-0.5">
                                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -950,8 +1001,8 @@ export default function Ludotheque() {
 
       {/* Modal règles */}
       {selectedGame && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className={`${cardBg} rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col`}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 backdrop-blur-sm">
+          <div className={`${cardBg} rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col animate-fadeIn`}>
             <div className={`p-3 sm:p-4 md:p-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
               <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-600 flex-shrink-0 sm:w-6 sm:h-6">
@@ -962,9 +1013,7 @@ export default function Ludotheque() {
               </div>
               <button
                 onClick={() => setSelectedGame(null)}
-                className={`${textSecondary} p-1.5 sm:p-2 rounded-lg ml-2 ${
-                  darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                }`}
+                className={`${textSecondary} p-1.5 sm:p-2 rounded-lg ml-2 hover:bg-opacity-10 hover:bg-gray-500 transition`}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/>
@@ -975,21 +1024,22 @@ export default function Ludotheque() {
             <div className="p-3 sm:p-4 md:p-6 overflow-y-auto flex-1">
               {isLoadingRules ? (
                 <div className="flex flex-col items-center justify-center py-8 sm:py-12">
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-600 animate-pulse mb-3 sm:mb-4 sm:w-12 sm:h-12">
-                    <path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-600 animate-spin mb-3 sm:mb-4 sm:w-12 sm:h-12">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
                   </svg>
-                  <p className={`${textSecondary} text-sm sm:text-lg`}>Génération des règles par IA...</p>
+                  <p className={`${textSecondary} text-sm sm:text-lg`}>Génération des règles par IA Gemini...</p>
+                  <p className={`${textSecondary} text-xs mt-2`}>Cela peut prendre quelques secondes</p>
                 </div>
               ) : isEditingRules ? (
                 <textarea
                   value={editedRules}
                   onChange={(e) => setEditedRules(e.target.value)}
-                  className={`w-full h-64 sm:h-96 p-3 sm:p-4 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base`}
+                  className={`w-full h-64 sm:h-96 p-3 sm:p-4 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
                   placeholder="Saisissez les règles du jeu..."
                 />
               ) : (
-                <div className={`${textPrimary} whitespace-pre-wrap text-sm sm:text-base`}>
-                  {gameRules[selectedGame.name] || 'Aucune règle disponible.'}
+                <div className={`${textPrimary} whitespace-pre-wrap text-sm sm:text-base leading-relaxed`}>
+                  {gameRules[selectedGame.name] || 'Aucune règle disponible. Cliquez sur "Modifier" pour les saisir manuellement.'}
                 </div>
               )}
             </div>
@@ -1001,15 +1051,15 @@ export default function Ludotheque() {
                       setIsEditingRules(false);
                       setEditedRules(gameRules[selectedGame.name] || '');
                     }}
-                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-gray-500 text-white hover:bg-gray-600 text-sm sm:text-base"
+                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-gray-500 text-white hover:bg-gray-600 text-sm sm:text-base transition"
                   >
                     Annuler
                   </button>
                   <button
                     onClick={saveEditedRules}
-                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm sm:text-base"
+                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm sm:text-base transition"
                   >
-                    Enregistrer
+                    💾 Enregistrer
                   </button>
                 </>
               ) : (
@@ -1019,13 +1069,13 @@ export default function Ludotheque() {
                       setIsEditingRules(true);
                       setEditedRules(gameRules[selectedGame.name] || '');
                     }}
-                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700 text-sm sm:text-base"
+                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700 text-sm sm:text-base transition"
                   >
-                    Modifier
+                    ✏️ Modifier
                   </button>
                   <button
                     onClick={() => setSelectedGame(null)}
-                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-gray-600 text-white hover:bg-gray-700 text-sm sm:text-base"
+                    className="px-3 sm:px-4 py-2 rounded-lg font-semibold bg-gray-600 text-white hover:bg-gray-700 text-sm sm:text-base transition"
                   >
                     Fermer
                   </button>
