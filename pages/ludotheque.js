@@ -37,7 +37,7 @@ const gameTypeOptions = [
 ];
 
 export default function Ludotheque() {
-  const [darkMode, setDarkMode] = useState(true); // Mode sombre par défaut
+  const [darkMode, setDarkMode] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(true);
@@ -56,12 +56,17 @@ export default function Ludotheque() {
   const [isEditingRules, setIsEditingRules] = useState(false);
   const [editedRules, setEditedRules] = useState('');
   
+  // État pour l'édition de jeu
+  const [editingGameId, setEditingGameId] = useState(null);
+  const [editingGameData, setEditingGameData] = useState({});
+  
   // Filtres multiples
   const [selectedPlayers, setSelectedPlayers] = useState([]);
   const [selectedDurations, setSelectedDurations] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
   
   const [isOnline, setIsOnline] = useState(true);
+  const [showUnplacedGames, setShowUnplacedGames] = useState(true);
 
   useEffect(() => {
     checkAuth();
@@ -93,7 +98,6 @@ export default function Ludotheque() {
       setUsername(savedUsername);
       setIsLoggedIn(true);
     } else {
-      // Redirection vers la page d'accueil
       window.location.href = '/';
     }
     
@@ -175,6 +179,41 @@ export default function Ludotheque() {
     } catch (error) {
       console.error('Erreur:', error);
     }
+  };
+
+  const startEditGame = (game) => {
+    setEditingGameId(game.id);
+    setEditingGameData({
+      name: game.name,
+      players: game.players,
+      duration: game.duration,
+      game_type: game.game_type || 'Versus'
+    });
+  };
+
+  const saveGameEdit = async () => {
+    if (!editingGameData.name.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('board_games')
+        .update(editingGameData)
+        .eq('id', editingGameId);
+
+      if (error) throw error;
+      
+      setGames(games.map(g => g.id === editingGameId ? { ...g, ...editingGameData } : g));
+      setEditingGameId(null);
+      setEditingGameData({});
+      showToastMessage('✅ Jeu modifié');
+    } catch (error) {
+      console.error('Erreur:', error);
+    }
+  };
+
+  const cancelEditGame = () => {
+    setEditingGameId(null);
+    setEditingGameData({});
   };
 
   const duplicateGame = async (game) => {
@@ -382,7 +421,6 @@ export default function Ludotheque() {
       return;
     }
 
-    // Vérifier le cache
     try {
       const { data: cachedRules, error: cacheError } = await supabase
         .from('game_rules')
@@ -400,7 +438,6 @@ export default function Ludotheque() {
       // Pas de cache
     }
 
-    // Générer avec Gemini API
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.NEXT_PUBLIC_GEMINI_API_KEY}`, {
         method: "POST",
@@ -432,7 +469,6 @@ Maximum 600 mots. Sois précis et clair.`
       if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
         const rulesText = data.candidates[0].content.parts[0].text;
         
-        // Sauvegarder dans le cache
         await supabase
           .from('game_rules')
           .upsert({ game_name: game.name, rules_text: rulesText });
@@ -610,7 +646,6 @@ Maximum 600 mots. Sois précis et clair.`
             Filtres
           </h2>
           
-          {/* Filtre joueurs */}
           <div className="mb-3 sm:mb-4">
             <h3 className={`text-sm font-semibold ${textPrimary} mb-2`}>Nombre de joueurs</h3>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2">
@@ -630,7 +665,6 @@ Maximum 600 mots. Sois précis et clair.`
             </div>
           </div>
 
-          {/* Filtre durée */}
           <div className="mb-3 sm:mb-4">
             <h3 className={`text-sm font-semibold ${textPrimary} mb-2`}>Durée</h3>
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
@@ -650,7 +684,6 @@ Maximum 600 mots. Sois précis et clair.`
             </div>
           </div>
 
-          {/* Filtre type */}
           <div className="mb-3 sm:mb-4">
             <h3 className={`text-sm font-semibold ${textPrimary} mb-2`}>Type de jeu</h3>
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
@@ -685,158 +718,209 @@ Maximum 600 mots. Sois précis et clair.`
         </div>
 
         {/* Jeux disponibles */}
-        {filteredUnplacedGames.length > 0 && (
-          <div className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6 mb-4 sm:mb-6`}>
-            <h2 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-3 sm:mb-4`}>
+        <div className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6 mb-4 sm:mb-6`}>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h2 className={`text-lg sm:text-xl font-bold ${textPrimary}`}>
               Jeux disponibles ({filteredUnplacedGames.length})
             </h2>
-            
-            <div className="mb-3 sm:mb-4 flex gap-2">
-              <input
-                type="text"
-                value={newGameName}
-                onChange={(e) => setNewGameName(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addNewGame()}
-                placeholder="Ajouter un nouveau jeu..."
-                className={`flex-1 px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
-                disabled={!isOnline}
-              />
-              <button
-                onClick={addNewGame}
-                disabled={!isOnline}
-                className={`p-2 rounded-lg transition ${isOnline ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-gray-200 cursor-not-allowed'}`}
-                title="Ajouter le jeu"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="5" x2="12" y2="19"/>
-                  <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-              </button>
-            </div>
-
-            <div className="relative mb-3 sm:mb-4">
-              <svg className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${textSecondary}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"/>
-                <path d="m21 21-4.35-4.35"/>
-              </svg>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Rechercher un jeu..."
-                className={`w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
-              />
-            </div>
-
-            {draggedGame && draggedGame.position && (
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDropZoneActive(true);
-                }}
-                onDragLeave={() => setDropZoneActive(false)}
-                onDrop={handleDropToDelete}
-                className={`mb-3 sm:mb-4 p-4 sm:p-6 border-4 border-dashed rounded-lg transition-all ${
-                  dropZoneActive 
-                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20 scale-105' 
-                    : 'border-gray-300 bg-gray-50 dark:bg-gray-700'
-                }`}
-              >
-                <div className="flex items-center justify-center gap-2 text-sm sm:text-base">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="3 6 5 6 21 6"/>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                  </svg>
-                  <span className={dropZoneActive ? 'text-red-500 font-bold' : textSecondary}>
-                    Glissez ici pour retirer de l'étagère
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {filteredUnplacedGames.map(game => (
-                <div
-                  key={game.id}
-                  draggable={isOnline}
-                  onDragStart={() => handleDragStart(game)}
-                  className={`bg-gradient-to-r from-indigo-500 to-indigo-600 text-white p-2 sm:p-3 rounded-lg group transition-all hover:shadow-lg ${isOnline ? 'cursor-move hover:scale-102' : 'opacity-70'}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium flex-1 text-sm sm:text-base">{game.name}</span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => duplicateGame(game)}
-                        disabled={!isOnline}
-                        className="p-1 rounded hover:bg-indigo-700 transition"
-                        title="Dupliquer"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="9" y="9" width="13" height="13" rx="2"/>
-                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => deleteGame(game.id)}
-                        disabled={!isOnline}
-                        className="p-1 rounded hover:bg-red-500 transition"
-                        title="Supprimer"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="3 6 5 6 21 6"/>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 sm:gap-4 text-xs">
-                    <div className="flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                        <circle cx="9" cy="7" r="4"/>
-                      </svg>
-                      <input
-                        type="text"
-                        value={game.players}
-                        onChange={(e) => updateGameInfo(game.id, 'players', e.target.value)}
-                        disabled={!isOnline}
-                        className="w-14 bg-indigo-700 px-1 rounded focus:ring-2 focus:ring-white"
-                        placeholder="2-4"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      <input
-                        type="number"
-                        value={game.duration}
-                        onChange={(e) => updateGameInfo(game.id, 'duration', parseInt(e.target.value) || 0)}
-                        disabled={!isOnline}
-                        className="w-14 bg-indigo-700 px-1 rounded focus:ring-2 focus:ring-white"
-                        placeholder="60"
-                      />
-                      <span>min</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <select
-                        value={game.game_type || 'Versus'}
-                        onChange={(e) => updateGameInfo(game.id, 'game_type', e.target.value)}
-                        disabled={!isOnline}
-                        className="bg-indigo-700 px-1 rounded text-xs focus:ring-2 focus:ring-white"
-                      >
-                        {gameTypeOptions.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <button
+              onClick={() => setShowUnplacedGames(!showUnplacedGames)}
+              className={`text-sm font-semibold ${textPrimary} hover:text-indigo-600`}
+            >
+              {showUnplacedGames ? '▼ Masquer' : '▶ Afficher'}
+            </button>
           </div>
-        )}
+          
+          {showUnplacedGames && (
+            <>
+              <div className="mb-3 sm:mb-4 flex gap-2">
+                <input
+                  type="text"
+                  value={newGameName}
+                  onChange={(e) => setNewGameName(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addNewGame()}
+                  placeholder="Ajouter un nouveau jeu..."
+                  className={`flex-1 px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
+                  disabled={!isOnline}
+                />
+                <button
+                  onClick={addNewGame}
+                  disabled={!isOnline}
+                  className={`p-2 rounded-lg transition ${isOnline ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-gray-200 cursor-not-allowed'}`}
+                  title="Ajouter le jeu"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                </button>
+              </div>
+
+              <div className="relative mb-3 sm:mb-4">
+                <svg className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${textSecondary}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Rechercher un jeu..."
+                  className={`w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
+                />
+              </div>
+
+              {draggedGame && draggedGame.position && (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDropZoneActive(true);
+                  }}
+                  onDragLeave={() => setDropZoneActive(false)}
+                  onDrop={handleDropToDelete}
+                  className={`mb-3 sm:mb-4 p-4 sm:p-6 border-4 border-dashed rounded-lg transition-all ${
+                    dropZoneActive 
+                      ? 'border-red-500 bg-red-50 dark:bg-red-900/20 scale-105' 
+                      : 'border-gray-300 bg-gray-50 dark:bg-gray-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2 text-sm sm:text-base">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                    </svg>
+                    <span className={dropZoneActive ? 'text-red-500 font-bold' : textSecondary}>
+                      Glissez ici pour retirer de l'étagère
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {filteredUnplacedGames.map(game => (
+                  <div key={game.id}>
+                    {editingGameId === game.id ? (
+                      // Mode édition
+                      <div className="bg-indigo-100 dark:bg-gray-700 p-3 rounded-lg">
+                        <input
+                          type="text"
+                          value={editingGameData.name}
+                          onChange={(e) => setEditingGameData({...editingGameData, name: e.target.value})}
+                          className={`w-full px-3 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base mb-2 font-bold`}
+                          placeholder="Nom du jeu"
+                        />
+                        <div className="grid grid-cols-3 gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={editingGameData.players}
+                            onChange={(e) => setEditingGameData({...editingGameData, players: e.target.value})}
+                            className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
+                            placeholder="2-4"
+                          />
+                          <input
+                            type="number"
+                            value={editingGameData.duration}
+                            onChange={(e) => setEditingGameData({...editingGameData, duration: parseInt(e.target.value) || 0})}
+                            className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
+                            placeholder="60"
+                          />
+                          <select
+                            value={editingGameData.game_type}
+                            onChange={(e) => setEditingGameData({...editingGameData, game_type: e.target.value})}
+                            className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
+                          >
+                            {gameTypeOptions.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={saveGameEdit}
+                            className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-700"
+                          >
+                            ✓ Enregistrer
+                          </button>
+                          <button
+                            onClick={cancelEditGame}
+                            className="flex-1 bg-gray-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-gray-600"
+                          >
+                            ✕ Annuler
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      // Mode normal
+                      <div
+                        draggable={isOnline}
+                        onDragStart={() => handleDragStart(game)}
+                        className={`bg-gradient-to-r from-indigo-500 to-indigo-600 text-white p-2 sm:p-3 rounded-lg group transition-all hover:shadow-lg ${isOnline ? 'cursor-move hover:scale-102' : 'opacity-70'}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium flex-1 text-sm sm:text-base">{game.name}</span>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => startEditGame(game)}
+                              disabled={!isOnline}
+                              className="p-1 rounded hover:bg-indigo-700 transition"
+                              title="Modifier"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => duplicateGame(game)}
+                              disabled={!isOnline}
+                              className="p-1 rounded hover:bg-indigo-700 transition"
+                              title="Dupliquer"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => deleteGame(game.id)}
+                              disabled={!isOnline}
+                              className="p-1 rounded hover:bg-red-500 transition"
+                              title="Supprimer"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          <span className="flex items-center gap-1">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                              <circle cx="9" cy="7" r="4"/>
+                            </svg>
+                            {game.players}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10"/>
+                              <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            {game.duration}min
+                          </span>
+                          <span className="px-2 py-0.5 bg-white/20 rounded">
+                            {game.game_type || 'Versus'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Étagères */}
         <div className="space-y-4 sm:space-y-6">
