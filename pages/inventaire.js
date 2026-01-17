@@ -1141,38 +1141,38 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
           </div>
 
           <div className="space-y-3">
-            {evaluations.map(eval => (
-              <div key={eval.id} className={`p-4 rounded-xl border-2 ${
+            {evaluations.map(evaluation => (
+              <div key={evaluation.id} className={`p-4 rounded-xl border-2 ${
                 darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
               }`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {formatDate(eval.created_at)}
+                        {formatDate(evaluation.created_at)}
                       </span>
                       <span className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                        {eval.game_name}
+                        {evaluation.game_name}
                       </span>
                     </div>
                     
-                    <StarRating rating={eval.rating} />
+                    <StarRating rating={evaluation.rating} />
                     
                     <div className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                      <strong>Expéditeur :</strong> {eval.sender_name}
+                      <strong>Expéditeur :</strong> {evaluation.sender_name}
                     </div>
                     
-                    {eval.comment && (
+                    {evaluation.comment && (
                       <div className={`text-sm p-2 rounded-lg ${
                         darkMode ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-700'
                       }`}>
-                        <strong>Commentaire :</strong> {eval.comment}
+                        <strong>Commentaire :</strong> {evaluation.comment}
                       </div>
                     )}
                   </div>
                   
                   <button
-                    onClick={() => deleteEvaluation(eval.id)}
+                    onClick={() => deleteEvaluation(evaluation.id)}
                     className={`p-2 rounded-lg transition flex-shrink-0 ${
                       darkMode ? 'text-red-400 hover:bg-gray-600' : 'text-red-600 hover:bg-gray-200'
                     }`}
@@ -1188,7 +1188,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
     </div>
   );
 }
-}
+
 // Composant GameInventorySection avec AGRÉGATION
 function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation }) {
   const StarSelector = ({ rating, setRating }) => {
