@@ -781,6 +781,18 @@ return (
     )}
   </div>
 </div>
+            <button 
+              onClick={addParcels} 
+              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Ajouter les colis
+            </button>
+          </div>
+        </div>
 
         {/* SECTION FILTRES - GARDEZ LA LOGIQUE MAIS CHANGEZ LES CLASSES */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
@@ -875,7 +887,6 @@ return (
                     {usedLocations.includes('intermarche-locker') && (<button onClick={() => setFilterLocation('intermarche-locker')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-locker' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Locker</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-locker')}</span></button>)}
                     {usedLocations.includes('intermarche-accueil') && (<button onClick={() => setFilterLocation('intermarche-accueil')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-accueil' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Accueil</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-accueil')}</span></button>)}
                     {usedLocations.includes('rond-point-noyal') && (<button onClick={() => setFilterLocation('rond-point-noyal')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>📍 Rond point Noyal</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('rond-point-noyal')}</span></button>)}
-                    {usedLocations.includes('rond-point-noyal') && (<button onClick={() => setFilterLocation('rond-point-noyal')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>📍 Rond point Noyal</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('rond-point-noyal')}</span></button>)}
                     {usedLocations.some(loc => loc.startsWith('custom:')) && (
                       <button 
                         onClick={() => setFilterLocation('custom')} 
@@ -890,8 +901,6 @@ return (
                       </button>
                     )}
                   </div>
-                </div>
-                      </div>
                 </div>
               );
             }
