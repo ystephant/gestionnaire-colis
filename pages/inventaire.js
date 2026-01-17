@@ -28,11 +28,15 @@ export default function InventaireJeux() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
   const [checkedItems, setCheckedItems] = useState({});
-  const [missingItems, setMissingItems] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [allGames, setAllGames] = useState([]);
   const [showAllGamesList, setShowAllGamesList] = useState(false);
+  
+  const [gameRating, setGameRating] = useState(0);
+  const [senderName, setSenderName] = useState('');
+  const [additionalComment, setAdditionalComment] = useState('');
+  const [evaluations, setEvaluations] = useState([]);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -87,11 +91,27 @@ export default function InventaireJeux() {
     }
   };
 
+  // 📥 Charger les évaluations depuis Supabase
+  const loadEvaluations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('game_evaluations')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setEvaluations(data || []);
+    } catch (error) {
+      console.error('Erreur chargement évaluations:', error);
+    }
+  };
+
 // 1️⃣ Chargement initial
   useEffect(() => {
     const savedDarkMode = localStorage.getItem('darkMode');
     if (savedDarkMode !== null) setDarkMode(savedDarkMode === 'true');
     loadGames();
+    loadEvaluations();
   }, []);
 
   // 2️⃣ Synchronisation temps réel
@@ -106,7 +126,6 @@ export default function InventaireJeux() {
             setSelectedGame(prev => {
               if (prev && prev.id === payload.new.id) {
                 setCheckedItems(payload.new.checked_items || {});
-                setMissingItems(payload.new.missing_items || '');
                 setItemDetails(payload.new.item_details || {});
                 setSyncStatus('🔄 Synchronisé');
                 setTimeout(() => setSyncStatus(''), 2000);
@@ -312,12 +331,14 @@ const getAggregatedItems = () => {
     setSearchQuery('');
     setShowResults(false);
     setCheckedItems(game.checked_items || {});
-    setMissingItems(game.missing_items || '');
     setEditMode(false);
     setShowAllGamesList(false);
     setDetailedView(null);
     setItemDetails(game.item_details || {});
     setPhotoRotations(game.photo_rotations || {});
+    setGameRating(0);
+    setSenderName('');
+    setAdditionalComment('');
   };
 
   const deleteGame = async (gameId, gameName) => {
@@ -435,24 +456,28 @@ const toggleAggregatedType = async (itemType) => {
 const resetInventory = async () => {
     if (!confirm('Réinitialiser l\'inventaire ?')) return;
     setCheckedItems({});
-    setMissingItems('');
+    setGameRating(0);
+    setSenderName('');
+    setAdditionalComment('');
     try {
-      const { error } = await supabase.from('games').update({ checked_items: {}, missing_items: '' }).eq('id', selectedGame.id);
+      const { error } = await supabase.from('games').update({ checked_items: {} }).eq('id', selectedGame.id);
       if (error) throw error;
       setSyncStatus('✅ Inventaire réinitialisé');
       setTimeout(() => setSyncStatus(''), 1500);
     } catch (error) {
       console.error('Erreur sauvegarde:', error);
     }
-  };
+  };;
 
   const changeGame = () => {
     setSelectedGame(null);
     setCheckedItems({});
-    setMissingItems('');
     setSearchQuery('');
     setEditMode(false);
     setDetailedView(null);
+    setGameRating(0);
+    setSenderName('');
+    setAdditionalComment('');
   };
 
   const getProgress = () => {
@@ -617,6 +642,87 @@ const resetInventory = async () => {
     }
   };
 
+  const saveEvaluation = async () => {
+    if (gameRating === 0) {
+      alert('⚠️ Veuillez attribuer une note (1 à 5 étoiles)');
+      return;
+    }
+    if (!senderName.trim()) {
+      alert('⚠️ Veuillez indiquer le nom de l\'expéditeur');
+      return;
+    }
+
+    try {
+      const evaluation = {
+        id: `eval_${Date.now()}`,
+        game_id: selectedGame.id,
+        game_name: selectedGame.name,
+        rating: gameRating,
+        sender_name: senderName.trim(),
+        comment: additionalComment.trim() || null,
+        created_by: username
+      };
+
+      const { error } = await supabase
+        .from('game_evaluations')
+        .insert(evaluation);
+      
+      if (error) throw error;
+      
+      setSyncStatus('✅ Évaluation enregistrée');
+      setTimeout(() => setSyncStatus(''), 2000);
+      
+      setGameRating(0);
+      setSenderName('');
+      setAdditionalComment('');
+      
+      await loadEvaluations();
+      
+      alert('✅ Évaluation enregistrée avec succès !');
+    } catch (error) {
+      console.error('Erreur sauvegarde évaluation:', error);
+      alert('❌ Erreur lors de l\'enregistrement');
+    }
+  };
+
+  const deleteEvaluation = async (evalId) => {
+    if (!confirm('Supprimer cette évaluation ?')) return;
+    try {
+      const { error } = await supabase
+        .from('game_evaluations')
+        .delete()
+        .eq('id', evalId);
+      
+      if (error) throw error;
+      
+      setSyncStatus('✅ Évaluation supprimée');
+      setTimeout(() => setSyncStatus(''), 1500);
+      await loadEvaluations();
+    } catch (error) {
+      console.error('Erreur suppression:', error);
+      alert('❌ Erreur lors de la suppression');
+    }
+  };
+
+  const deleteAllEvaluations = async () => {
+    if (!confirm('⚠️ Supprimer TOUTES les évaluations ? Cette action est irréversible.')) return;
+    try {
+      const { error } = await supabase
+        .from('game_evaluations')
+        .delete()
+        .neq('id', '');
+      
+      if (error) throw error;
+      
+      setSyncStatus('✅ Toutes les évaluations supprimées');
+      setTimeout(() => setSyncStatus(''), 2000);
+      setEvaluations([]);
+    } catch (error) {
+      console.error('Erreur suppression globale:', error);
+      alert('❌ Erreur lors de la suppression');
+    }
+  };
+
   const createGame = async () => {
     const validItems = newGameItems.filter(item => item.trim() !== '');
     if (!newGameName.trim() || validItems.length === 0) {
@@ -766,6 +872,9 @@ const resetInventory = async () => {
             showAllGamesList={showAllGamesList}
             setShowAllGamesList={setShowAllGamesList}
             openCreateModal={openCreateModal}
+            evaluations={evaluations}
+            deleteEvaluation={deleteEvaluation}
+            deleteAllEvaluations={deleteAllEvaluations}
           />
         )}
 
@@ -785,11 +894,16 @@ const resetInventory = async () => {
             itemDetails={itemDetails}
             getDetailPhotoCount={getDetailPhotoCount}
             openDetailedView={openDetailedView}
-            missingItems={missingItems}
-            setMissingItems={setMissingItems}
             supabase={supabase}
             setSyncStatus={setSyncStatus}
             toggleAggregatedType={toggleAggregatedType}
+            gameRating={gameRating}
+            setGameRating={setGameRating}
+            senderName={senderName}
+            setSenderName={setSenderName}
+            additionalComment={additionalComment}
+            setAdditionalComment={setAdditionalComment}
+            saveEvaluation={saveEvaluation}
           />
         )}
 
@@ -863,9 +977,33 @@ const resetInventory = async () => {
 }
 
 // Composant SearchGameSection
-function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults, searchResults, selectGame, deleteGame, allGames, showAllGamesList, setShowAllGamesList, openCreateModal }) {
+function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults, searchResults, selectGame, deleteGame, allGames, showAllGamesList, setShowAllGamesList, openCreateModal, evaluations, deleteEvaluation, deleteAllEvaluations }) {
+  const formatDate = (isoString) => {
+    const date = new Date(isoString);
+    return date.toLocaleDateString('fr-FR', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const StarRating = ({ rating }) => {
+    return (
+      <div className="flex gap-0.5">
+        {[1, 2, 3, 4, 5].map(star => (
+          <span key={star} className={`text-lg ${star <= rating ? 'text-yellow-400' : 'text-gray-400'}`}>
+            ★
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+    <div className="space-y-6">
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
       <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
         <Search size={24} className="text-orange-600" />
         Rechercher un jeu
@@ -985,12 +1123,89 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
           Créer un nouveau jeu
         </button>
       </div>
+
+      {/* Historique des évaluations */}
+      {evaluations.length > 0 && (
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
+              📋 Historique des évaluations
+            </h2>
+            <button
+              onClick={deleteAllEvaluations}
+              className="text-red-500 hover:text-red-600 text-sm font-semibold flex items-center gap-1"
+            >
+              <Trash2 size={16} />
+              Tout supprimer
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {evaluations.map(eval => (
+              <div key={eval.id} className={`p-4 rounded-xl border-2 ${
+                darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {formatDate(eval.created_at)}
+                      </span>
+                      <span className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                        {eval.game_name}
+                      </span>
+                    </div>
+                    
+                    <StarRating rating={eval.rating} />
+                    
+                    <div className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      <strong>Expéditeur :</strong> {eval.sender_name}
+                    </div>
+                    
+                    {eval.comment && (
+                      <div className={`text-sm p-2 rounded-lg ${
+                        darkMode ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-700'
+                      }`}>
+                        <strong>Commentaire :</strong> {eval.comment}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={() => deleteEvaluation(eval.id)}
+                    className={`p-2 rounded-lg transition flex-shrink-0 ${
+                      darkMode ? 'text-red-400 hover:bg-gray-600' : 'text-red-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 // Composant GameInventorySection avec AGRÉGATION
-function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, missingItems, setMissingItems, supabase, setSyncStatus, toggleAggregatedType }) {
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation }) {
+  const StarSelector = ({ rating, setRating }) => {
+    return (
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map(star => (
+          <button
+            key={star}
+            onClick={() => setRating(star)}
+            className="text-3xl hover:scale-110 transition"
+          >
+            <span className={star <= rating ? 'text-yellow-400' : 'text-gray-400'}>★</span>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
@@ -1137,46 +1352,55 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
 
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
         <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
-          <AlertCircle size={20} className="text-red-500" />
-          Éléments manquants
+          ⭐ Évaluation du jeu
         </h3>
         
-        <textarea
-          value={missingItems}
-          onChange={async (e) => {
-            const newValue = e.target.value;
-            setMissingItems(newValue);
-            clearTimeout(window.missingItemsTimer);
-            window.missingItemsTimer = setTimeout(async () => {
-              try {
-                const { error } = await supabase.from('games').update({ missing_items: newValue }).eq('id', selectedGame.id);
-                if (error) throw error;
-                setSyncStatus('✅ Notes sauvegardées');
-                setTimeout(() => setSyncStatus(''), 1500);
-              } catch (error) {
-                console.error('Erreur sauvegarde:', error);
-              }
-            }, 1000);
-          }}
-          placeholder="Notez ici les éléments manquants ou endommagés..."
-          rows="6"
-          className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none ${
-            darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
-          }`}
-        />
-
-        {missingItems && (
-          <div className={`mt-4 p-4 rounded-lg ${
-            darkMode ? 'bg-red-900 bg-opacity-30 border-2 border-red-700' : 'bg-red-50 border-2 border-red-200'
-          }`}>
-            <p className={`text-sm font-semibold ${darkMode ? 'text-red-300' : 'text-red-700'} mb-2`}>
-              ⚠️ Attention : Des éléments manquent
-            </p>
-            <p className={`text-sm ${darkMode ? 'text-red-200' : 'text-red-600'} whitespace-pre-wrap`}>
-              {missingItems}
-            </p>
+        <div className="space-y-4">
+          <div>
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+              Est-ce que le jeu est OK ? *
+            </label>
+            <StarSelector rating={gameRating} setRating={setGameRating} />
           </div>
-        )}
+
+          <div>
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+              Nom de la personne qui vous a envoyé le jeu *
+            </label>
+            <input
+              type="text"
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+              placeholder="Ex: Jean Dupont"
+              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none ${
+                darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            />
+          </div>
+
+          <div>
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+              Commentaire supplémentaire (optionnel)
+            </label>
+            <textarea
+              value={additionalComment}
+              onChange={(e) => setAdditionalComment(e.target.value)}
+              placeholder="Ajoutez des remarques sur l'état du jeu..."
+              rows="4"
+              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none ${
+                darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            />
+          </div>
+
+          <button
+            onClick={saveEvaluation}
+            className="w-full bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition flex items-center justify-center gap-2"
+          >
+            <Check size={20} />
+            Enregistrer l'évaluation
+          </button>
+        </div>
       </div>
     </div>
   );
