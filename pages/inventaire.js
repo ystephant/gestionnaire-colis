@@ -1186,6 +1186,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
         </div>
       )}
     </div>
+  </div>
   );
 }
 
