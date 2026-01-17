@@ -1188,6 +1188,8 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
     </div>
   );
 }
+
+}
 // Composant GameInventorySection avec AGRÉGATION
 function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation }) {
   const StarSelector = ({ rating, setRating }) => {
