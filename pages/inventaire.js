@@ -256,9 +256,19 @@ const getAggregatedItems = () => {
     const items = [...selectedGame.items.map((item, index) => ({ item, index }))];
     
     if (sortOrder === 'asc') {
-      return items.sort((a, b) => a.item.localeCompare(b.item, 'fr'));
+      return items.sort((a, b) => {
+        // Extraire le texte après les chiffres
+        const textA = a.item.replace(/^\d+\s*/, '').trim();
+        const textB = b.item.replace(/^\d+\s*/, '').trim();
+        return textA.localeCompare(textB, 'fr');
+      });
     } else if (sortOrder === 'desc') {
-      return items.sort((a, b) => b.item.localeCompare(a.item, 'fr'));
+      return items.sort((a, b) => {
+        // Extraire le texte après les chiffres
+        const textA = a.item.replace(/^\d+\s*/, '').trim();
+        const textB = b.item.replace(/^\d+\s*/, '').trim();
+        return textB.localeCompare(textA, 'fr');
+      });
     }
     
     return items; // ordre par défaut
@@ -1944,6 +1954,25 @@ function DetailedViewComponent({
                             {photo.name}
                           </div>
                         )}
+                        
+                        {/* Bouton Zoom */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFullscreenPhoto(photo);
+                          }}
+                          className={`absolute bottom-2 right-2 p-2 rounded-lg transition shadow-lg ${
+                            darkMode ? 'bg-gray-800 bg-opacity-90 text-white hover:bg-gray-700' : 'bg-white bg-opacity-90 text-gray-800 hover:bg-gray-100'
+                          }`}
+                          title="Agrandir"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            <line x1="11" y1="8" x2="11" y2="14"></line>
+                            <line x1="8" y1="11" x2="14" y2="11"></line>
+                          </svg>
+                        </button>
                       </div>
                     );
                   })}
