@@ -31,7 +31,7 @@ export default function InventaireJeux() {
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [allGames, setAllGames] = useState([]);
-  const [showAllGamesList, setShowAllGamesList] = useState(false);
+  const [showAllGamesList, setShowAllGamesList] = useState(true);
   
   const [gameRating, setGameRating] = useState(0);
   const [senderName, setSenderName] = useState('');
@@ -56,6 +56,7 @@ export default function InventaireJeux() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [photoRotations, setPhotoRotations] = useState({});
+  const [sortOrder, setSortOrder] = useState('default'); // 'default', 'asc', 'desc'
 
   // 📸 Upload vers Cloudinary
   const uploadToCloudinary = async (file, folder = 'boardgames') => {
@@ -248,6 +249,21 @@ const getAggregatedItems = () => {
     return progress;
   };
 
+  // 🔄 Fonction pour trier les items
+  const getSortedItems = () => {
+    if (!selectedGame) return [];
+    
+    const items = [...selectedGame.items.map((item, index) => ({ item, index }))];
+    
+    if (sortOrder === 'asc') {
+      return items.sort((a, b) => a.item.localeCompare(b.item, 'fr'));
+    } else if (sortOrder === 'desc') {
+      return items.sort((a, b) => b.item.localeCompare(a.item, 'fr'));
+    }
+    
+    return items; // ordre par défaut
+  };
+  
   // 📸 Upload MULTIPLE parallèle
   const handleDetailPhotoCapture = async (e) => {
     const files = Array.from(e.target.files);
@@ -904,6 +920,9 @@ const resetInventory = async () => {
             additionalComment={additionalComment}
             setAdditionalComment={setAdditionalComment}
             saveEvaluation={saveEvaluation}
+            sortOrder={sortOrder}
+            setSortOrder={setSortOrder}
+            getSortedItems={getSortedItems}
           />
         )}
 
@@ -1191,7 +1210,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
 }
 
 // Composant GameInventorySection avec AGRÉGATION
-function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation }) {
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems }) {
   const StarSelector = ({ rating, setRating }) => {
     return (
       <div className="flex gap-1">
@@ -1258,6 +1277,46 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
           </div>
         </div>
 
+        <div className={`p-4 rounded-xl mb-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <span className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+              🔄 Tri du contenu
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSortOrder('default')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  sortOrder === 'default'
+                    ? 'bg-orange-600 text-white'
+                    : darkMode ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Par défaut
+              </button>
+              <button
+                onClick={() => setSortOrder('asc')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  sortOrder === 'asc'
+                    ? 'bg-orange-600 text-white'
+                    : darkMode ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                A → Z
+              </button>
+              <button
+                onClick={() => setSortOrder('desc')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  sortOrder === 'desc'
+                    ? 'bg-orange-600 text-white'
+                    : darkMode ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Z → A
+              </button>
+            </div>
+          </div>
+        </div>
+        
         <button
           onClick={resetInventory}
           className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
@@ -1302,7 +1361,7 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
         </h3>
         
         <div className="space-y-2">
-          {selectedGame.items.map((item, index) => {
+          {getSortedItems().map(({ item, index }) => {
             const photoCount = getDetailPhotoCount(index);
             return (
               <div key={index} className="flex items-center gap-2">
@@ -1678,10 +1737,36 @@ function DetailedViewComponent({
 
         {editingDetails ? (
           <>
-            <div className={`mb-4 p-4 rounded-xl ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
-              <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
-                ⚡ Upload ultra-rapide avec Cloudinary ! Glissez-déposez vos photos ou cliquez sur "Ajouter des photos".
-              </p>
+            <div 
+              className={`mb-4 p-6 rounded-xl border-2 border-dashed transition-all ${
+                isDragging 
+                  ? darkMode ? 'bg-purple-900 bg-opacity-40 border-purple-500' : 'bg-purple-100 border-purple-500'
+                  : darkMode ? 'bg-blue-900 bg-opacity-30 border-blue-700' : 'bg-blue-50 border-blue-300'
+              }`}
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <div className="flex flex-col items-center justify-center gap-3">
+                <Camera size={48} className={`${
+                  isDragging 
+                    ? 'text-purple-600 animate-bounce' 
+                    : darkMode ? 'text-blue-400' : 'text-blue-600'
+                }`} />
+                <p className={`text-center font-semibold ${
+                  isDragging
+                    ? 'text-purple-600 dark:text-purple-400'
+                    : darkMode ? 'text-blue-300' : 'text-blue-800'
+                }`}>
+                  {isDragging 
+                    ? '📸 Déposez vos photos ici !' 
+                    : '⚡ Glissez-déposez vos photos ici'}
+                </p>
+                <p className={`text-xs text-center ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  ou cliquez sur le bouton ci-dessous
+                </p>
+              </div>
             </div>
 
             {uploadingPhotos && (
@@ -1709,26 +1794,7 @@ function DetailedViewComponent({
               className="hidden"
             />
 
-            <div 
-              className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4 relative transition-all ${
-                isDragging ? 'ring-4 ring-purple-500 ring-opacity-50 bg-purple-50 dark:bg-purple-900 dark:bg-opacity-20 rounded-xl p-4' : ''
-              }`}
-              onDragEnter={handleDragEnter}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              {isDragging && (
-                <div className="absolute inset-0 flex items-center justify-center bg-purple-500 bg-opacity-10 rounded-xl border-4 border-dashed border-purple-500 pointer-events-none z-10">
-                  <div className="text-center">
-                    <Camera size={48} className="mx-auto mb-2 text-purple-600" />
-                    <p className={`text-lg font-bold ${darkMode ? 'text-purple-300' : 'text-purple-600'}`}>
-                      Déposez vos photos ici
-                    </p>
-                  </div>
-                </div>
-              )}
-              
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
               {currentDetailPhotos.map((photo) => (
                 <div key={photo.id} className={`border-2 rounded-lg overflow-hidden ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div 
