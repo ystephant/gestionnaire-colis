@@ -9,8 +9,8 @@ const supabase = createClient(
 const shelfConfigs = {
   '2x2': { rows: 2, cols: 2, label: '77x77 cm (2x2)' },
   '2x4': { rows: 2, cols: 4, label: '77x147 cm (2x4)' },
-  '4x4': { rows: 4, cols: 4, label: '147x147 cm (4x4)' },A
-  '4x2': { rows: 4, cols: 2, label: '147x77 cm (4x2)' },
+  '4x4': { rows: 4, cols: 4, label: '147x147 cm (4x4)' },
+  '4x2': { rows: 4, cols: 2, label: '147x77 cm (4x2)' }
 };
 
 const playerOptions = [
