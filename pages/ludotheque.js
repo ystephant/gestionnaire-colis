@@ -452,10 +452,63 @@ export default function Ludotheque() {
     }
 
     try {
-          const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-          if (!apiKey) {
-            throw new Error('Clé API Gemini non configurée');
-        }
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Clé API Gemini non configurée. Ajoutez NEXT_PUBLIC_GEMINI_API_KEY dans votre fichier .env');
+  }
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{
+          text: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français. 
+
+Structure attendue:
+- **But du jeu**: Objectif principal
+- **Nombre de joueurs**: ${game.players}
+- **Durée**: ${game.duration} minutes
+- **Matériel**: Liste du matériel nécessaire
+- **Mise en place**: Comment préparer le jeu
+- **Déroulement**: Tour de jeu détaillé
+- **Conditions de victoire**: Comment gagner
+
+Maximum 600 mots. Sois précis et clair.`
+        }]
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Erreur API Gemini:', response.status, errorText);
+    throw new Error(`Erreur API Gemini: ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+    const rulesText = data.candidates[0].content.parts[0].text;
+    
+    await supabase
+      .from('game_rules')
+      .upsert({ game_name: game.name, rules_text: rulesText });
+
+    setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
+    setEditedRules(rulesText);
+  } else {
+    console.error('Réponse Gemini invalide:', data);
+    throw new Error('Réponse invalide de Gemini');
+  }
+} catch (error) {
+  console.error('Erreur IA complète:', error);
+  const errorMsg = `Erreur lors du chargement des règles: ${error.message}. Vérifiez votre clé API Gemini et votre connexion internet. Vous pouvez saisir les règles manuellement en cliquant sur "Modifier".`;
+  setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
+  setEditedRules(errorMsg);
+}
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: {
@@ -568,9 +621,20 @@ const matchesDurationFilter = (gameDuration, selectedDurationValues) => {
 };
 
 const matchesFilters = (game) => {
+  // Recherche par nom
+  if (searchTerm.trim() !== '') {
+    if (!game.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+  }
+  
+  // Filtres de joueurs
   if (!matchesPlayerFilter(game.players, selectedPlayers)) return false;
+  
+  // Filtres de durée
   if (!matchesDurationFilter(game.duration, selectedDurations)) return false;
   
+  // Filtres de type
   if (selectedTypes.length > 0) {
     if (!selectedTypes.includes(game.game_type)) return false;
   }
@@ -595,7 +659,7 @@ const matchesFilters = (game) => {
   const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
   const inputBg = darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200';
 
-  const hasActiveFilters = selectedPlayers.length > 0 || selectedDurations.length > 0 || selectedTypes.length > 0;
+  const hasActiveFilters = selectedPlayers.length > 0 || selectedDurations.length > 0 || selectedTypes.length > 0 || searchTerm.trim() !== '';
 
   if (loading) {
     return (
@@ -737,10 +801,11 @@ const matchesFilters = (game) => {
                 setSelectedPlayers([]);
                 setSelectedDurations([]);
                 setSelectedTypes([]);
+                setSearchTerm('');
               }}
               className="w-full py-2 text-sm text-indigo-600 hover:bg-indigo-50 dark:hover:bg-gray-700 rounded-lg transition font-semibold"
             >
-              ✕ Réinitialiser les filtres
+              ✕ Réinitialiser tous les filtres
             </button>
           )}
         </div>
@@ -793,9 +858,21 @@ const matchesFilters = (game) => {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Rechercher un jeu..."
-                  className={`w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
+                  placeholder="Rechercher un jeu dans toute la ludothèque..."
+                  className={`w-full pl-9 sm:pl-10 pr-10 sm:pr-12 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
                 />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${textSecondary} hover:text-red-500 transition`}
+                    title="Effacer la recherche"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18"/>
+                      <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                )}
               </div>
 
               {draggedGame && draggedGame.position && (
@@ -1052,8 +1129,10 @@ const matchesFilters = (game) => {
                                       onDragStart={() => handleDragStart(game)}
                                       onClick={() => generateGameRules(game)}
                                       className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-pointer group relative transition-all ${
-                                        isHighlighted
-                                          ? 'ring-2 ring-blue-500 scale-105 z-10'
+                                        hasActiveFilters
+                                          ? isHighlighted
+                                            ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
+                                            : 'opacity-20 grayscale hover:opacity-40'
                                           : 'opacity-90 hover:opacity-100'
                                       } ${gameColor}`}
                                     >
