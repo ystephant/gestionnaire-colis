@@ -424,142 +424,74 @@ export default function Ludotheque() {
   };
 
   const generateGameRules = async (game) => {
-    setSelectedGame(game);
-    setIsLoadingRules(true);
-    setIsEditingRules(false);
-    
-    if (gameRules[game.name]) {
-      setIsLoadingRules(false);
-      setEditedRules(gameRules[game.name]);
-      return;
+  setSelectedGame(game);
+  setIsLoadingRules(true);
+  setIsEditingRules(false);
+
+  if (gameRules[game.name]) {
+    setEditedRules(gameRules[game.name]);
+    setIsLoadingRules(false);
+    return;
+  }
+
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Clé API Gemini non configurée');
     }
 
-    try {
-      const { data: cachedRules, error: cacheError } = await supabase
-        .from('game_rules')
-        .select('rules_text')
-        .eq('game_name', game.name)
-        .single();
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
 
-      if (cachedRules && !cacheError) {
-        setGameRules(prev => ({ ...prev, [game.name]: cachedRules.rules_text }));
-        setEditedRules(cachedRules.rules_text);
-        setIsLoadingRules(false);
-        return;
+- But du jeu
+- Nombre de joueurs: ${game.players}
+- Durée: ${game.duration} minutes
+- Matériel
+- Mise en place
+- Déroulement
+- Conditions de victoire
+
+Maximum 600 mots.`
+            }]
+          }]
+        })
       }
-    } catch (e) {
-      // Pas de cache
+    );
+
+    if (!response.ok) {
+      throw new Error(`Erreur API Gemini: ${response.status}`);
     }
 
-    try {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('Clé API Gemini non configurée. Ajoutez NEXT_PUBLIC_GEMINI_API_KEY dans votre fichier .env');
-  }
+    const data = await response.json();
+    const rulesText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{
-          text: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français. 
+    if (!rulesText) {
+      throw new Error('Réponse Gemini invalide');
+    }
 
-Structure attendue:
-- **But du jeu**: Objectif principal
-- **Nombre de joueurs**: ${game.players}
-- **Durée**: ${game.duration} minutes
-- **Matériel**: Liste du matériel nécessaire
-- **Mise en place**: Comment préparer le jeu
-- **Déroulement**: Tour de jeu détaillé
-- **Conditions de victoire**: Comment gagner
-
-Maximum 600 mots. Sois précis et clair.`
-        }]
-      }]
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Erreur API Gemini:', response.status, errorText);
-    throw new Error(`Erreur API Gemini: ${response.status}`);
-  }
-
-  const data = await response.json();
-  
-  if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-    const rulesText = data.candidates[0].content.parts[0].text;
-    
     await supabase
       .from('game_rules')
       .upsert({ game_name: game.name, rules_text: rulesText });
 
     setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
     setEditedRules(rulesText);
-  } else {
-    console.error('Réponse Gemini invalide:', data);
-    throw new Error('Réponse invalide de Gemini');
-  }
-} catch (error) {
-  console.error('Erreur IA complète:', error);
-  const errorMsg = `Erreur lors du chargement des règles: ${error.message}. Vérifiez votre clé API Gemini et votre connexion internet. Vous pouvez saisir les règles manuellement en cliquant sur "Modifier".`;
-  setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
-  setEditedRules(errorMsg);
-}
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français. 
 
-Structure attendue:
-- **But du jeu**: Objectif principal
-- **Nombre de joueurs**: ${game.players}
-- **Durée**: ${game.duration} minutes
-- **Matériel**: Liste du matériel nécessaire
-- **Mise en place**: Comment préparer le jeu
-- **Déroulement**: Tour de jeu détaillé
-- **Conditions de victoire**: Comment gagner
-
-Maximum 600 mots. Sois précis et clair.`
-            }]
-          }]
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Erreur API Gemini: ${response.status}`);
-      }   
-      const data = await response.json();
-      
-      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-        const rulesText = data.candidates[0].content.parts[0].text;
-        
-        await supabase
-          .from('game_rules')
-          .upsert({ game_name: game.name, rules_text: rulesText });
-
-        setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
-        setEditedRules(rulesText);
-      } else {
-        throw new Error('Réponse invalide de Gemini');
-      }
-    } catch (error) {
-      console.error('Erreur IA:', error);
-      const errorMsg = 'Erreur lors du chargement des règles. Vous pouvez les saisir manuellement.';
-      setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
-      setEditedRules(errorMsg);
-    }
-    
+  } catch (error) {
+    console.error('Erreur IA:', error);
+    const errorMsg = 'Erreur lors du chargement des règles. Vous pouvez les saisir manuellement.';
+    setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
+    setEditedRules(errorMsg);
+  } finally {
     setIsLoadingRules(false);
-  };
+  }
+};
 
   const saveEditedRules = async () => {
     if (!selectedGame) return;
