@@ -25,9 +25,11 @@ const playerOptions = [
 const durationOptions = [
   { value: '15', label: '≤15 min', color: 'bg-emerald-300' },
   { value: '30', label: '≤30 min', color: 'bg-lime-300' },
+  { value: '45', label: '≤45 min', color: 'bg-teal-300' },
   { value: '60', label: '≤60 min', color: 'bg-amber-300' },
-  { value: '90', label: '≤90 min', color: 'bg-rose-300' },
-  { value: '120+', label: '120+ min', color: 'bg-red-300' },
+  { value: '90', label: '≤90 min', color: 'bg-orange-300' },
+  { value: '120', label: '≤120 min', color: 'bg-rose-300' },
+  { value: '150+', label: '150+ min', color: 'bg-red-300' },
 ];
 
 const gameTypeOptions = [
@@ -35,6 +37,18 @@ const gameTypeOptions = [
   { value: 'Versus', label: 'Versus' },
   { value: 'Coop+Versus', label: 'Coop+Versus' },
 ];
+
+// Fonction pour obtenir la couleur en fonction du nombre de joueurs
+const getPlayerColor = (players) => {
+  const min = parseInt(players.split('-')[0]);
+  if (min === 1) return 'bg-purple-400';
+  if (min === 2) return 'bg-blue-400';
+  if (min === 3) return 'bg-green-400';
+  if (min === 4) return 'bg-yellow-400';
+  if (min === 5) return 'bg-pink-400';
+  if (min >= 6) return 'bg-orange-400';
+  return 'bg-gray-400';
+};
 
 export default function Ludotheque() {
   const [darkMode, setDarkMode] = useState(true);
@@ -56,11 +70,9 @@ export default function Ludotheque() {
   const [isEditingRules, setIsEditingRules] = useState(false);
   const [editedRules, setEditedRules] = useState('');
   
-  // État pour l'édition de jeu
   const [editingGameId, setEditingGameId] = useState(null);
   const [editingGameData, setEditingGameData] = useState({});
   
-  // Filtres multiples
   const [selectedPlayers, setSelectedPlayers] = useState([]);
   const [selectedDurations, setSelectedDurations] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
@@ -186,7 +198,7 @@ export default function Ludotheque() {
     setEditingGameData({
       name: game.name,
       players: game.players,
-      duration: game.duration,
+      duration: game.duration === 0 ? '' : game.duration,
       game_type: game.game_type || 'Versus'
     });
   };
@@ -195,14 +207,19 @@ export default function Ludotheque() {
     if (!editingGameData.name.trim()) return;
 
     try {
+      const dataToSave = {
+        ...editingGameData,
+        duration: editingGameData.duration === '' ? 0 : parseInt(editingGameData.duration) || 0
+      };
+
       const { error } = await supabase
         .from('board_games')
-        .update(editingGameData)
+        .update(dataToSave)
         .eq('id', editingGameId);
 
       if (error) throw error;
       
-      setGames(games.map(g => g.id === editingGameId ? { ...g, ...editingGameData } : g));
+      setGames(games.map(g => g.id === editingGameId ? { ...g, ...dataToSave } : g));
       setEditingGameId(null);
       setEditingGameData({});
       showToastMessage('✅ Jeu modifié');
@@ -253,22 +270,6 @@ export default function Ludotheque() {
       if (error) throw error;
       setGames(games.filter(g => g.id !== gameId));
       showToastMessage('🗑️ Jeu supprimé');
-    } catch (error) {
-      console.error('Erreur:', error);
-    }
-  };
-
-  const updateGameInfo = async (gameId, field, value) => {
-    if (!isOnline) return;
-
-    try {
-      const { error } = await supabase
-        .from('board_games')
-        .update({ [field]: value })
-        .eq('id', gameId);
-
-      if (error) throw error;
-      setGames(games.map(g => g.id === gameId ? { ...g, [field]: value } : g));
     } catch (error) {
       console.error('Erreur:', error);
     }
@@ -439,7 +440,13 @@ export default function Ludotheque() {
     }
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.NEXT_PUBLIC_GEMINI_API_KEY}`, {
+      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+      
+      if (!apiKey) {
+        throw new Error('Clé API Gemini non configurée');
+      }
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -464,6 +471,10 @@ Maximum 600 mots. Sois précis et clair.`
         })
       });
 
+      if (!response.ok) {
+        throw new Error(`Erreur API: ${response.status}`);
+      }
+
       const data = await response.json();
       
       if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
@@ -480,7 +491,7 @@ Maximum 600 mots. Sois précis et clair.`
       }
     } catch (error) {
       console.error('Erreur IA:', error);
-      const errorMsg = 'Erreur lors du chargement des règles. Vous pouvez les saisir manuellement.';
+      const errorMsg = `Erreur lors du chargement des règles: ${error.message}\n\nVous pouvez les saisir manuellement en cliquant sur "Modifier".`;
       setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
       setEditedRules(errorMsg);
     }
@@ -512,41 +523,53 @@ Maximum 600 mots. Sois précis et clair.`
     }
   };
 
-  const getPlayerCategory = (players) => {
-    const min = parseInt(players.split('-')[0]);
-    if (min === 1) return '1';
-    if (min === 2) return '2';
-    if (min === 3) return '3';
-    if (min === 4) return '4';
-    if (min === 5) return '5';
-    if (min >= 6) return '6+';
-    return null;
+  // Vérifier si un jeu correspond aux filtres de joueurs (plage inclusive)
+  const matchesPlayerFilter = (game) => {
+    if (selectedPlayers.length === 0) return true;
+    
+    const [minPlayers, maxPlayers] = game.players.split('-').map(n => parseInt(n));
+    
+    return selectedPlayers.some(filterValue => {
+      const filterNum = filterValue === '6+' ? 6 : parseInt(filterValue);
+      
+      // Le jeu correspond si le nombre filtré est dans la plage
+      if (filterValue === '6+') {
+        return maxPlayers >= 6;
+      }
+      return filterNum >= minPlayers && filterNum <= maxPlayers;
+    });
   };
 
-  const getDurationCategory = (duration) => {
-    if (duration <= 15) return '15';
-    if (duration <= 30) return '30';
-    if (duration <= 60) return '60';
-    if (duration <= 90) return '90';
-    return '120+';
+  // Vérifier si un jeu correspond aux filtres de durée (plage inclusive entre min et max sélectionnés)
+  const matchesDurationFilter = (game) => {
+    if (selectedDurations.length === 0) return true;
+    
+    const gameDuration = game.duration;
+    
+    // Trouver la durée min et max sélectionnées
+    const durationValues = selectedDurations.map(d => {
+      if (d === '150+') return 150;
+      return parseInt(d);
+    });
+    
+    const minDuration = Math.min(...durationValues);
+    const maxDuration = Math.max(...durationValues);
+    
+    // Le jeu correspond s'il est entre min et max
+    if (selectedDurations.includes('150+')) {
+      return gameDuration >= minDuration;
+    }
+    
+    return gameDuration >= minDuration && gameDuration <= maxDuration;
+  };
+
+  const matchesTypeFilter = (game) => {
+    if (selectedTypes.length === 0) return true;
+    return selectedTypes.includes(game.game_type);
   };
 
   const matchesFilters = (game) => {
-    if (selectedPlayers.length > 0) {
-      const playerCat = getPlayerCategory(game.players);
-      if (!selectedPlayers.includes(playerCat)) return false;
-    }
-    
-    if (selectedDurations.length > 0) {
-      const durationCat = getDurationCategory(game.duration);
-      if (!selectedDurations.includes(durationCat)) return false;
-    }
-    
-    if (selectedTypes.length > 0) {
-      if (!selectedTypes.includes(game.game_type)) return false;
-    }
-    
-    return true;
+    return matchesPlayerFilter(game) && matchesDurationFilter(game) && matchesTypeFilter(game);
   };
 
   const handleDragStart = (game) => setDraggedGame(game);
@@ -655,25 +678,6 @@ Maximum 600 mots. Sois précis et clair.`
                   onClick={() => toggleFilter(selectedPlayers, setSelectedPlayers, option.value)}
                   className={`p-2 sm:p-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     selectedPlayers.includes(option.value)
-                      ? `${option.color} ring-2 ring-offset-2 ring-indigo-600 text-gray-800 scale-105`
-                      : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-3 sm:mb-4">
-            <h3 className={`text-sm font-semibold ${textPrimary} mb-2`}>Durée</h3>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
-              {durationOptions.map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => toggleFilter(selectedDurations, setSelectedDurations, option.value)}
-                  className={`p-2 sm:p-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-                    selectedDurations.includes(option.value)
                       ? `${option.color} ring-2 ring-offset-2 ring-indigo-600 text-gray-800 scale-105`
                       : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
@@ -800,7 +804,6 @@ Maximum 600 mots. Sois précis et clair.`
                 {filteredUnplacedGames.map(game => (
                   <div key={game.id}>
                     {editingGameId === game.id ? (
-                      // Mode édition
                       <div className="bg-indigo-100 dark:bg-gray-700 p-3 rounded-lg">
                         <input
                           type="text"
@@ -820,7 +823,7 @@ Maximum 600 mots. Sois précis et clair.`
                           <input
                             type="number"
                             value={editingGameData.duration}
-                            onChange={(e) => setEditingGameData({...editingGameData, duration: parseInt(e.target.value) || 0})}
+                            onChange={(e) => setEditingGameData({...editingGameData, duration: e.target.value})}
                             className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
                             placeholder="60"
                           />
@@ -850,7 +853,6 @@ Maximum 600 mots. Sois précis et clair.`
                         </div>
                       </div>
                     ) : (
-                      // Mode normal
                       <div
                         draggable={isOnline}
                         onDragStart={() => handleDragStart(game)}
@@ -1009,6 +1011,7 @@ Maximum 600 mots. Sois précis et clair.`
                               <div className="space-y-0.5 sm:space-y-1">
                                 {gamesInCell.map((game) => {
                                   const isHighlighted = matchesFilters(game);
+                                  const playerColor = getPlayerColor(game.players);
                                   
                                   return (
                                     <div
@@ -1018,13 +1021,13 @@ Maximum 600 mots. Sois précis et clair.`
                                       onClick={() => generateGameRules(game)}
                                       className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-pointer group relative transition-all ${
                                         isHighlighted
-                                          ? 'bg-yellow-300 ring-2 ring-yellow-500 scale-105 z-10'
-                                          : darkMode ? 'bg-slate-700 opacity-50 hover:opacity-70' : 'bg-white opacity-50 hover:opacity-70'
+                                          ? `${playerColor} ring-2 ring-yellow-500 scale-105 z-10`
+                                          : `${playerColor} opacity-70 hover:opacity-90`
                                       }`}
                                     >
                                       <div className="flex items-start justify-between gap-0.5 sm:gap-1">
                                         <span className={`text-[8px] sm:text-[10px] md:text-xs font-medium line-clamp-2 flex-1 ${
-                                          isHighlighted ? 'text-gray-800 font-bold' : textPrimary
+                                          isHighlighted ? 'text-gray-900 font-bold' : 'text-gray-800'
                                         }`}>
                                           {game.name}
                                         </span>
@@ -1045,7 +1048,7 @@ Maximum 600 mots. Sois précis et clair.`
                                         </button>
                                       </div>
                                       <div className={`flex gap-1 text-[7px] sm:text-[9px] mt-0.5 sm:mt-1 ${
-                                        isHighlighted ? 'text-gray-700 font-semibold' : textSecondary
+                                        isHighlighted ? 'text-gray-900 font-semibold' : 'text-gray-700'
                                       }`}>
                                         <span className="flex items-center gap-0.5">
                                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1060,6 +1063,9 @@ Maximum 600 mots. Sois précis et clair.`
                                             <polyline points="12 6 12 12 16 14"/>
                                           </svg>
                                           {game.duration}m
+                                        </span>
+                                        <span className="px-1 py-0.5 bg-white/30 rounded text-[6px] sm:text-[8px]">
+                                          {game.game_type === 'Coopératif' ? 'Coop' : game.game_type === 'Versus' ? 'VS' : 'Mix'}
                                         </span>
                                       </div>
                                     </div>
@@ -1172,3 +1178,22 @@ Maximum 600 mots. Sois précis et clair.`
     </div>
   );
 }
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-3 sm:mb-4">
+            <h3 className={`text-sm font-semibold ${textPrimary} mb-2`}>Durée</h3>
+            <div className="grid grid-cols-3 sm:grid-cols-7 gap-1.5 sm:gap-2">
+              {durationOptions.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => toggleFilter(selectedDurations, setSelectedDurations, option.value)}
+                  className={`p-2 sm:p-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                    selectedDurations.includes(option.value)
+                      ? `${option.color} ring-2 ring-offset-2 ring-indigo-600 text-gray-800 scale-105`
+                      : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {option.label}
