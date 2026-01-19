@@ -9,7 +9,7 @@ const supabase = createClient(
 const shelfConfigs = {
   '2x2': { rows: 2, cols: 2, label: '77x77 cm (2x2)' },
   '2x4': { rows: 2, cols: 4, label: '77x147 cm (2x4)' },
-  '4x4': { rows: 4, cols: 4, label: '147x147 cm (4x4)' },
+  '4x4': { rows: 4, cols: 4, label: '147x147 cm (4x4)' },A
   '4x2': { rows: 4, cols: 2, label: '147x77 cm (4x2)' },
 };
 
@@ -454,14 +454,30 @@ Maximum 600 mots.`
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Erreur API Response:', errorText);
       throw new Error(`Erreur API Gemini: ${response.status}`);
     }
 
     const data = await response.json();
-    const rulesText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    console.log('Réponse complète de Gemini:', data);
+    
+    // Vérifier plusieurs formats de réponse possibles
+    let rulesText = null;
+    
+    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      rulesText = data.candidates[0].content.parts[0].text;
+    } else if (data?.text) {
+      rulesText = data.text;
+    } else if (data?.response) {
+      rulesText = data.response;
+    } else if (typeof data === 'string') {
+      rulesText = data;
+    }
 
     if (!rulesText) {
-      throw new Error('Réponse Gemini invalide');
+      console.error('Structure de réponse non reconnue:', data);
+      throw new Error('Réponse Gemini invalide - structure non reconnue');
     }
 
     await supabase
@@ -472,7 +488,7 @@ Maximum 600 mots.`
     setEditedRules(rulesText);
 
   } catch (error) {
-    console.error('Erreur IA:', error);
+    console.error('Erreur IA complète:', error);
     const errorMsg = 'Erreur lors du chargement des règles. Vous pouvez les saisir manuellement.';
     setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
     setEditedRules(errorMsg);
@@ -530,16 +546,19 @@ const matchesDurationFilter = (gameDuration, selectedDurationValues) => {
     return parseInt(d);
   }).sort((a, b) => a - b);
   
+  // Si une seule durée sélectionnée, on garde les jeux <= cette durée
   if (durationNumbers.length === 1) {
-    return gameDuration <= durationNumbers[0];
+    const selectedDuration = durationNumbers[0];
+    return gameDuration <= selectedDuration;
   }
   
+  // Si plusieurs durées, on prend la plage min-max
   const minDuration = durationNumbers[0];
   const maxDuration = durationNumbers[durationNumbers.length - 1];
   
   return gameDuration >= minDuration && gameDuration <= maxDuration;
 };
-
+  
 const matchesFilters = (game) => {
   // Recherche par nom
   if (searchTerm.trim() !== '') {
