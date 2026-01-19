@@ -1059,7 +1059,7 @@ const matchesFilters = (game) => {
                                     >
                                       <div className="flex items-start justify-between gap-0.5 sm:gap-1">
                                         <span className={`text-[8px] sm:text-[10px] md:text-xs font-medium line-clamp-2 flex-1 ${
-                                          isHighlighted ? 'text-gray-800 font-bold' : textPrimary
+                                          isHighlighted ? 'text-gray-900 font-bold' : 'text-gray-800'
                                         }`}>
                                           {game.name}
                                         </span>
