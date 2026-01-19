@@ -435,16 +435,11 @@ export default function Ludotheque() {
   }
 
   try {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('Clé API Gemini non configurée');
-    }
-
     const response = await fetch('/api/gemini', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    prompt: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
 
 - But du jeu
 - Nombre de joueurs: ${game.players}
@@ -455,8 +450,8 @@ export default function Ludotheque() {
 - Conditions de victoire
 
 Maximum 600 mots.`
-  })
-});
+      })
+    });
 
     if (!response.ok) {
       throw new Error(`Erreur API Gemini: ${response.status}`);
