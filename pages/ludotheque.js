@@ -462,6 +462,12 @@ Maximum 600 mots.`
     const data = await response.json();
     console.log('Réponse complète de Gemini:', data);
     
+    // Si la réponse contient une erreur
+    if (data.error) {
+      console.error('Erreur retournée par Gemini:', data.error);
+      throw new Error(data.error.message || 'Erreur API Gemini');
+    }
+    
     // Vérifier plusieurs formats de réponse possibles
     let rulesText = null;
     
@@ -471,6 +477,8 @@ Maximum 600 mots.`
       rulesText = data.text;
     } else if (data?.response) {
       rulesText = data.response;
+    } else if (data?.content) {
+      rulesText = data.content;
     } else if (typeof data === 'string') {
       rulesText = data;
     }
@@ -489,14 +497,14 @@ Maximum 600 mots.`
 
   } catch (error) {
     console.error('Erreur IA complète:', error);
-    const errorMsg = 'Erreur lors du chargement des règles. Vous pouvez les saisir manuellement.';
+    const errorMsg = `Erreur lors du chargement des règles: ${error.message}. Vous pouvez les saisir manuellement.`;
     setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
     setEditedRules(errorMsg);
   } finally {
     setIsLoadingRules(false);
   }
 };
-
+  
   const saveEditedRules = async () => {
     if (!selectedGame) return;
     
@@ -546,10 +554,10 @@ const matchesDurationFilter = (gameDuration, selectedDurationValues) => {
     return parseInt(d);
   }).sort((a, b) => a - b);
   
-  // Si une seule durée sélectionnée, on garde les jeux <= cette durée
+  // Si une seule durée sélectionnée, on garde les jeux >= cette durée
   if (durationNumbers.length === 1) {
     const selectedDuration = durationNumbers[0];
-    return gameDuration <= selectedDuration;
+    return gameDuration >= selectedDuration;
   }
   
   // Si plusieurs durées, on prend la plage min-max
