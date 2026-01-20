@@ -86,6 +86,7 @@ export default function Ludotheque() {
   const [isOnline, setIsOnline] = useState(true);
   const [showUnplacedGames, setShowUnplacedGames] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     checkAuth();
@@ -107,6 +108,62 @@ export default function Ludotheque() {
     if (isLoggedIn && username) {
       loadData();
     }
+  }, [isLoggedIn, username]);
+
+  // NOUVEAU : Synchronisation temps réel
+  useEffect(() => {
+    if (!isLoggedIn || !username) return;
+
+    const shelvesSubscription = supabase
+      .channel('shelves-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'shelves',
+          filter: `user_id=eq.${username}`
+        },
+        (payload) => {
+          console.log('Shelves change:', payload);
+          if (payload.eventType === 'INSERT') {
+            setShelves(prev => [...prev, payload.new].sort((a, b) => a.position - b.position));
+          } else if (payload.eventType === 'UPDATE') {
+            setShelves(prev => prev.map(s => s.id === payload.new.id ? payload.new : s));
+          } else if (payload.eventType === 'DELETE') {
+            setShelves(prev => prev.filter(s => s.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    const gamesSubscription = supabase
+      .channel('games-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'board_games',
+          filter: `user_id=eq.${username}`
+        },
+        (payload) => {
+          console.log('Games change:', payload);
+          if (payload.eventType === 'INSERT') {
+            setGames(prev => [...prev, payload.new]);
+          } else if (payload.eventType === 'UPDATE') {
+            setGames(prev => prev.map(g => g.id === payload.new.id ? payload.new : g));
+          } else if (payload.eventType === 'DELETE') {
+            setGames(prev => prev.filter(g => g.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(shelvesSubscription);
+      supabase.removeChannel(gamesSubscription);
+    };
   }, [isLoggedIn, username]);
 
   const checkAuth = async () => {
@@ -621,11 +678,26 @@ const matchesFilters = (game) => {
   
   return true;
 };
-  const handleDragStart = (game) => {
+  const handleDragStart = (game, e) => {
   setDraggedGame(game);
   setIsDragging(true);
+  
+  // Initialiser la position du fantôme
+  setDragPosition({ x: e.clientX, y: e.clientY });
+  
+  // Créer un élément transparent pour le drag natif
+  const dragImage = document.createElement('div');
+  dragImage.style.opacity = '0';
+  document.body.appendChild(dragImage);
+  e.dataTransfer.setDragImage(dragImage, 0, 0);
+  setTimeout(() => document.body.removeChild(dragImage), 0);
 };
-  const handleDragOver = (e) => e.preventDefault();
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    if (isDragging) {
+      setDragPosition({ x: e.clientX, y: e.clientY });
+    }
+  };
 
   const unplacedGames = games.filter(g => !g.position);
   const filteredUnplacedGames = unplacedGames.filter(g =>
@@ -662,7 +734,6 @@ const matchesFilters = (game) => {
     }}
     onDrop={(e) => {
       if (isDragging && draggedGame) {
-        // Si on ne drop pas dans une case d'étagère, on retire le jeu de sa position
         const isInCell = e.target.closest('[data-cell]');
         if (!isInCell) {
           e.preventDefault();
@@ -672,6 +743,7 @@ const matchesFilters = (game) => {
       }
       setIsDragging(false);
       setDraggedGame(null);
+      setDragPosition({ x: 0, y: 0 });
     }}
   >
     <div className="max-w-7xl mx-auto">
@@ -955,7 +1027,7 @@ const matchesFilters = (game) => {
                       // Mode normal
                       <div
                         draggable={isOnline}
-                        onDragStart={() => handleDragStart(game)}
+                        onDragStart={(e) => handleDragStart(game, e)}
                         className={`bg-gradient-to-r from-indigo-500 to-indigo-600 text-white p-2 sm:p-3 rounded-lg group transition-all hover:shadow-lg ${isOnline ? 'cursor-move hover:scale-102' : 'opacity-70'}`}
                       >
                         <div className="flex items-center justify-between mb-2">
@@ -1189,10 +1261,16 @@ const matchesFilters = (game) => {
                           onDragOver={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            e.currentTarget.classList.add('ring-2', 'ring-indigo-500', 'scale-105');
+                            e.currentTarget.classList.add('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl', 'bg-indigo-100', 'dark:bg-indigo-900');
                           }}
                           onDragLeave={(e) => {
-                            e.currentTarget.classList.remove('ring-2', 'ring-indigo-500', 'scale-105');
+                            e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl', 'bg-indigo-100', 'dark:bg-indigo-900');
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl', 'bg-indigo-100', 'dark:bg-indigo-900');
+                            handleDrop(row, col, shelf.id);
                           }}
                           onDrop={(e) => {
                             e.preventDefault();
@@ -1200,7 +1278,7 @@ const matchesFilters = (game) => {
                             e.currentTarget.classList.remove('ring-2', 'ring-indigo-500', 'scale-105');
                             handleDrop(row, col, shelf.id);
                           }}
-                          className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden transition-all ${
+                          className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden transition-all duration-300 ease-out ${
                             gamesInCell.length > 0
                               ? darkMode ? 'border-indigo-600 bg-gray-600' : 'border-indigo-500 bg-indigo-50'
                               : darkMode ? 'border-gray-600 border-dashed hover:border-gray-500' : 'border-gray-300 border-dashed hover:border-gray-400'
@@ -1218,7 +1296,7 @@ const matchesFilters = (game) => {
                                       key={game.id}
                                       draggable={isOnline}
                                       onDragStart={(e) => {
-                                        handleDragStart(game);
+                                        handleDragStart(game, e);
                                         e.currentTarget.classList.add('opacity-50');
                                       }}
                                       onDragEnd={(e) => {
@@ -1298,6 +1376,28 @@ const matchesFilters = (game) => {
         </div>
       </div>
 
+      {/* Aperçu fantôme du jeu en cours de déplacement */}
+      {isDragging && draggedGame && (
+        <div
+          className="fixed pointer-events-none z-50 transition-transform duration-100"
+          style={{
+            left: dragPosition.x - 60,
+            top: dragPosition.y - 30,
+            transform: 'rotate(-5deg)',
+          }}
+        >
+          <div className={`${getColorByPlayers(draggedGame.players)} p-3 rounded-lg shadow-2xl opacity-90 w-32 border-4 border-white dark:border-gray-800 animate-pulse`}>
+            <div className="font-bold text-xs text-gray-900 mb-1 truncate">
+              {draggedGame.name}
+            </div>
+            <div className="flex gap-1 text-[10px] text-gray-800">
+              <span>👥 {draggedGame.players}</span>
+              <span>⏱️ {draggedGame.duration}m</span>
+            </div>
+          </div>
+        </div>
+      )}
+    
       {/* Modal règles */}
       {selectedGame && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 backdrop-blur-sm">
