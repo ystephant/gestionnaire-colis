@@ -85,6 +85,7 @@ export default function Ludotheque() {
   
   const [isOnline, setIsOnline] = useState(true);
   const [showUnplacedGames, setShowUnplacedGames] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -620,7 +621,10 @@ const matchesFilters = (game) => {
   
   return true;
 };
-  const handleDragStart = (game) => setDraggedGame(game);
+  const handleDragStart = (game) => {
+  setDraggedGame(game);
+  setIsDragging(true);
+};
   const handleDragOver = (e) => e.preventDefault();
 
   const unplacedGames = games.filter(g => !g.position);
@@ -649,8 +653,26 @@ const matchesFilters = (game) => {
   }
 
   return (
-    <div className={`min-h-screen ${bgClass} p-2 sm:p-4 md:p-6`}>
-      <div className="max-w-7xl mx-auto">
+  <div 
+    className={`min-h-screen ${bgClass} p-2 sm:p-4 md:p-6`}
+    onDragOver={(e) => {
+      if (isDragging) {
+        e.preventDefault();
+      }
+    }}
+    onDrop={(e) => {
+      if (isDragging && draggedGame) {
+        // Si on ne drop pas dans une zone spécifique (étagère ou case), on retire le jeu
+        const isInShelfArea = e.target.closest('[data-shelf]') || e.target.closest('[data-cell]');
+        if (!isInShelfArea) {
+          e.preventDefault();
+          handleDropToDelete();
+        }
+      }
+      setIsDragging(false);
+    }}
+  >
+    <div className="max-w-7xl mx-auto">
         {showToast && (
           <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
             {toastMessage}
@@ -1046,7 +1068,7 @@ const matchesFilters = (game) => {
             const { rows, cols } = shelfConfigs[shelf.size];
             
             return (
-              <div key={shelf.id} className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6`}>
+              <div key={shelf.id} data-shelf="true" className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6`}>
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
   <div className="flex items-center gap-2 flex-1">
     <button
@@ -1107,16 +1129,18 @@ const matchesFilters = (game) => {
       </div>
     ) : (
       <>
-        <span className={`text-base sm:text-lg font-bold ${textPrimary} flex-1`}>
-          {shelf.name}
-        </span>
-        <span className={`text-sm ${textSecondary} px-2 py-1 rounded ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-          {(() => {
-            const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
-            const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
-            return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
-          })()}
-        </span>
+        <div className="flex items-center gap-2 flex-1">
+          <span className={`text-base sm:text-lg font-bold ${textPrimary}`}>
+            {shelf.name}
+          </span>
+          <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+            {(() => {
+              const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
+              const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
+              return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
+            })()}
+          </span>
+        </div>
         <button
           onClick={() => {
             setEditingShelfId(shelf.id);
@@ -1173,26 +1197,31 @@ const matchesFilters = (game) => {
     </div>
 
     <div 
-  className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl relative`}
-  onDragOver={(e) => {
-    e.preventDefault();
-    if (draggedGame && draggedGame.shelf_id === shelf.id) {
-      e.currentTarget.classList.add('ring-4', 'ring-red-500');
-    }
-  }}
-  onDragLeave={(e) => {
-    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
-      e.currentTarget.classList.remove('ring-4', 'ring-red-500');
-    }
-  }}
-  onDrop={(e) => {
-    e.currentTarget.classList.remove('ring-4', 'ring-red-500');
-    // Si on drop en dehors d'une case spécifique (sur le fond)
-    if (e.target === e.currentTarget || e.target.closest('[data-cell]') === null) {
-      handleDropToDelete();
-    }
-  }}
->
+      className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl relative`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        // Vérifier si on est sur le fond et pas dans une cellule
+        const isOnCell = e.target.closest('[data-cell]');
+        if (draggedGame && draggedGame.shelf_id === shelf.id && !isOnCell) {
+          e.currentTarget.classList.add('ring-4', 'ring-red-500');
+        }
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
+          e.currentTarget.classList.remove('ring-4', 'ring-red-500');
+        }
+      }}
+      onDrop={(e) => {
+        e.currentTarget.classList.remove('ring-4', 'ring-red-500');
+        // Si on drop en dehors d'une case spécifique (sur le fond ou n'importe où dans l'étagère sauf une cellule)
+        const isOnCell = e.target.closest('[data-cell]');
+        if (!isOnCell) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleDropToDelete();
+        }
+      }}
+    >
                   <div
                     className="grid gap-1 sm:gap-2 md:gap-3"
                     style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
