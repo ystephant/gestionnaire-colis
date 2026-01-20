@@ -744,6 +744,11 @@ const matchesFilters = (game) => {
       setIsDragging(false);
       setDraggedGame(null);
       setDragPosition({ x: 0, y: 0 });
+      
+      // Nettoyer toutes les cases
+      document.querySelectorAll('[data-cell]').forEach(cell => {
+        cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
+      });
     }}
   >
     <div className="max-w-7xl mx-auto">
@@ -1261,16 +1266,19 @@ const matchesFilters = (game) => {
                           onDragOver={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            e.currentTarget.classList.add('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl', 'bg-indigo-100', 'dark:bg-indigo-900');
+                            e.currentTarget.classList.add('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
                           }}
                           onDragLeave={(e) => {
-                            e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl', 'bg-indigo-100', 'dark:bg-indigo-900');
+                            e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
                           }}
                           onDrop={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl', 'bg-indigo-100', 'dark:bg-indigo-900');
+                            e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
                             handleDrop(row, col, shelf.id);
+                          }}
+                          onDragEnd={(e) => {
+                            e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
                           }}
                           onDrop={(e) => {
                             e.preventDefault();
@@ -1302,6 +1310,11 @@ const matchesFilters = (game) => {
                                       onDragEnd={(e) => {
                                         e.currentTarget.classList.remove('opacity-50');
                                         setIsDragging(false);
+                                        
+                                        // Nettoyer toutes les cases qui pourraient avoir gardé l'effet de zoom
+                                        document.querySelectorAll('[data-cell]').forEach(cell => {
+                                          cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
+                                        });
                                       }}
                                       onDoubleClick={() => generateGameRules(game)}
                                       className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-move group relative transition-all ${
@@ -1386,7 +1399,7 @@ const matchesFilters = (game) => {
             transform: 'rotate(-5deg)',
           }}
         >
-          <div className={`${getColorByPlayers(draggedGame.players)} p-3 rounded-lg shadow-2xl opacity-90 w-32 border-4 border-white dark:border-gray-800 animate-pulse`}>
+          <div className={`${getColorByPlayers(draggedGame.players)} p-3 rounded-lg shadow-2xl opacity-50 w-32 border-4 border-white dark:border-gray-800`}>
             <div className="font-bold text-xs text-gray-900 mb-1 truncate">
               {draggedGame.name}
             </div>
