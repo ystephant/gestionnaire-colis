@@ -50,6 +50,13 @@ const getColorByPlayers = (players) => {
   return 'bg-gray-400';
 };
 
+const formatDuration = (duration, duration_max) => {
+  if (duration_max && duration_max !== duration) {
+    return `${duration}-${duration_max}min`;
+  }
+  return `${duration}min`;
+};
+
 export default function Ludotheque() {
   const [darkMode, setDarkMode] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -231,21 +238,22 @@ export default function Ludotheque() {
   };
 
   const addNewGame = async () => {
-    if (!newGameName.trim() || !isOnline) return;
+  if (!newGameName.trim() || !isOnline) return;
 
-    try {
-      const { data, error } = await supabase
-        .from('board_games')
-        .insert([{
-          user_id: username,
-          name: newGameName.trim(),
-          players: '2-4',
-          duration: 60,
-          game_type: 'Versus',
-          position: null,
-          shelf_id: null
-        }])
-        .select();
+  try {
+    const { data, error } = await supabase
+      .from('board_games')
+      .insert([{
+        user_id: username,
+        name: newGameName.trim(),
+        players: '2-4',
+        duration: 60,
+        duration_max: null,
+        game_type: 'Versus',
+        position: null,
+        shelf_id: null
+      }])
+      .select();
 
       if (error) throw error;
       
@@ -258,14 +266,15 @@ export default function Ludotheque() {
   };
 
   const startEditGame = (game) => {
-    setEditingGameId(game.id);
-    setEditingGameData({
-      name: game.name,
-      players: game.players,
-      duration: game.duration,
-      game_type: game.game_type || 'Versus'
-    });
-  };
+  setEditingGameId(game.id);
+  setEditingGameData({
+    name: game.name,
+    players: game.players,
+    duration: game.duration,
+    duration_max: game.duration_max || null,
+    game_type: game.game_type || 'Versus'
+  });
+};
 
   const saveGameEdit = async () => {
     if (!editingGameData.name.trim()) return;
@@ -293,21 +302,22 @@ export default function Ludotheque() {
   };
 
   const duplicateGame = async (game) => {
-    if (!isOnline) return;
+  if (!isOnline) return;
 
-    try {
-      const { data, error } = await supabase
-        .from('board_games')
-        .insert([{
-          user_id: username,
-          name: game.name,
-          players: game.players,
-          duration: game.duration,
-          game_type: game.game_type || 'Versus',
-          position: null,
-          shelf_id: null
-        }])
-        .select();
+  try {
+    const { data, error } = await supabase
+      .from('board_games')
+      .insert([{
+        user_id: username,
+        name: game.name,
+        players: game.players,
+        duration: game.duration,
+        duration_max: game.duration_max || null,
+        game_type: game.game_type || 'Versus',
+        position: null,
+        shelf_id: null
+      }])
+      .select();
 
       if (error) throw error;
       setGames([...games, ...data]);
@@ -636,7 +646,7 @@ Maximum 600 mots.`
   });
 };
 
-const matchesDurationFilter = (gameDuration, selectedDurationValues) => {
+const matchesDurationFilter = (gameDuration, gameDurationMax, selectedDurationValues) => {
   if (selectedDurationValues.length === 0) return true;
   
   const durationNumbers = selectedDurationValues.map(d => {
@@ -644,17 +654,22 @@ const matchesDurationFilter = (gameDuration, selectedDurationValues) => {
     return parseInt(d);
   }).sort((a, b) => a - b);
   
-  // Si une seule durée sélectionnée, on garde les jeux >= cette durée
+  const gameMin = gameDuration;
+  const gameMax = gameDurationMax || gameDuration;
+  
+  // Si une seule durée sélectionnée
   if (durationNumbers.length === 1) {
     const selectedDuration = durationNumbers[0];
-    return gameDuration >= selectedDuration;
+    // Le jeu correspond si sa fourchette chevauche la durée sélectionnée
+    return gameMax >= selectedDuration && gameMin <= selectedDuration + 30;
   }
   
   // Si plusieurs durées, on prend la plage min-max
   const minDuration = durationNumbers[0];
   const maxDuration = durationNumbers[durationNumbers.length - 1];
   
-  return gameDuration >= minDuration && gameDuration <= maxDuration;
+  // Le jeu correspond si sa fourchette chevauche la fourchette sélectionnée
+  return gameMax >= minDuration && gameMin <= maxDuration;
 };
   
 const matchesFilters = (game) => {
@@ -669,7 +684,7 @@ const matchesFilters = (game) => {
   if (!matchesPlayerFilter(game.players, selectedPlayers)) return false;
   
   // Filtres de durée
-  if (!matchesDurationFilter(game.duration, selectedDurations)) return false;
+  if (!matchesDurationFilter(game.duration, game.duration_max, selectedDurations)) return false;
   
   // Filtres de type
   if (selectedTypes.length > 0) {
@@ -990,19 +1005,36 @@ const matchesFilters = (game) => {
                             className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
                             placeholder="2-4"
                           />
-                          <input
-                            type="text"
-                            value={editingGameData.duration === 0 ? '' : editingGameData.duration}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditingGameData({
-                                ...editingGameData, 
-                                duration: val === '' ? 0 : parseInt(val) || 0
-                              });
-                            }}
-                            className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
-                            placeholder="60"
-                          />
+                          <div className="col-span-2 grid grid-cols-2 gap-1">
+                            <input
+                              type="text"
+                              value={editingGameData.duration === 0 ? '' : editingGameData.duration}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditingGameData({
+                                  ...editingGameData, 
+                                  duration: val === '' ? 0 : parseInt(val) || 0
+                                });
+                              }}
+                              className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
+                              placeholder="Min 60"
+                            />
+                            <input
+                              type="text"
+                              value={editingGameData.duration_max === 0 || editingGameData.duration_max === null ? '' : editingGameData.duration_max}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditingGameData({
+                                  ...editingGameData, 
+                                  duration_max: val === '' ? null : parseInt(val) || null
+                                });
+                              }}
+                              className={`px-2 py-1 border-2 ${inputBg} rounded ${textPrimary} text-xs`}
+                              placeholder="Max 120"
+                            />
+                          </div>
+                        </div>
+                        <div className="mb-2">
                           <select
                             value={editingGameData.game_type}
                             onChange={(e) => setEditingGameData({...editingGameData, game_type: e.target.value})}
@@ -1086,7 +1118,7 @@ const matchesFilters = (game) => {
                               <circle cx="12" cy="12" r="10"/>
                               <polyline points="12 6 12 12 16 14"/>
                             </svg>
-                            {game.duration}min
+                            {formatDuration(game.duration, game.duration_max)}
                           </span>
                           <span className="px-2 py-0.5 bg-white/20 rounded">
                             {game.game_type || 'Versus'}
@@ -1360,7 +1392,7 @@ const matchesFilters = (game) => {
                                             <circle cx="12" cy="12" r="10"/>
                                             <polyline points="12 6 12 12 16 14"/>
                                           </svg>
-                                          {game.duration}m
+                                          {game.duration_max && game.duration_max !== game.duration ? `${game.duration}-${game.duration_max}` : game.duration}m
                                         </span>
                                         <span className="px-1 py-0.5 bg-gray-800 bg-opacity-20 rounded text-[6px] sm:text-[8px]">
                                           {game.game_type === 'Coopératif' ? 'Coop' : game.game_type === 'Versus' ? 'VS' : 'Mix'}
@@ -1405,7 +1437,7 @@ const matchesFilters = (game) => {
             </div>
             <div className="flex gap-1 text-[10px] text-gray-800">
               <span>👥 {draggedGame.players}</span>
-              <span>⏱️ {draggedGame.duration}m</span>
+              <span>⏱️ {formatDuration(draggedGame.duration, draggedGame.duration_max)}</span>
             </div>
           </div>
         </div>
