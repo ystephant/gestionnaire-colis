@@ -662,14 +662,16 @@ const matchesFilters = (game) => {
     }}
     onDrop={(e) => {
       if (isDragging && draggedGame) {
-        // Si on ne drop pas dans une zone spécifique (étagère ou case), on retire le jeu
-        const isInShelfArea = e.target.closest('[data-shelf]') || e.target.closest('[data-cell]');
-        if (!isInShelfArea) {
+        // Si on ne drop pas dans une case d'étagère, on retire le jeu de sa position
+        const isInCell = e.target.closest('[data-cell]');
+        if (!isInCell) {
           e.preventDefault();
+          e.stopPropagation();
           handleDropToDelete();
         }
       }
       setIsDragging(false);
+      setDraggedGame(null);
     }}
   >
     <div className="max-w-7xl mx-auto">
@@ -889,32 +891,6 @@ const matchesFilters = (game) => {
                   </button>
                 )}
               </div>
-
-              {draggedGame && draggedGame.position && (
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDropZoneActive(true);
-                  }}
-                  onDragLeave={() => setDropZoneActive(false)}
-                  onDrop={handleDropToDelete}
-                  className={`mb-3 sm:mb-4 p-4 sm:p-6 border-4 border-dashed rounded-lg transition-all ${
-                    dropZoneActive 
-                      ? 'border-red-500 bg-red-50 dark:bg-red-900/20 scale-105' 
-                      : 'border-gray-300 bg-gray-50 dark:bg-gray-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-center gap-2 text-sm sm:text-base">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="3 6 5 6 21 6"/>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                    </svg>
-                    <span className={dropZoneActive ? 'text-red-500 font-bold' : textSecondary}>
-                      Glissez ici pour retirer de l'étagère
-                    </span>
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {filteredUnplacedGames.map(game => (
@@ -1196,32 +1172,7 @@ const matchesFilters = (game) => {
       </select>
     </div>
 
-    <div 
-      className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl relative`}
-      onDragOver={(e) => {
-        e.preventDefault();
-        // Vérifier si on est sur le fond et pas dans une cellule
-        const isOnCell = e.target.closest('[data-cell]');
-        if (draggedGame && draggedGame.shelf_id === shelf.id && !isOnCell) {
-          e.currentTarget.classList.add('ring-4', 'ring-red-500');
-        }
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
-          e.currentTarget.classList.remove('ring-4', 'ring-red-500');
-        }
-      }}
-      onDrop={(e) => {
-        e.currentTarget.classList.remove('ring-4', 'ring-red-500');
-        // Si on drop en dehors d'une case spécifique (sur le fond ou n'importe où dans l'étagère sauf une cellule)
-        const isOnCell = e.target.closest('[data-cell]');
-        if (!isOnCell) {
-          e.preventDefault();
-          e.stopPropagation();
-          handleDropToDelete();
-        }
-      }}
-    >
+    <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl relative`}>
                   <div
                     className="grid gap-1 sm:gap-2 md:gap-3"
                     style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
@@ -1272,8 +1223,9 @@ const matchesFilters = (game) => {
                                       }}
                                       onDragEnd={(e) => {
                                         e.currentTarget.classList.remove('opacity-50');
+                                        setIsDragging(false);
                                       }}
-                                      onClick={() => generateGameRules(game)}
+                                      onDoubleClick={() => generateGameRules(game)}
                                       className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-move group relative transition-all ${
                                         hasActiveFilters
                                           ? isHighlighted
