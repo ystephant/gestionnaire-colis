@@ -264,7 +264,9 @@ export default function Ludotheque() {
 
     if (error) throw error;
     
-    setGames([...games, ...data]);
+    if (data && data.length > 0) {
+  setGames([...games, data[0]]);
+}
     setNewGameName('');
     setNewGameMinPlayers('2');
     setNewGameMaxPlayers('4');
