@@ -794,7 +794,11 @@ const matchesFilters = (game) => {
               ✕ Réinitialiser tous les filtres
             </button>
           )}
+            </>
+          )}
         </div>
+
+        {/* Jeux disponibles */}
 
         {/* Jeux disponibles */}
         <div className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6 mb-4 sm:mb-6`}>
