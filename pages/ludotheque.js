@@ -10,7 +10,8 @@ const shelfConfigs = {
   '2x2': { rows: 2, cols: 2, label: '77x77 cm (2x2)' },
   '2x4': { rows: 2, cols: 4, label: '77x147 cm (2x4)' },
   '4x4': { rows: 4, cols: 4, label: '147x147 cm (4x4)' },
-  '4x2': { rows: 4, cols: 2, label: '147x77 cm (4x2)' }
+  '4x2': { rows: 4, cols: 2, label: '147x77 cm (4x2)' },
+  '5x5': { rows: 5, cols: 5, label: '182x182 cm (5x5)' }
 };
 
 const playerOptions = [
@@ -70,6 +71,8 @@ export default function Ludotheque() {
   const [editedRules, setEditedRules] = useState('');
   const [showFilters, setShowFilters] = useState(true);
   const [collapsedShelves, setCollapsedShelves] = useState(new Set());
+  const [editingShelfId, setEditingShelfId] = useState(null);
+  const [editingShelfName, setEditingShelfName] = useState('');
   
   // État pour l'édition de jeu
   const [editingGameId, setEditingGameId] = useState(null);
@@ -1063,13 +1066,77 @@ const matchesFilters = (game) => {
     >
       {collapsedShelves.has(shelf.id) ? '▶' : '▼'}
     </button>
-    <input
-      type="text"
-      value={shelf.name}
-      onChange={(e) => updateShelfName(shelf.id, e.target.value)}
-      disabled={!isOnline}
-      className={`text-base sm:text-lg font-bold ${textPrimary} bg-transparent border-b-2 border-transparent hover:border-indigo-500 focus:border-indigo-500 focus:outline-none px-2 flex-1`}
-    />
+    
+    {editingShelfId === shelf.id ? (
+      <div className="flex items-center gap-2 flex-1">
+        <input
+          type="text"
+          value={editingShelfName}
+          onChange={(e) => setEditingShelfName(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              updateShelfName(shelf.id, editingShelfName);
+              setEditingShelfId(null);
+            }
+          }}
+          className={`text-base sm:text-lg font-bold ${textPrimary} ${inputBg} border-2 border-indigo-500 rounded px-2 py-1 flex-1`}
+          autoFocus
+        />
+        <button
+          onClick={() => {
+            updateShelfName(shelf.id, editingShelfName);
+            setEditingShelfId(null);
+          }}
+          className="p-1 rounded bg-green-600 text-white hover:bg-green-700"
+          title="Valider"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </button>
+        <button
+          onClick={() => setEditingShelfId(null)}
+          className="p-1 rounded bg-gray-500 text-white hover:bg-gray-600"
+          title="Annuler"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    ) : (
+      <>
+        <span className={`text-base sm:text-lg font-bold ${textPrimary} flex-1`}>
+          {shelf.name}
+        </span>
+        <span className={`text-sm ${textSecondary} px-2 py-1 rounded ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+          {(() => {
+            const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
+            const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
+            return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
+          })()}
+        </span>
+        <button
+          onClick={() => {
+            setEditingShelfId(shelf.id);
+            setEditingShelfName(shelf.name);
+          }}
+          disabled={!isOnline}
+          className={`p-1.5 rounded transition ${
+            isOnline
+              ? darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'
+              : 'opacity-50 cursor-not-allowed'
+          }`}
+          title="Modifier le nom"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+      </>
+    )}
   </div>
   {shelves.length > 1 && (
     <button
@@ -1105,7 +1172,27 @@ const matchesFilters = (game) => {
       </select>
     </div>
 
-    <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl`}>
+    <div 
+  className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl relative`}
+  onDragOver={(e) => {
+    e.preventDefault();
+    if (draggedGame && draggedGame.shelf_id === shelf.id) {
+      e.currentTarget.classList.add('ring-4', 'ring-red-500');
+    }
+  }}
+  onDragLeave={(e) => {
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
+      e.currentTarget.classList.remove('ring-4', 'ring-red-500');
+    }
+  }}
+  onDrop={(e) => {
+    e.currentTarget.classList.remove('ring-4', 'ring-red-500');
+    // Si on drop en dehors d'une case spécifique (sur le fond)
+    if (e.target === e.currentTarget || e.target.closest('[data-cell]') === null) {
+      handleDropToDelete();
+    }
+  }}
+>
                   <div
                     className="grid gap-1 sm:gap-2 md:gap-3"
                     style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
@@ -1118,8 +1205,21 @@ const matchesFilters = (game) => {
                       return (
                         <div
                           key={`${row}-${col}`}
-                          onDragOver={handleDragOver}
-                          onDrop={() => handleDrop(row, col, shelf.id)}
+                          data-cell="true"
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.currentTarget.classList.add('ring-2', 'ring-indigo-500', 'scale-105');
+                          }}
+                          onDragLeave={(e) => {
+                            e.currentTarget.classList.remove('ring-2', 'ring-indigo-500', 'scale-105');
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.currentTarget.classList.remove('ring-2', 'ring-indigo-500', 'scale-105');
+                            handleDrop(row, col, shelf.id);
+                          }}
                           className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden transition-all ${
                             gamesInCell.length > 0
                               ? darkMode ? 'border-indigo-600 bg-gray-600' : 'border-indigo-500 bg-indigo-50'
@@ -1137,9 +1237,15 @@ const matchesFilters = (game) => {
                                     <div
                                       key={game.id}
                                       draggable={isOnline}
-                                      onDragStart={() => handleDragStart(game)}
+                                      onDragStart={(e) => {
+                                        handleDragStart(game);
+                                        e.currentTarget.classList.add('opacity-50');
+                                      }}
+                                      onDragEnd={(e) => {
+                                        e.currentTarget.classList.remove('opacity-50');
+                                      }}
                                       onClick={() => generateGameRules(game)}
-                                      className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-pointer group relative transition-all ${
+                                      className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-move group relative transition-all ${
                                         hasActiveFilters
                                           ? isHighlighted
                                             ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
