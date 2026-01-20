@@ -264,9 +264,7 @@ export default function Ludotheque() {
 
     if (error) throw error;
     
-    if (data && data.length > 0) {
-  setGames([...games, data[0]]);
-}
+    // ✅ Pas besoin de setGames ici, la synchro temps réel s'en charge
     setNewGameName('');
     setNewGameMinPlayers('2');
     setNewGameMaxPlayers('4');
@@ -278,7 +276,6 @@ export default function Ludotheque() {
     console.error('Erreur:', error);
   }
 };
-
   const startEditGame = (game) => {
   setEditingGameId(game.id);
   setEditingGameData({
@@ -334,7 +331,7 @@ export default function Ludotheque() {
       .select();
 
       if (error) throw error;
-      setGames([...games, ...data]);
+      // ✅ Pas besoin de setGames ici, la synchro temps réel s'en charge
       showToastMessage(`✅ "${game.name}" dupliqué`);
     } catch (error) {
       console.error('Erreur:', error);
