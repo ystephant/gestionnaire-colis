@@ -68,6 +68,8 @@ export default function Ludotheque() {
   const [toastMessage, setToastMessage] = useState('');
   const [isEditingRules, setIsEditingRules] = useState(false);
   const [editedRules, setEditedRules] = useState('');
+  const [showFilters, setShowFilters] = useState(true);
+  const [collapsedShelves, setCollapsedShelves] = useState(new Set());
   
   // État pour l'édition de jeu
   const [editingGameId, setEditingGameId] = useState(null);
@@ -428,12 +430,33 @@ export default function Ludotheque() {
   setIsLoadingRules(true);
   setIsEditingRules(false);
 
+  // Vérifier d'abord si les règles existent déjà en mémoire
   if (gameRules[game.name]) {
     setEditedRules(gameRules[game.name]);
     setIsLoadingRules(false);
     return;
   }
 
+  // Vérifier si les règles existent déjà en base de données
+  try {
+    const { data: existingRules, error: fetchError } = await supabase
+      .from('game_rules')
+      .select('rules_text')
+      .eq('game_name', game.name)
+      .single();
+
+    if (!fetchError && existingRules && existingRules.rules_text) {
+      // Règles trouvées en base de données
+      setGameRules(prev => ({ ...prev, [game.name]: existingRules.rules_text }));
+      setEditedRules(existingRules.rules_text);
+      setIsLoadingRules(false);
+      return;
+    }
+  } catch (error) {
+    console.log('Aucune règle existante trouvée, génération par IA...');
+  }
+
+  // Génération par IA si aucune règle n'existe
   try {
     const response = await fetch('/api/gemini', {
       method: 'POST',
@@ -462,13 +485,11 @@ Maximum 600 mots.`
     const data = await response.json();
     console.log('Réponse complète de Gemini:', data);
     
-    // Si la réponse contient une erreur
     if (data.error) {
       console.error('Erreur retournée par Gemini:', data.error);
       throw new Error(data.error.message || 'Erreur API Gemini');
     }
     
-    // Vérifier plusieurs formats de réponse possibles
     let rulesText = null;
     
     if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
@@ -488,9 +509,17 @@ Maximum 600 mots.`
       throw new Error('Réponse Gemini invalide - structure non reconnue');
     }
 
-    await supabase
+    // Utiliser upsert avec onConflict pour éviter l'erreur 409
+    const { error: upsertError } = await supabase
       .from('game_rules')
-      .upsert({ game_name: game.name, rules_text: rulesText });
+      .upsert(
+        { game_name: game.name, rules_text: rulesText },
+        { onConflict: 'game_name' }
+      );
+
+    if (upsertError) {
+      console.error('Erreur lors de la sauvegarde:', upsertError);
+    }
 
     setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
     setEditedRules(rulesText);
@@ -678,14 +707,24 @@ const matchesFilters = (game) => {
 
         {/* Filtres */}
         <div className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 mb-4 sm:mb-6`}>
-          <h2 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-3 sm:mb-4 flex items-center gap-2`}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-            </svg>
-            Filtres
-          </h2>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h2 className={`text-lg sm:text-xl font-bold ${textPrimary} flex items-center gap-2`}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+              </svg>
+              Filtres
+            </h2>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`text-sm font-semibold ${textPrimary} hover:text-indigo-600`}
+            >
+              {showFilters ? '▼ Masquer' : '▶ Afficher'}
+            </button>
+          </div>
           
-          <div className="mb-3 sm:mb-4">
+          {showFilters && (
+            <>
+              <div className="mb-3 sm:mb-4">
             <h3 className={`text-sm font-semibold ${textPrimary} mb-2`}>Nombre de joueurs</h3>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2">
               {playerOptions.map(option => (
@@ -1002,46 +1041,67 @@ const matchesFilters = (game) => {
             return (
               <div key={shelf.id} className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6`}>
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
-                  <input
-                    type="text"
-                    value={shelf.name}
-                    onChange={(e) => updateShelfName(shelf.id, e.target.value)}
-                    disabled={!isOnline}
-                    className={`text-base sm:text-lg font-bold ${textPrimary} bg-transparent border-b-2 border-transparent hover:border-indigo-500 focus:border-indigo-500 focus:outline-none px-2 flex-1`}
-                  />
-                  {shelves.length > 1 && (
-                    <button
-                      onClick={() => deleteShelf(shelf.id)}
-                      disabled={!isOnline}
-                      className={`p-2 rounded ml-2 transition ${
-                        isOnline
-                          ? darkMode ? 'text-red-400 hover:bg-red-900/20' : 'text-red-500 hover:bg-red-50'
-                          : 'opacity-50 cursor-not-allowed'
-                      }`}
-                      title="Supprimer l'étagère"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                      </svg>
-                    </button>
-                  )}
-                </div>
+  <div className="flex items-center gap-2 flex-1">
+    <button
+      onClick={() => {
+        setCollapsedShelves(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(shelf.id)) {
+            newSet.delete(shelf.id);
+          } else {
+            newSet.add(shelf.id);
+          }
+          return newSet;
+        });
+      }}
+      className={`${textPrimary} hover:text-indigo-600 transition`}
+      title={collapsedShelves.has(shelf.id) ? "Afficher" : "Masquer"}
+    >
+      {collapsedShelves.has(shelf.id) ? '▶' : '▼'}
+    </button>
+    <input
+      type="text"
+      value={shelf.name}
+      onChange={(e) => updateShelfName(shelf.id, e.target.value)}
+      disabled={!isOnline}
+      className={`text-base sm:text-lg font-bold ${textPrimary} bg-transparent border-b-2 border-transparent hover:border-indigo-500 focus:border-indigo-500 focus:outline-none px-2 flex-1`}
+    />
+  </div>
+  {shelves.length > 1 && (
+    <button
+      onClick={() => deleteShelf(shelf.id)}
+      disabled={!isOnline}
+      className={`p-2 rounded ml-2 transition ${
+        isOnline
+          ? darkMode ? 'text-red-400 hover:bg-red-900/20' : 'text-red-500 hover:bg-red-50'
+          : 'opacity-50 cursor-not-allowed'
+      }`}
+      title="Supprimer l'étagère"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+      </svg>
+    </button>
+  )}
+</div>
 
-                <div className="mb-3 sm:mb-4">
-                  <select
-                    value={shelf.size}
-                    onChange={(e) => updateShelfSize(shelf.id, e.target.value)}
-                    disabled={!isOnline}
-                    className={`w-full px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
-                  >
-                    {Object.entries(shelfConfigs).map(([key, config]) => (
-                      <option key={key} value={key}>{config.label}</option>
-                    ))}
-                  </select>
-                </div>
+{!collapsedShelves.has(shelf.id) && (
+  <>
+    <div className="mb-3 sm:mb-4">
+      <select
+        value={shelf.size}
+        onChange={(e) => updateShelfSize(shelf.id, e.target.value)}
+        disabled={!isOnline}
+        className={`w-full px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
+      >
+        {Object.entries(shelfConfigs).map(([key, config]) => (
+          <option key={key} value={key}>{config.label}</option>
+        ))}
+      </select>
+    </div>
 
-                <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl`}>
+    <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl`}>
                   <div
                     className="grid gap-1 sm:gap-2 md:gap-3"
                     style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
