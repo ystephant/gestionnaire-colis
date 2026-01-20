@@ -67,6 +67,11 @@ export default function Ludotheque() {
   const [games, setGames] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [newGameName, setNewGameName] = useState('');
+  const [newGameMinPlayers, setNewGameMinPlayers] = useState('2');
+  const [newGameMaxPlayers, setNewGameMaxPlayers] = useState('4');
+  const [newGameMinDuration, setNewGameMinDuration] = useState('30');
+  const [newGameMaxDuration, setNewGameMaxDuration] = useState('60');
+  const [newGameType, setNewGameType] = useState('Versus');
   const [draggedGame, setDraggedGame] = useState(null);
   const [selectedGame, setSelectedGame] = useState(null);
   const [isLoadingRules, setIsLoadingRules] = useState(false);
@@ -241,29 +246,36 @@ export default function Ludotheque() {
   if (!newGameName.trim() || !isOnline) return;
 
   try {
+    const playersRange = `${newGameMinPlayers}-${newGameMaxPlayers}`;
+    const durationValue = parseInt(newGameMinDuration);
+    
     const { data, error } = await supabase
       .from('board_games')
       .insert([{
         user_id: username,
         name: newGameName.trim(),
-        players: '2-4',
-        duration: 60,
-        duration_max: null,
-        game_type: 'Versus',
+        players: playersRange,
+        duration: durationValue,
+        game_type: newGameType,
         position: null,
         shelf_id: null
       }])
       .select();
 
-      if (error) throw error;
-      
-      setGames([...games, ...data]);
-      setNewGameName('');
-      showToastMessage(`✅ "${newGameName.trim()}" ajouté`);
-    } catch (error) {
-      console.error('Erreur:', error);
-    }
-  };
+    if (error) throw error;
+    
+    setGames([...games, ...data]);
+    setNewGameName('');
+    setNewGameMinPlayers('2');
+    setNewGameMaxPlayers('4');
+    setNewGameMinDuration('30');
+    setNewGameMaxDuration('60');
+    setNewGameType('Versus');
+    showToastMessage(`✅ "${newGameName.trim()}" ajouté`);
+  } catch (error) {
+    console.error('Erreur:', error);
+  }
+};
 
   const startEditGame = (game) => {
   setEditingGameId(game.id);
@@ -936,28 +948,105 @@ const matchesFilters = (game) => {
           
           {showUnplacedGames && (
             <>
-              <div className="mb-3 sm:mb-4 flex gap-2">
-                <input
-                  type="text"
-                  value={newGameName}
-                  onChange={(e) => setNewGameName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addNewGame()}
-                  placeholder="Ajouter un nouveau jeu..."
-                  className={`flex-1 px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
-                  disabled={!isOnline}
-                />
-                <button
-                  onClick={addNewGame}
-                  disabled={!isOnline}
-                  className={`p-2 rounded-lg transition ${isOnline ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-gray-200 cursor-not-allowed'}`}
-                  title="Ajouter le jeu"
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/>
-                    <line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                </button>
-              </div>
+              <div className="mb-3 sm:mb-4 space-y-3">
+  <input
+    type="text"
+    value={newGameName}
+    onChange={(e) => setNewGameName(e.target.value)}
+    onKeyPress={(e) => e.key === 'Enter' && addNewGame()}
+    placeholder="Nom du jeu..."
+    className={`w-full px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500 font-semibold`}
+    disabled={!isOnline}
+  />
+  
+  <div className="grid grid-cols-2 gap-2">
+    <div>
+      <label className={`text-xs ${textSecondary} mb-1 block`}>Joueurs min</label>
+      <select
+        value={newGameMinPlayers}
+        onChange={(e) => setNewGameMinPlayers(e.target.value)}
+        className={`w-full px-2 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm focus:ring-2 focus:ring-indigo-500`}
+        disabled={!isOnline}
+      >
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+          <option key={n} value={n}>{n}</option>
+        ))}
+      </select>
+    </div>
+    
+    <div>
+      <label className={`text-xs ${textSecondary} mb-1 block`}>Joueurs max</label>
+      <select
+        value={newGameMaxPlayers}
+        onChange={(e) => setNewGameMaxPlayers(e.target.value)}
+        className={`w-full px-2 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm focus:ring-2 focus:ring-indigo-500`}
+        disabled={!isOnline}
+      >
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map(n => (
+          <option key={n} value={n}>{n}</option>
+        ))}
+      </select>
+    </div>
+  </div>
+  
+  <div className="grid grid-cols-2 gap-2">
+    <div>
+      <label className={`text-xs ${textSecondary} mb-1 block`}>Durée min (min)</label>
+      <input
+        type="number"
+        value={newGameMinDuration}
+        onChange={(e) => setNewGameMinDuration(e.target.value)}
+        className={`w-full px-2 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm focus:ring-2 focus:ring-indigo-500`}
+        disabled={!isOnline}
+        min="5"
+        step="5"
+      />
+    </div>
+    
+    <div>
+      <label className={`text-xs ${textSecondary} mb-1 block`}>Durée max (min)</label>
+      <input
+        type="number"
+        value={newGameMaxDuration}
+        onChange={(e) => setNewGameMaxDuration(e.target.value)}
+        className={`w-full px-2 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm focus:ring-2 focus:ring-indigo-500`}
+        disabled={!isOnline}
+        min="5"
+        step="5"
+      />
+    </div>
+  </div>
+  
+        <div>
+          <label className={`text-xs ${textSecondary} mb-1 block`}>Type de jeu</label>
+          <select
+            value={newGameType}
+            onChange={(e) => setNewGameType(e.target.value)}
+            className={`w-full px-2 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm focus:ring-2 focus:ring-indigo-500`}
+            disabled={!isOnline}
+          >
+            {gameTypeOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+        
+        <button
+          onClick={addNewGame}
+          disabled={!isOnline || !newGameName.trim()}
+          className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 text-sm sm:text-base transition ${
+            isOnline && newGameName.trim() 
+              ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+              : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+          }`}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Ajouter le jeu
+        </button>
+      </div>
 
               <div className="relative mb-3 sm:mb-4">
                 <svg className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${textSecondary}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
