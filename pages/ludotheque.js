@@ -655,19 +655,22 @@ const matchesDurationFilter = (gameDuration, gameDurationMax, selectedDurationVa
   }).sort((a, b) => a - b);
   
   const gameMin = gameDuration;
+  const gameMax = gameDurationMax || gameDuration;
+  
+  // Fourchette de filtrage
+  const filterMin = durationNumbers[0];
+  const filterMax = durationNumbers[durationNumbers.length - 1];
   
   // Si une seule durée sélectionnée
   if (durationNumbers.length === 1) {
-    const selectedDuration = durationNumbers[0];
     // Le jeu s'affiche si le filtre >= durée minimum du jeu
-    return selectedDuration >= gameMin;
+    return filterMin >= gameMin;
   }
   
-  // Si plusieurs durées, on prend le minimum de la plage sélectionnée
-  const minDuration = durationNumbers[0];
-  
-  // Le jeu s'affiche si le filtre min >= durée minimum du jeu
-  return minDuration >= gameMin;
+  // Si plusieurs durées sélectionnées = fourchette
+  // Le jeu s'affiche si sa fourchette chevauche la fourchette du filtre
+  // Chevauchement = le max du jeu >= min du filtre ET le min du jeu <= max du filtre
+  return gameMax >= filterMin && gameMin <= filterMax;
 };
   
 const matchesFilters = (game) => {
