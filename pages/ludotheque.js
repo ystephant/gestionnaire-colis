@@ -1574,7 +1574,9 @@ const matchesFilters = (game) => {
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
                               <span className={`${textSecondary}`} style={{ fontSize: `${0.75 * zoomLevel}rem` }}>Vide</span>
-                             </div>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
