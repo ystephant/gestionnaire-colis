@@ -1524,7 +1524,11 @@ const matchesFilters = (game) => {
                                             isHighlighted ? 'text-gray-900 font-bold' : 'text-gray-800'
                                           }`}
                                           style={{ 
-                                            fontSize: gamesInCell.length > 6 ? `${0.5 * zoomLevel}rem` : gamesInCell.length > 3 ? `${0.65 * zoomLevel}rem` : `${0.75 * zoomLevel}rem`
+                                            fontSize: gamesInCell.length > 6 
+                                              ? `${Math.max(0.6, 0.5 * zoomLevel)}rem` 
+                                              : gamesInCell.length > 3 
+                                                ? `${Math.max(0.7, 0.65 * zoomLevel)}rem` 
+                                                : `${Math.max(0.8, 0.75 * zoomLevel)}rem`
                                           }}
                                         >
                                           {game.name}
