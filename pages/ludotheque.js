@@ -99,6 +99,7 @@ export default function Ludotheque() {
   const [showUnplacedGames, setShowUnplacedGames] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const [zoomLevel, setZoomLevel] = useState(1); // 0.7, 0.85, 1, 1.15, 1.3
 
   useEffect(() => {
     checkAuth();
@@ -541,22 +542,46 @@ export default function Ludotheque() {
   // Génération par IA si aucune règle n'existe
   try {
     const response = await fetch('/api/gemini', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    prompt: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
 
-- But du jeu
-- Nombre de joueurs: ${game.players}
-- Durée: ${game.duration} minutes
-- Matériel
-- Mise en place
-- Déroulement
-- Conditions de victoire
+Format MARKDOWN avec tableaux:
 
-Maximum 600 mots.`
-      })
-    });
+# ${game.name}
+
+## Informations générales
+| Caractéristique | Détail |
+|-----------------|--------|
+| Joueurs | ${game.players} |
+| Durée | ${game.duration} minutes |
+| Type | ${game.game_type} |
+
+## But du jeu
+[Description courte]
+
+## Matériel
+| Élément | Quantité |
+|---------|----------|
+| ... | ... |
+
+## Mise en place
+1. Étape 1
+2. Étape 2
+...
+
+## Déroulement du tour
+| Phase | Action |
+|-------|--------|
+| ... | ... |
+
+## Conditions de victoire
+[Description]
+
+Maximum 500 mots.`
+  })
+});
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1160,6 +1185,17 @@ const matchesFilters = (game) => {
                           <span className="font-medium flex-1 text-sm sm:text-base">{game.name}</span>
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
+                              onClick={() => generateGameRules(game)}
+                              disabled={!isOnline}
+                              className="p-1 rounded hover:bg-purple-500 transition"
+                              title="Générer les règles (IA)"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                              </svg>
+                            </button>
+                            <button
                               onClick={() => startEditGame(game)}
                               disabled={!isOnline}
                               className="p-1 rounded hover:bg-indigo-700 transition"
@@ -1357,18 +1393,48 @@ const matchesFilters = (game) => {
 
 {!collapsedShelves.has(shelf.id) && (
   <>
-    <div className="mb-3 sm:mb-4">
-      <select
-        value={shelf.size}
-        onChange={(e) => updateShelfSize(shelf.id, e.target.value)}
-        disabled={!isOnline}
-        className={`w-full px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
+    <div className="mb-3 sm:mb-4 space-y-2">
+  <div className="flex items-center gap-2">
+    <label className={`text-sm font-semibold ${textPrimary} flex-shrink-0`}>Zoom:</label>
+    <div className="flex items-center gap-1 flex-1">
+      <button
+        onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.15))}
+        className={`px-3 py-1 rounded ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} font-bold`}
+        title="Zoom -"
       >
-        {Object.entries(shelfConfigs).map(([key, config]) => (
-          <option key={key} value={key}>{config.label}</option>
-        ))}
-      </select>
+        −
+      </button>
+      <span className={`px-3 py-1 text-center min-w-[60px] ${textPrimary} font-semibold`}>
+        {Math.round(zoomLevel * 100)}%
+      </span>
+      <button
+        onClick={() => setZoomLevel(prev => Math.min(2, prev + 0.15))}
+        className={`px-3 py-1 rounded ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} font-bold`}
+        title="Zoom +"
+      >
+        +
+      </button>
+      <button
+        onClick={() => setZoomLevel(1)}
+        className={`px-3 py-1 rounded text-xs ${darkMode ? 'bg-indigo-700 hover:bg-indigo-600' : 'bg-indigo-200 hover:bg-indigo-300'} font-semibold`}
+        title="Réinitialiser"
+      >
+        100%
+      </button>
     </div>
+  </div>
+  
+  <select
+    value={shelf.size}
+    onChange={(e) => updateShelfSize(shelf.id, e.target.value)}
+    disabled={!isOnline}
+    className={`w-full px-3 sm:px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
+  >
+    {Object.entries(shelfConfigs).map(([key, config]) => (
+      <option key={key} value={key}>{config.label}</option>
+    ))}
+  </select>
+</div>
 
     <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} p-2 sm:p-3 md:p-6 rounded-xl relative`}>
                   <div
@@ -1409,7 +1475,13 @@ const matchesFilters = (game) => {
                           }}
                           className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden transition-all duration-300 ease-out ${
                             gamesInCell.length > 0
-                              ? darkMode ? 'border-indigo-600 bg-gray-600' : 'border-indigo-500 bg-indigo-50'
+                              ? (() => {
+                                  const hasFilteredGame = hasActiveFilters && gamesInCell.some(g => matchesFilters(g));
+                                  if (hasFilteredGame) {
+                                    return darkMode ? 'border-yellow-500 bg-yellow-900/30 ring-2 ring-yellow-500' : 'border-yellow-500 bg-yellow-100 ring-2 ring-yellow-400';
+                                  }
+                                  return darkMode ? 'border-indigo-600 bg-gray-600' : 'border-indigo-500 bg-indigo-50';
+                                })()
                               : darkMode ? 'border-gray-600 border-dashed hover:border-gray-500' : 'border-gray-300 border-dashed hover:border-gray-400'
                           }`}
                         >
@@ -1432,7 +1504,6 @@ const matchesFilters = (game) => {
                                         e.currentTarget.classList.remove('opacity-50');
                                         setIsDragging(false);
                                         
-                                        // Nettoyer toutes les cases qui pourraient avoir gardé l'effet de zoom
                                         document.querySelectorAll('[data-cell]').forEach(cell => {
                                           cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
                                         });
@@ -1445,11 +1516,17 @@ const matchesFilters = (game) => {
                                             : 'opacity-20 grayscale hover:opacity-40'
                                           : 'opacity-90 hover:opacity-100'
                                       } ${gameColor}`}
+                                      style={{ fontSize: `${zoomLevel}rem` }}
                                     >
                                       <div className="flex items-start justify-between gap-0.5 sm:gap-1">
-                                        <span className={`text-[8px] sm:text-[10px] md:text-xs font-medium line-clamp-2 flex-1 ${
-                                          isHighlighted ? 'text-gray-900 font-bold' : 'text-gray-800'
-                                        }`}>
+                                        <span 
+                                          className={`font-medium line-clamp-2 flex-1 ${
+                                            isHighlighted ? 'text-gray-900 font-bold' : 'text-gray-800'
+                                          }`}
+                                          style={{ 
+                                            fontSize: gamesInCell.length > 6 ? `${0.5 * zoomLevel}rem` : gamesInCell.length > 3 ? `${0.65 * zoomLevel}rem` : `${0.75 * zoomLevel}rem`
+                                          }}
+                                        >
                                           {game.name}
                                         </span>
                                         <button
@@ -1462,31 +1539,33 @@ const matchesFilters = (game) => {
                                             isOnline ? 'opacity-0 group-hover:opacity-100' : 'opacity-50'
                                           }`}
                                         >
-                                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="sm:w-2.5 sm:h-2.5">
+                                          <svg width={`${8 * zoomLevel}`} height={`${8 * zoomLevel}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                             <polyline points="3 6 5 6 21 6"/>
                                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
                                           </svg>
                                         </button>
                                       </div>
-                                      <div className="flex gap-1 text-[7px] sm:text-[9px] mt-0.5 sm:mt-1 text-gray-700 font-medium">
-                                        <span className="flex items-center gap-0.5">
-                                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                            <circle cx="9" cy="7" r="4"/>
-                                          </svg>
-                                          {game.players}
-                                        </span>
-                                        <span className="flex items-center gap-0.5">
-                                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <circle cx="12" cy="12" r="10"/>
-                                            <polyline points="12 6 12 12 16 14"/>
-                                          </svg>
-                                          {game.duration_max && game.duration_max !== game.duration ? `${game.duration}-${game.duration_max}` : game.duration}m
-                                        </span>
-                                        <span className="px-1 py-0.5 bg-gray-800 bg-opacity-20 rounded text-[6px] sm:text-[8px]">
-                                          {game.game_type === 'Coopératif' ? 'Coop' : game.game_type === 'Versus' ? 'VS' : 'Mix'}
-                                        </span>
-                                      </div>
+                                      {gamesInCell.length <= 4 && (
+                                        <div className="flex gap-1 mt-0.5 sm:mt-1 text-gray-700 font-medium" style={{ fontSize: `${0.55 * zoomLevel}rem` }}>
+                                          <span className="flex items-center gap-0.5">
+                                            <svg width={`${8 * zoomLevel}`} height={`${8 * zoomLevel}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                              <circle cx="9" cy="7" r="4"/>
+                                            </svg>
+                                            {game.players}
+                                          </span>
+                                          <span className="flex items-center gap-0.5">
+                                            <svg width={`${8 * zoomLevel}`} height={`${8 * zoomLevel}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                              <circle cx="12" cy="12" r="10"/>
+                                              <polyline points="12 6 12 12 16 14"/>
+                                            </svg>
+                                            {game.duration_max && game.duration_max !== game.duration ? `${game.duration}-${game.duration_max}` : game.duration}m
+                                          </span>
+                                          <span className="px-1 py-0.5 bg-gray-800 bg-opacity-20 rounded" style={{ fontSize: `${0.5 * zoomLevel}rem` }}>
+                                            {game.game_type === 'Coopératif' ? 'Coop' : game.game_type === 'Versus' ? 'VS' : 'Mix'}
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -1494,21 +1573,9 @@ const matchesFilters = (game) => {
                             </div>
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
-                              <span className={`${textSecondary} text-[8px] sm:text-xs`}>Vide</span>
+                              <span className={`${textSecondary}`} style={{ fontSize: `${0.75 * zoomLevel}rem` }}>Vide</span>
                             </div>
                           )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Aperçu fantôme du jeu en cours de déplacement */}
       {isDragging && draggedGame && (
@@ -1571,9 +1638,28 @@ const matchesFilters = (game) => {
                   placeholder="Saisissez les règles du jeu..."
                 />
               ) : (
-                <div className={`${textPrimary} whitespace-pre-wrap text-sm sm:text-base leading-relaxed`}>
-                  {gameRules[selectedGame.name] || 'Aucune règle disponible. Cliquez sur "Modifier" pour les saisir manuellement.'}
-                </div>
+                <div 
+                  className={`${textPrimary} text-sm sm:text-base leading-relaxed prose ${darkMode ? 'prose-invert' : ''} max-w-none`}
+                  style={{
+                    '& table': { width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' },
+                    '& th, & td': { border: '1px solid #ddd', padding: '8px', textAlign: 'left' },
+                    '& th': { backgroundColor: darkMode ? '#374151' : '#f3f4f6', fontWeight: 'bold' }
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: gameRules[selectedGame.name]
+                      ? gameRules[selectedGame.name]
+                          .replace(/\n/g, '<br>')
+                          .replace(/\|(.+)\|/g, (match) => {
+                            const cells = match.split('|').filter(Boolean);
+                            return `<tr>${cells.map(cell => `<td>${cell.trim()}</td>`).join('')}</tr>`;
+                          })
+                          .replace(/<tr>(.+?)<\/tr>/g, (match, content) => {
+                            if (content.includes('---')) return '';
+                            return match;
+                          })
+                      : 'Aucune règle disponible. Cliquez sur "Modifier" pour les saisir manuellement.'
+                  }}
+                />
               )}
             </div>
             <div className={`p-3 sm:p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex flex-wrap gap-2 justify-end`}>
