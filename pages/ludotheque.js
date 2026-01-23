@@ -1769,19 +1769,18 @@ const matchesFilters = (game) => {
                                       }}
                                     >
                                       {viewMode === 'images' && gameImage ? (
-                                        <div className="relative w-full h-full overflow-hidden rounded">
-                                          <div 
-                                            className="absolute inset-0"
+                                        <div className="relative w-full h-full overflow-hidden rounded bg-gray-800">
+                                          <img 
+                                            src={gameImage.url}
+                                            alt={game.name}
+                                            className="absolute inset-0 w-full h-full object-cover"
                                             style={{
-                                              backgroundImage: `url(${gameImage.url})`,
-                                              backgroundSize: 'cover',
-                                              backgroundPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
-                                              backgroundRepeat: 'no-repeat',
+                                              objectPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
                                               transform: `scale(${gameImage.crop.scale})`,
                                               transformOrigin: 'center'
                                             }}
                                           />
-                                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+                                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1 z-10">
                                             <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
                                           </div>
                                           <button
