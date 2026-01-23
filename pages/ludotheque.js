@@ -527,18 +527,6 @@ export default function Ludotheque() {
     }
   };
 
-  const generateGameRules = async (game) => {
-  setSelectedGame(game);
-  setIsLoadingRules(true);
-  setIsEditingRules(false);
-
-  // Vérifier d'abord si les règles existent déjà en mémoire
-  if (gameRules[game.name]) {
-    setEditedRules(gameRules[game.name]);
-    setIsLoadingRules(false);
-    return;
-  }
-
   const searchGameImages = async (gameName) => {
   setIsLoadingImages(true);
   setImageSearchResults([]);
@@ -564,7 +552,6 @@ export default function Ludotheque() {
 
 const uploadToCloudinary = async (imageUrl) => {
   try {
-    // Upload via URL vers Cloudinary
     const formData = new FormData();
     formData.append('file', imageUrl);
     formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
@@ -587,7 +574,6 @@ const uploadToCloudinary = async (imageUrl) => {
 
 const selectGameImage = async (gameId, imageUrl, source) => {
   try {
-    // Upload vers Cloudinary si c'est une URL externe
     let cloudinaryUrl = imageUrl;
     
     if (source !== 'uploaded') {
@@ -610,7 +596,7 @@ const saveCroppedImage = async () => {
       .from('board_games')
       .update({ 
         image_url: croppingImage.url,
-        image_crop: cropSettings
+        image_crop: JSON.stringify(cropSettings)
       })
       .eq('id', croppingImage.gameId);
     
@@ -633,26 +619,18 @@ const saveCroppedImage = async () => {
     showToastMessage('❌ Erreur lors de la sauvegarde');
   }
 };
-  
-  setGameImages(newGameImages);
-  
-  // Sauvegarder en base de données
-  try {
-    await supabase
-      .from('board_games')
-      .update({ 
-        image_url: croppingImage.url,
-        image_crop: JSON.stringify(cropSettings)
-      })
-      .eq('id', croppingImage.gameId);
-  } catch (error) {
-    console.error('Erreur sauvegarde image:', error);
+
+// PUIS LA FONCTION generateGameRules
+const generateGameRules = async (game) => {
+  setSelectedGame(game);
+  setIsLoadingRules(true);
+  setIsEditingRules(false);
+
+  if (gameRules[game.name]) {
+    setEditedRules(gameRules[game.name]);
+    setIsLoadingRules(false);
+    return;
   }
-  
-  setCroppingImage(null);
-  setSelectingImageFor(null);
-  setImageSearchResults([]);
-};
     
   // Vérifier si les règles existent déjà en base de données
   try {
