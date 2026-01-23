@@ -826,53 +826,7 @@ if (rulesText) {
 
 setIsLoadingRules(false);
   
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Erreur API Response:', errorText);
-      throw new Error(`Erreur API Gemini: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log('Réponse complète de Gemini:', data);
     
-    if (data.error) {
-      console.error('Erreur retournée par Gemini:', data.error);
-      throw new Error(data.error.message || 'Erreur API Gemini');
-    }
-    
-    let rulesText = null;
-    
-    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      rulesText = data.candidates[0].content.parts[0].text;
-    } else if (data?.text) {
-      rulesText = data.text;
-    } else if (data?.response) {
-      rulesText = data.response;
-    } else if (data?.content) {
-      rulesText = data.content;
-    } else if (typeof data === 'string') {
-      rulesText = data;
-    }
-
-    if (!rulesText) {
-      console.error('Structure de réponse non reconnue:', data);
-      throw new Error('Réponse Gemini invalide - structure non reconnue');
-    }
-
-    // Utiliser upsert avec onConflict pour éviter l'erreur 409
-    const { error: upsertError } = await supabase
-      .from('game_rules')
-      .upsert(
-        { game_name: game.name, rules_text: rulesText },
-        { onConflict: 'game_name' }
-      );
-
-    if (upsertError) {
-      console.error('Erreur lors de la sauvegarde:', upsertError);
-    }
-
-    setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
-    setEditedRules(rulesText);
 };
   
   const saveEditedRules = async () => {
