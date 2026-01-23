@@ -1730,6 +1730,9 @@ const matchesFilters = (game) => {
                                   const gameImage = gameImages[game.id];
 
                                   console.log('Game:', game.name, 'Image:', gameImage);
+                                  if (gameImage) {
+                                    console.log('ViewMode:', viewMode, 'URL:', gameImage.url);
+                                  }
                                   
                                   // Calculer la taille de police : 100% par défaut, minimum 80%
                                   const baseFontSize = 1; // 100% par défaut
