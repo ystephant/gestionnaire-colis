@@ -130,61 +130,85 @@ export default function Ludotheque() {
     }
   }, [isLoggedIn, username]);
 
-  // NOUVEAU : Synchronisation temps réel
-  useEffect(() => {
-    if (!isLoggedIn || !username) return;
+  / NOUVEAU : Synchronisation temps réel
+useEffect(() => {
+  if (!isLoggedIn || !username) return;
 
-    const shelvesSubscription = supabase
-      .channel('shelves-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'shelves',
-          filter: `user_id=eq.${username}`
-        },
-        (payload) => {
-          console.log('Shelves change:', payload);
-          if (payload.eventType === 'INSERT') {
-            setShelves(prev => [...prev, payload.new].sort((a, b) => a.position - b.position));
-          } else if (payload.eventType === 'UPDATE') {
-            setShelves(prev => prev.map(s => s.id === payload.new.id ? payload.new : s));
-          } else if (payload.eventType === 'DELETE') {
-            setShelves(prev => prev.filter(s => s.id !== payload.old.id));
-          }
+  const shelvesSubscription = supabase
+    .channel('shelves-changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'shelves',
+        filter: `user_id=eq.${username}`
+      },
+      (payload) => {
+        console.log('Shelves change:', payload);
+        if (payload.eventType === 'INSERT') {
+          setShelves(prev => [...prev, payload.new].sort((a, b) => a.position - b.position));
+        } else if (payload.eventType === 'UPDATE') {
+          setShelves(prev => prev.map(s => s.id === payload.new.id ? payload.new : s));
+        } else if (payload.eventType === 'DELETE') {
+          setShelves(prev => prev.filter(s => s.id !== payload.old.id));
         }
-      )
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    const gamesSubscription = supabase
-      .channel('games-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'board_games',
-          filter: `user_id=eq.${username}`
-        },
-        (payload) => {
-          console.log('Games change:', payload);
-          if (payload.eventType === 'INSERT') {
-            setGames(prev => [...prev, payload.new]);
-          } else if (payload.eventType === 'UPDATE') {
-            setGames(prev => prev.map(g => g.id === payload.new.id ? payload.new : g));
-          } else if (payload.eventType === 'DELETE') {
-            setGames(prev => prev.filter(g => g.id !== payload.old.id));
+  const gamesSubscription = supabase
+    .channel('games-changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'board_games',
+        filter: `user_id=eq.${username}`
+      },
+      (payload) => {
+        console.log('Games change:', payload);
+        if (payload.eventType === 'INSERT') {
+          setGames(prev => [...prev, payload.new]);
+        } else if (payload.eventType === 'UPDATE') {
+          setGames(prev => prev.map(g => g.id === payload.new.id ? payload.new : g));
+          
+          // Synchroniser les images aussi
+          if (payload.new.image_url) {
+            setGameImages(prev => ({
+              ...prev,
+              [payload.new.id]: {
+                url: payload.new.image_url,
+                crop: payload.new.image_crop ? JSON.parse(payload.new.image_crop) : { x: 50, y: 50, scale: 1 }
+              }
+            }));
+          } else {
+            // Si l'image a été supprimée
+            setGameImages(prev => {
+              const newImages = { ...prev };
+              delete newImages[payload.new.id];
+              return newImages;
+            });
           }
+        } else if (payload.eventType === 'DELETE') {
+          setGames(prev => prev.filter(g => g.id !== payload.old.id));
+          // Supprimer aussi l'image du jeu supprimé
+          setGameImages(prev => {
+            const newImages = { ...prev };
+            delete newImages[payload.old.id];
+            return newImages;
+          });
         }
-      )
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(shelvesSubscription);
-      supabase.removeChannel(gamesSubscription);
-    };
-  }, [isLoggedIn, username]);
+  return () => {
+    supabase.removeChannel(shelvesSubscription);
+    supabase.removeChannel(gamesSubscription);
+  };
+}, [isLoggedIn, username]);
 
   const checkAuth = async () => {
     const savedUsername = localStorage.getItem('username');
@@ -238,17 +262,25 @@ export default function Ludotheque() {
     setGames(gamesData || []);
     
     // Charger les images des jeux
-    const imagesMap = {};
-    (gamesData || []).forEach(game => {
-      if (game.image_url) {
+const imagesMap = {};
+  (gamesData || []).forEach(game => {
+    if (game.image_url) {
+      try {
         imagesMap[game.id] = {
           url: game.image_url,
           crop: game.image_crop ? JSON.parse(game.image_crop) : { x: 50, y: 50, scale: 1 }
         };
+      } catch (e) {
+        console.error('Erreur parsing image_crop:', e);
+        imagesMap[game.id] = {
+          url: game.image_url,
+          crop: { x: 50, y: 50, scale: 1 }
+        };
       }
-    });
-    setGameImages(imagesMap);
-
+    }
+  });
+  setGameImages(imagesMap);
+        
   } catch (error) {
     console.error('Erreur de chargement:', error);
   } finally {
@@ -605,17 +637,19 @@ const saveCroppedImage = async () => {
   if (!croppingImage) return;
   
   try {
+    const cropData = JSON.stringify(cropSettings);
+    
     const { error } = await supabase
       .from('board_games')
       .update({ 
         image_url: croppingImage.url,
-        image_crop: JSON.stringify(cropSettings)
+        image_crop: cropData
       })
       .eq('id', croppingImage.gameId);
     
     if (error) throw error;
     
-    // Mettre à jour l'état local des images
+    // Mettre à jour l'état local IMMÉDIATEMENT
     setGameImages(prev => ({
       ...prev,
       [croppingImage.gameId]: {
@@ -624,12 +658,7 @@ const saveCroppedImage = async () => {
       }
     }));
     
-    // Mettre à jour également l'état des jeux pour forcer le re-render
-    setGames(prev => prev.map(g => 
-      g.id === croppingImage.gameId 
-        ? { ...g, image_url: croppingImage.url, image_crop: JSON.stringify(cropSettings) }
-        : g
-    ));
+    // Ne PAS modifier l'état des jeux ici car la synchro temps réel le fera
     
     showToastMessage('✅ Image enregistrée');
     setCroppingImage(null);
@@ -1783,8 +1812,9 @@ const matchesFilters = (game) => {
                                           : 'opacity-90 hover:opacity-100'
                                       } ${viewMode === 'images' ? 'h-full' : `p-1 sm:p-1.5 md:p-2 ${gameColor}`}`}
                                       style={{ 
-                                        fontSize: `${calculatedFontSize * zoomLevel}rem`,
-                                        lineHeight: gamesInCell.length > 2 ? '1.1' : '1.3'
+                                        fontSize: `${Math.max(0.6, calculatedFontSize * zoomLevel)}rem`, // Minimum 0.6rem pour rester lisible
+                                        lineHeight: gamesInCell.length > 2 ? '1.2' : '1.4',
+                                        minHeight: viewMode === 'list' ? `${2 * zoomLevel}rem` : 'auto' // Hauteur minimum
                                       }}
                                     >
                                       {viewMode === 'images' && gameImage ? (
