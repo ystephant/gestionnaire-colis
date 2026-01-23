@@ -1691,13 +1691,34 @@ const matchesFilters = (game) => {
           </button>
         </div>
       ) : (
-        <>
-          {/* Mode liste existant */}
-          <div className="flex items-start justify-between gap-0.5 sm:gap-1">
-            {/* ... code existant de la vue liste ... */}
-          </div>
-        </>
-      )}
+  <>
+    {/* Mode liste */}
+    <div className="flex items-start justify-between gap-0.5 sm:gap-1">
+      <span className="font-bold text-[0.6rem] sm:text-xs text-gray-900 leading-tight flex-1 break-words" style={{ fontSize: `${0.6 * zoomLevel}rem` }}>
+        {game.name}
+      </span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          removeGameFromShelf(game.id);
+        }}
+        disabled={!isOnline}
+        className="text-red-600 hover:text-red-800 transition flex-shrink-0 opacity-0 group-hover:opacity-100"
+        title="Retirer de l'étagère"
+        style={{ fontSize: `${0.8 * zoomLevel}rem` }}
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div className="flex gap-0.5 sm:gap-1 text-[0.5rem] sm:text-[0.6rem] text-gray-700 mt-0.5" style={{ fontSize: `${0.5 * zoomLevel}rem` }}>
+      <span>👥{game.players.split('-')[0]}</span>
+      <span>⏱️{game.duration}</span>
+    </div>
+  </>
+)}
     </div>
   );
 })}
