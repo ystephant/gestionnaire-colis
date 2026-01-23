@@ -544,46 +544,95 @@ export default function Ludotheque() {
   setImageSearchResults([]);
   
   try {
-    // Utiliser l'API Google Custom Search ou une API similaire
-    // Pour l'instant, simulation avec Unsplash ou une API d'images
-    const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(gameName + ' board game box')}&per_page=5&client_id=YOUR_UNSPLASH_ACCESS_KEY`);
+    const response = await fetch('/api/search-game-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gameName })
+    });
     
     if (!response.ok) throw new Error('Erreur recherche images');
     
     const data = await response.json();
-    setImageSearchResults(data.results.map(img => ({
-      id: img.id,
-      url: img.urls.regular,
-      thumb: img.urls.small
-    })));
+    setImageSearchResults(data.images);
   } catch (error) {
     console.error('Erreur recherche images:', error);
-    // Fallback: générer des URLs de placeholder
-    setImageSearchResults([
-      { id: '1', url: `https://via.placeholder.com/400x400?text=${encodeURIComponent(gameName)}`, thumb: `https://via.placeholder.com/150x150?text=${encodeURIComponent(gameName)}` },
-      { id: '2', url: `https://via.placeholder.com/400x400?text=${encodeURIComponent(gameName)}+2`, thumb: `https://via.placeholder.com/150x150?text=${encodeURIComponent(gameName)}+2` },
-      { id: '3', url: `https://via.placeholder.com/400x400?text=${encodeURIComponent(gameName)}+3`, thumb: `https://via.placeholder.com/150x150?text=${encodeURIComponent(gameName)}+3` }
-    ]);
+    showToastMessage('❌ Erreur lors de la recherche d\'images');
   } finally {
     setIsLoadingImages(false);
   }
 };
 
-const selectGameImage = (gameId, imageUrl) => {
-  setCroppingImage({ gameId, url: imageUrl });
-  setCropSettings({ x: 0, y: 0, scale: 1 });
+const uploadToCloudinary = async (imageUrl) => {
+  try {
+    // Upload via URL vers Cloudinary
+    const formData = new FormData();
+    formData.append('file', imageUrl);
+    formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
+    
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+      {
+        method: 'POST',
+        body: formData
+      }
+    );
+    
+    const data = await response.json();
+    return data.secure_url;
+  } catch (error) {
+    console.error('Erreur upload Cloudinary:', error);
+    throw error;
+  }
+};
+
+const selectGameImage = async (gameId, imageUrl, source) => {
+  try {
+    // Upload vers Cloudinary si c'est une URL externe
+    let cloudinaryUrl = imageUrl;
+    
+    if (source !== 'uploaded') {
+      showToastMessage('⏳ Upload vers Cloudinary...');
+      cloudinaryUrl = await uploadToCloudinary(imageUrl);
+    }
+    
+    setCroppingImage({ gameId, url: cloudinaryUrl });
+    setCropSettings({ x: 50, y: 50, scale: 1 });
+  } catch (error) {
+    showToastMessage('❌ Erreur lors de l\'upload de l\'image');
+  }
 };
 
 const saveCroppedImage = async () => {
   if (!croppingImage) return;
   
-  const newGameImages = {
-    ...gameImages,
-    [croppingImage.gameId]: {
-      url: croppingImage.url,
-      crop: cropSettings
-    }
-  };
+  try {
+    const { error } = await supabase
+      .from('board_games')
+      .update({ 
+        image_url: croppingImage.url,
+        image_crop: cropSettings
+      })
+      .eq('id', croppingImage.gameId);
+    
+    if (error) throw error;
+    
+    setGameImages(prev => ({
+      ...prev,
+      [croppingImage.gameId]: {
+        url: croppingImage.url,
+        crop: cropSettings
+      }
+    }));
+    
+    showToastMessage('✅ Image enregistrée');
+    setCroppingImage(null);
+    setSelectingImageFor(null);
+    setImageSearchResults([]);
+  } catch (error) {
+    console.error('Erreur sauvegarde image:', error);
+    showToastMessage('❌ Erreur lors de la sauvegarde');
+  }
+};
   
   setGameImages(newGameImages);
   
@@ -1715,7 +1764,197 @@ const matchesFilters = (game) => {
           </div>
         </div>
       )}
-    
+
+     {/* Modal sélection d'image */}
+{selectingImageFor && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className={`${cardBg} rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col`}>
+      <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
+        <h2 className={`text-xl font-bold ${textPrimary}`}>
+          Choisir une image pour "{selectingImageFor.name}"
+        </h2>
+        <button
+          onClick={() => {
+            setSelectingImageFor(null);
+            setImageSearchResults([]);
+          }}
+          className={`${textSecondary} p-2 rounded-lg hover:bg-gray-500 hover:bg-opacity-10 transition`}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      
+      <div className="p-4 overflow-y-auto flex-1">
+        {/* Upload manuel */}
+        <div className="mb-6">
+          <label className={`block text-sm font-semibold ${textPrimary} mb-2`}>
+            Ou uploader votre propre image :
+          </label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={async (e) => {
+              const file = e.target.files[0];
+              if (!file) return;
+              
+              try {
+                showToastMessage('⏳ Upload en cours...');
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
+                
+                const response = await fetch(
+                  `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+                  { method: 'POST', body: formData }
+                );
+                
+                const data = await response.json();
+                await selectGameImage(selectingImageFor.id, data.secure_url, 'uploaded');
+              } catch (error) {
+                showToastMessage('❌ Erreur lors de l\'upload');
+              }
+            }}
+            className={`w-full px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary}`}
+          />
+        </div>
+
+        {/* Résultats de recherche */}
+        {isLoadingImages ? (
+          <div className="flex items-center justify-center py-12">
+            <svg className="animate-spin h-8 w-8 text-indigo-600" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            </svg>
+          </div>
+        ) : imageSearchResults.length > 0 ? (
+          <>
+            <h3 className={`text-sm font-semibold ${textPrimary} mb-3`}>
+              Images trouvées ({imageSearchResults.length}) :
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {imageSearchResults.map((img) => (
+                <div
+                  key={img.id}
+                  className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-transparent hover:border-indigo-500 transition"
+                  onClick={() => selectGameImage(selectingImageFor.id, img.url, img.source)}
+                >
+                  <img
+                    src={img.thumb}
+                    alt={selectingImageFor.name}
+                    className="w-full h-48 object-cover"
+                  />
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                    <span className="text-white text-xs">{img.source}</span>
+                  </div>
+                  <div className="absolute inset-0 bg-indigo-600 bg-opacity-0 group-hover:bg-opacity-20 transition flex items-center justify-center">
+                    <span className="text-white font-bold opacity-0 group-hover:opacity-100 transition">
+                      Sélectionner
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className={`text-center py-8 ${textSecondary}`}>
+            Recherche d'images pour "{selectingImageFor.name}"...
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Modal crop d'image */}
+{croppingImage && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className={`${cardBg} rounded-xl shadow-2xl max-w-2xl w-full`}>
+      <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+        <h2 className={`text-xl font-bold ${textPrimary}`}>Ajuster l'image</h2>
+      </div>
+      
+      <div className="p-4">
+        <div className="relative w-full h-64 bg-gray-200 rounded-lg overflow-hidden mb-4">
+          <div
+            className="absolute inset-0 bg-cover bg-center transition-transform"
+            style={{
+              backgroundImage: `url(${croppingImage.url})`,
+              backgroundPosition: `${cropSettings.x}% ${cropSettings.y}%`,
+              transform: `scale(${cropSettings.scale})`
+            }}
+          />
+        </div>
+        
+        <div className="space-y-4">
+          <div>
+            <label className={`text-sm font-semibold ${textPrimary} block mb-2`}>
+              Position horizontale : {cropSettings.x}%
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={cropSettings.x}
+              onChange={(e) => setCropSettings(prev => ({ ...prev, x: parseInt(e.target.value) }))}
+              className="w-full"
+            />
+          </div>
+          
+          <div>
+            <label className={`text-sm font-semibold ${textPrimary} block mb-2`}>
+              Position verticale : {cropSettings.y}%
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={cropSettings.y}
+              onChange={(e) => setCropSettings(prev => ({ ...prev, y: parseInt(e.target.value) }))}
+              className="w-full"
+            />
+          </div>
+          
+          <div>
+            <label className={`text-sm font-semibold ${textPrimary} block mb-2`}>
+              Zoom : {Math.round(cropSettings.scale * 100)}%
+            </label>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={cropSettings.scale}
+              onChange={(e) => setCropSettings(prev => ({ ...prev, scale: parseFloat(e.target.value) }))}
+              className="w-full"
+            />
+          </div>
+        </div>
+      </div>
+      
+      <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex gap-2 justify-end`}>
+        <button
+          onClick={() => {
+            setCroppingImage(null);
+            setSelectingImageFor(null);
+          }}
+          className="px-4 py-2 rounded-lg font-semibold bg-gray-500 text-white hover:bg-gray-600 transition"
+        >
+          Annuler
+        </button>
+        <button
+          onClick={saveCroppedImage}
+          className="px-4 py-2 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition"
+        >
+          💾 Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+)} 
+
       {/* Modal règles */}
       {selectedGame && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 backdrop-blur-sm">
