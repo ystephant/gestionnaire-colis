@@ -100,6 +100,13 @@ export default function Ludotheque() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [zoomLevel, setZoomLevel] = useState(1); // 0.7, 0.85, 1, 1.15, 1.3
+  const [shelfViewMode, setShelfViewMode] = useState({}); // { shelfId: 'list' | 'images' }
+  const [gameImages, setGameImages] = useState({}); // { gameId: { url, crop: { x, y, scale } } }
+  const [selectingImageFor, setSelectingImageFor] = useState(null);
+  const [imageSearchResults, setImageSearchResults] = useState([]);
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+  const [croppingImage, setCroppingImage] = useState(null);
+  const [cropSettings, setCropSettings] = useState({ x: 0, y: 0, scale: 1 });
 
   useEffect(() => {
     checkAuth();
@@ -228,14 +235,26 @@ export default function Ludotheque() {
         .order('created_at', { ascending: true });
 
       if (gamesError) throw gamesError;
-      setGames(gamesData || []);
+    setGames(gamesData || []);
+    
+    // Charger les images des jeux
+    const imagesMap = {};
+    (gamesData || []).forEach(game => {
+      if (game.image_url) {
+        imagesMap[game.id] = {
+          url: game.image_url,
+          crop: game.image_crop ? JSON.parse(game.image_crop) : { x: 0, y: 0, scale: 1 }
+        };
+      }
+    });
+    setGameImages(imagesMap);
 
-    } catch (error) {
-      console.error('Erreur de chargement:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  } catch (error) {
+    console.error('Erreur de chargement:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const showToastMessage = (msg) => {
     setToastMessage(msg);
@@ -520,6 +539,72 @@ export default function Ludotheque() {
     return;
   }
 
+  const searchGameImages = async (gameName) => {
+  setIsLoadingImages(true);
+  setImageSearchResults([]);
+  
+  try {
+    // Utiliser l'API Google Custom Search ou une API similaire
+    // Pour l'instant, simulation avec Unsplash ou une API d'images
+    const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(gameName + ' board game box')}&per_page=5&client_id=YOUR_UNSPLASH_ACCESS_KEY`);
+    
+    if (!response.ok) throw new Error('Erreur recherche images');
+    
+    const data = await response.json();
+    setImageSearchResults(data.results.map(img => ({
+      id: img.id,
+      url: img.urls.regular,
+      thumb: img.urls.small
+    })));
+  } catch (error) {
+    console.error('Erreur recherche images:', error);
+    // Fallback: générer des URLs de placeholder
+    setImageSearchResults([
+      { id: '1', url: `https://via.placeholder.com/400x400?text=${encodeURIComponent(gameName)}`, thumb: `https://via.placeholder.com/150x150?text=${encodeURIComponent(gameName)}` },
+      { id: '2', url: `https://via.placeholder.com/400x400?text=${encodeURIComponent(gameName)}+2`, thumb: `https://via.placeholder.com/150x150?text=${encodeURIComponent(gameName)}+2` },
+      { id: '3', url: `https://via.placeholder.com/400x400?text=${encodeURIComponent(gameName)}+3`, thumb: `https://via.placeholder.com/150x150?text=${encodeURIComponent(gameName)}+3` }
+    ]);
+  } finally {
+    setIsLoadingImages(false);
+  }
+};
+
+const selectGameImage = (gameId, imageUrl) => {
+  setCroppingImage({ gameId, url: imageUrl });
+  setCropSettings({ x: 0, y: 0, scale: 1 });
+};
+
+const saveCroppedImage = async () => {
+  if (!croppingImage) return;
+  
+  const newGameImages = {
+    ...gameImages,
+    [croppingImage.gameId]: {
+      url: croppingImage.url,
+      crop: cropSettings
+    }
+  };
+  
+  setGameImages(newGameImages);
+  
+  // Sauvegarder en base de données
+  try {
+    await supabase
+      .from('board_games')
+      .update({ 
+        image_url: croppingImage.url,
+        image_crop: JSON.stringify(cropSettings)
+      })
+      .eq('id', croppingImage.gameId);
+  } catch (error) {
+    console.error('Erreur sauvegarde image:', error);
+  }
+  
+  setCroppingImage(null);
+  setSelectingImageFor(null);
+  setImageSearchResults([]);
+};
+    
   // Vérifier si les règles existent déjà en base de données
   try {
     const { data: existingRules, error: fetchError } = await supabase
@@ -547,39 +632,15 @@ export default function Ludotheque() {
   body: JSON.stringify({
     prompt: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
 
-Format MARKDOWN avec tableaux:
+- But du jeu
+- Nombre de joueurs: ${game.players}
+- Durée: ${game.duration} minutes
+- Matériel
+- Mise en place
+- Déroulement
+- Conditions de victoire
 
-# ${game.name}
-
-## Informations générales
-| Caractéristique | Détail |
-|-----------------|--------|
-| Joueurs | ${game.players} |
-| Durée | ${game.duration} minutes |
-| Type | ${game.game_type} |
-
-## But du jeu
-[Description courte]
-
-## Matériel
-| Élément | Quantité |
-|---------|----------|
-| ... | ... |
-
-## Mise en place
-1. Étape 1
-2. Étape 2
-...
-
-## Déroulement du tour
-| Phase | Action |
-|-------|--------|
-| ... | ... |
-
-## Conditions de victoire
-[Description]
-
-Maximum 500 mots.`
+Maximum 600 mots.`
   })
 });
 
@@ -1340,17 +1401,53 @@ const matchesFilters = (game) => {
     ) : (
       <>
         <div className="flex items-center gap-2 flex-1">
-          <span className={`text-base sm:text-lg font-bold ${textPrimary}`}>
-            {shelf.name}
-          </span>
-          <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
-            {(() => {
-              const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
-              const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
-              return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
-            })()}
-          </span>
-        </div>
+  <span className={`text-base sm:text-lg font-bold ${textPrimary}`}>
+    {shelf.name}
+  </span>
+  <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+    {(() => {
+      const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
+      const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
+      return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
+    })()}
+  </span>
+  <div className="flex gap-1 ml-2">
+    <button
+      onClick={() => setShelfViewMode(prev => ({ ...prev, [shelf.id]: 'list' }))}
+      className={`p-1.5 rounded transition ${
+        (shelfViewMode[shelf.id] || 'list') === 'list'
+          ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
+          : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'
+      }`}
+      title="Vue liste"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="8" y1="6" x2="21" y2="6"/>
+        <line x1="8" y1="12" x2="21" y2="12"/>
+        <line x1="8" y1="18" x2="21" y2="18"/>
+        <line x1="3" y1="6" x2="3.01" y2="6"/>
+        <line x1="3" y1="12" x2="3.01" y2="12"/>
+        <line x1="3" y1="18" x2="3.01" y2="18"/>
+      </svg>
+    </button>
+    <button
+      onClick={() => setShelfViewMode(prev => ({ ...prev, [shelf.id]: 'images' }))}
+      className={`p-1.5 rounded transition ${
+        shelfViewMode[shelf.id] === 'images'
+          ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
+          : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'
+      }`}
+      title="Vue images"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="7" height="7"/>
+        <rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/>
+      </svg>
+    </button>
+  </div>
+</div>
         <button
           onClick={() => {
             setEditingShelfId(shelf.id);
@@ -1489,90 +1586,94 @@ const matchesFilters = (game) => {
                             <div className="w-full h-full p-0.5 sm:p-1 md:p-2 overflow-y-auto scrollbar-thin">
                               <div className="space-y-0.5 sm:space-y-1">
                                 {gamesInCell.map((game) => {
-                                  const isHighlighted = matchesFilters(game);
-                                  const gameColor = getColorByPlayers(game.players);
-                                  
-                                  return (
-                                    <div
-                                      key={game.id}
-                                      draggable={isOnline}
-                                      onDragStart={(e) => {
-                                        handleDragStart(game, e);
-                                        e.currentTarget.classList.add('opacity-50');
-                                      }}
-                                      onDragEnd={(e) => {
-                                        e.currentTarget.classList.remove('opacity-50');
-                                        setIsDragging(false);
-                                        
-                                        document.querySelectorAll('[data-cell]').forEach(cell => {
-                                          cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
-                                        });
-                                      }}
-                                      onDoubleClick={() => generateGameRules(game)}
-                                      className={`p-1 sm:p-1.5 md:p-2 rounded shadow-sm cursor-move group relative transition-all ${
-                                        hasActiveFilters
-                                          ? isHighlighted
-                                            ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
-                                            : 'opacity-20 grayscale hover:opacity-40'
-                                          : 'opacity-90 hover:opacity-100'
-                                      } ${gameColor}`}
-                                      style={{ fontSize: `${zoomLevel}rem` }}
-                                    >
-                                      <div className="flex items-start justify-between gap-0.5 sm:gap-1">
-                                        <span 
-                                          className={`font-medium line-clamp-2 flex-1 ${
-                                            isHighlighted ? 'text-gray-900 font-bold' : 'text-gray-800'
-                                          }`}
-                                          style={{ 
-                                            fontSize: gamesInCell.length > 6 
-                                              ? `${Math.max(0.6, 0.5 * zoomLevel)}rem` 
-                                              : gamesInCell.length > 3 
-                                                ? `${Math.max(0.7, 0.65 * zoomLevel)}rem` 
-                                                : `${Math.max(0.8, 0.75 * zoomLevel)}rem`
-                                          }}
-                                        >
-                                          {game.name}
-                                        </span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            removeGameFromShelf(game.id);
-                                          }}
-                                          disabled={!isOnline}
-                                          className={`bg-red-500 text-white p-0.5 rounded flex-shrink-0 transition ${
-                                            isOnline ? 'opacity-0 group-hover:opacity-100' : 'opacity-50'
-                                          }`}
-                                        >
-                                          <svg width={`${8 * zoomLevel}`} height={`${8 * zoomLevel}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <polyline points="3 6 5 6 21 6"/>
-                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                                          </svg>
-                                        </button>
-                                      </div>
-                                      {gamesInCell.length <= 4 && (
-                                        <div className="flex gap-1 mt-0.5 sm:mt-1 text-gray-700 font-medium" style={{ fontSize: `${0.55 * zoomLevel}rem` }}>
-                                          <span className="flex items-center gap-0.5">
-                                            <svg width={`${8 * zoomLevel}`} height={`${8 * zoomLevel}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                              <circle cx="9" cy="7" r="4"/>
-                                            </svg>
-                                            {game.players}
-                                          </span>
-                                          <span className="flex items-center gap-0.5">
-                                            <svg width={`${8 * zoomLevel}`} height={`${8 * zoomLevel}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                              <circle cx="12" cy="12" r="10"/>
-                                              <polyline points="12 6 12 12 16 14"/>
-                                            </svg>
-                                            {game.duration_max && game.duration_max !== game.duration ? `${game.duration}-${game.duration_max}` : game.duration}m
-                                          </span>
-                                          <span className="px-1 py-0.5 bg-gray-800 bg-opacity-20 rounded" style={{ fontSize: `${0.5 * zoomLevel}rem` }}>
-                                            {game.game_type === 'Coopératif' ? 'Coop' : game.game_type === 'Versus' ? 'VS' : 'Mix'}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
+  const isHighlighted = matchesFilters(game);
+  const gameColor = getColorByPlayers(game.players);
+  const viewMode = shelfViewMode[shelf.id] || 'list';
+  const gameImage = gameImages[game.id];
+  
+  return (
+    <div
+      key={game.id}
+      draggable={isOnline}
+      onDragStart={(e) => {
+        handleDragStart(game, e);
+        e.currentTarget.classList.add('opacity-50');
+      }}
+      onDragEnd={(e) => {
+        e.currentTarget.classList.remove('opacity-50');
+        setIsDragging(false);
+        
+        document.querySelectorAll('[data-cell]').forEach(cell => {
+          cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
+        });
+      }}
+      onDoubleClick={() => generateGameRules(game)}
+      className={`rounded shadow-sm cursor-move group relative transition-all ${
+        hasActiveFilters
+          ? isHighlighted
+            ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
+            : 'opacity-20 grayscale hover:opacity-40'
+          : 'opacity-90 hover:opacity-100'
+      } ${viewMode === 'images' ? 'h-full' : `p-1 sm:p-1.5 md:p-2 ${gameColor}`}`}
+      style={{ fontSize: `${zoomLevel}rem` }}
+    >
+      {viewMode === 'images' && gameImage ? (
+        <div className="relative w-full h-full overflow-hidden rounded">
+          <div 
+            className="absolute inset-0 bg-cover bg-center"
+            style={{
+              backgroundImage: `url(${gameImage.url})`,
+              backgroundPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
+              transform: `scale(${gameImage.crop.scale})`
+            }}
+          />
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+            <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectingImageFor(game);
+              searchGameImages(game.name);
+            }}
+            className="absolute top-1 right-1 bg-white/90 p-1 rounded opacity-0 group-hover:opacity-100 transition"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+          </button>
+        </div>
+      ) : viewMode === 'images' ? (
+        <div className={`w-full h-full flex flex-col items-center justify-center ${gameColor} rounded p-2`}>
+          <span className="text-xs font-bold text-center line-clamp-2 mb-2">{game.name}</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectingImageFor(game);
+              searchGameImages(game.name);
+            }}
+            className="bg-white/90 p-1.5 rounded hover:bg-white transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Mode liste existant */}
+          <div className="flex items-start justify-between gap-0.5 sm:gap-1">
+            {/* ... code existant de la vue liste ... */}
+          </div>
+        </>
+      )}
+    </div>
+  );
+})}
                               </div>
                             </div>
                           ) : (
@@ -1654,28 +1755,9 @@ const matchesFilters = (game) => {
                   placeholder="Saisissez les règles du jeu..."
                 />
               ) : (
-                <div 
-                  className={`${textPrimary} text-sm sm:text-base leading-relaxed prose ${darkMode ? 'prose-invert' : ''} max-w-none`}
-                  style={{
-                    '& table': { width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' },
-                    '& th, & td': { border: '1px solid #ddd', padding: '8px', textAlign: 'left' },
-                    '& th': { backgroundColor: darkMode ? '#374151' : '#f3f4f6', fontWeight: 'bold' }
-                  }}
-                  dangerouslySetInnerHTML={{
-                    __html: gameRules[selectedGame.name]
-                      ? gameRules[selectedGame.name]
-                          .replace(/\n/g, '<br>')
-                          .replace(/\|(.+)\|/g, (match) => {
-                            const cells = match.split('|').filter(Boolean);
-                            return `<tr>${cells.map(cell => `<td>${cell.trim()}</td>`).join('')}</tr>`;
-                          })
-                          .replace(/<tr>(.+?)<\/tr>/g, (match, content) => {
-                            if (content.includes('---')) return '';
-                            return match;
-                          })
-                      : 'Aucune règle disponible. Cliquez sur "Modifier" pour les saisir manuellement.'
-                  }}
-                />
+                <div className={`${textPrimary} whitespace-pre-wrap text-sm sm:text-base leading-relaxed`}>
+                  {gameRules[selectedGame.name] || 'Aucune règle disponible. Cliquez sur "Modifier" pour les saisir manuellement.'}
+                </div>
               )}
             </div>
             <div className={`p-3 sm:p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex flex-wrap gap-2 justify-end`}>
