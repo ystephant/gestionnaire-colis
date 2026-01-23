@@ -1769,35 +1769,20 @@ const matchesFilters = (game) => {
                                       }}
                                     >
                                       {viewMode === 'images' && gameImage ? (
-                                        <div className="relative w-full h-full overflow-hidden rounded bg-gray-800">
+                                        <div className="relative w-full h-full overflow-hidden rounded" style={{ backgroundColor: 'red' }}>
                                           <img 
                                             src={gameImage.url}
                                             alt={game.name}
-                                            className="absolute inset-0 w-full h-full object-cover"
+                                            className="w-full h-full"
                                             style={{
-                                              objectPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
-                                              transform: `scale(${gameImage.crop.scale})`,
-                                              transformOrigin: 'center'
+                                              objectFit: 'cover'
                                             }}
+                                            onError={(e) => console.log('Erreur chargement image:', game.name, gameImage.url)}
+                                            onLoad={(e) => console.log('Image chargée:', game.name)}
                                           />
-                                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1 z-10">
+                                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
                                             <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
                                           </div>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSelectingImageFor(game);
-                                              searchGameImages(game.name);
-                                            }}
-                                            className="absolute top-1 right-1 bg-white/90 p-1 rounded opacity-0 group-hover:opacity-100 transition"
-                                          >
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                              <circle cx="8.5" cy="8.5" r="1.5"/>
-                                              <polyline points="21 15 16 10 5 21"/>
-                                            </svg>
-                                          </button>
-                                        </div>
                                       ) : viewMode === 'images' ? (
                                         <div className={`w-full h-full flex flex-col items-center justify-center ${gameColor} rounded p-2`}>
                                           <span className="text-xs font-bold text-center line-clamp-2 mb-2">{game.name}</span>
