@@ -825,19 +825,7 @@ if (rulesText) {
 }
 
 setIsLoadingRules(false);
-
-- But du jeu
-- Nombre de joueurs: ${game.players}
-- Durée: ${game.duration} minutes
-- Matériel
-- Mise en place
-- Déroulement
-- Conditions de victoire
-
-Maximum 600 mots.`
-  })
-});
-
+  
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Erreur API Response:', errorText);
