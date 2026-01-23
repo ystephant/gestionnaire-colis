@@ -264,24 +264,26 @@ useEffect(() => {
     setGames(gamesData || []);
     
     // Charger les images des jeux
-const imagesMap = {};
-  (gamesData || []).forEach(game => {
-    if (game.image_url) {
-      try {
-        imagesMap[game.id] = {
-          url: game.image_url,
-          crop: game.image_crop ? JSON.parse(game.image_crop) : { x: 50, y: 50, scale: 1 }
-        };
-      } catch (e) {
-        console.error('Erreur parsing image_crop:', e);
-        imagesMap[game.id] = {
-          url: game.image_url,
-          crop: { x: 50, y: 50, scale: 1 }
-        };
-      }
-    }
-  });
-  setGameImages(imagesMap);
+      const imagesMap = {};
+        (gamesData || []).forEach(game => {
+          if (game.image_url) {
+            try {
+              imagesMap[game.id] = {
+                url: game.image_url,
+                crop: typeof game.image_crop === 'string' 
+                  ? JSON.parse(game.image_crop) 
+                  : (game.image_crop || { x: 50, y: 50, scale: 1 })
+              };
+            } catch (e) {
+              console.error('Erreur parsing image_crop:', e);
+              imagesMap[game.id] = {
+                url: game.image_url,
+                crop: { x: 50, y: 50, scale: 1 }
+              };
+            }
+          }
+        });
+        setGameImages(imagesMap);
         
   } catch (error) {
     console.error('Erreur de chargement:', error);
