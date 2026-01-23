@@ -243,7 +243,7 @@ export default function Ludotheque() {
       if (game.image_url) {
         imagesMap[game.id] = {
           url: game.image_url,
-          crop: game.image_crop ? JSON.parse(game.image_crop) : { x: 0, y: 0, scale: 1 }
+          crop: game.image_crop ? JSON.parse(game.image_crop) : { x: 50, y: 50, scale: 1 }
         };
       }
     });
@@ -538,10 +538,17 @@ export default function Ludotheque() {
       body: JSON.stringify({ gameName })
     });
     
-    if (!response.ok) throw new Error('Erreur recherche images');
+    if (!response.ok) {
+      throw new Error('Erreur recherche images');
+    }
     
     const data = await response.json();
-    setImageSearchResults(data.images);
+    
+    // Filtrer les placeholders si des vraies images existent
+    const realImages = data.images.filter(img => img.source !== 'Placeholder');
+    const imagesToShow = realImages.length > 0 ? realImages : data.images;
+    
+    setImageSearchResults(imagesToShow);
   } catch (error) {
     console.error('Erreur recherche images:', error);
     showToastMessage('❌ Erreur lors de la recherche d\'images');
@@ -608,6 +615,7 @@ const saveCroppedImage = async () => {
     
     if (error) throw error;
     
+    // Mettre à jour l'état local des images
     setGameImages(prev => ({
       ...prev,
       [croppingImage.gameId]: {
@@ -615,6 +623,13 @@ const saveCroppedImage = async () => {
         crop: cropSettings
       }
     }));
+    
+    // Mettre à jour également l'état des jeux pour forcer le re-render
+    setGames(prev => prev.map(g => 
+      g.id === croppingImage.gameId 
+        ? { ...g, image_url: croppingImage.url, image_crop: JSON.stringify(cropSettings) }
+        : g
+    ));
     
     showToastMessage('✅ Image enregistrée');
     setCroppingImage(null);
@@ -736,20 +751,27 @@ Maximum 600 mots.`
 };
   
   const saveEditedRules = async () => {
-    if (!selectedGame) return;
+  if (!selectedGame) return;
+  
+  try {
+    const { error } = await supabase
+      .from('game_rules')
+      .upsert(
+        { game_name: selectedGame.name, rules_text: editedRules },
+        { onConflict: 'game_name' }
+      );
     
-    try {
-      await supabase
-        .from('game_rules')
-        .upsert({ game_name: selectedGame.name, rules_text: editedRules });
-      
-      setGameRules(prev => ({ ...prev, [selectedGame.name]: editedRules }));
-      setIsEditingRules(false);
-      showToastMessage('✅ Règles enregistrées');
-    } catch (error) {
-      console.error('Erreur sauvegarde:', error);
-    }
-  };
+    if (error) throw error;
+    
+    // Mettre à jour l'état local AVANT de désactiver le mode édition
+    setGameRules(prev => ({ ...prev, [selectedGame.name]: editedRules }));
+    setIsEditingRules(false);
+    showToastMessage('✅ Règles enregistrées');
+  } catch (error) {
+    console.error('Erreur sauvegarde:', error);
+    showToastMessage('❌ Erreur lors de la sauvegarde');
+  }
+};
 
   const toggleFilter = (filterArray, setFilterArray, value) => {
     if (filterArray.includes(value)) {
@@ -1624,9 +1646,9 @@ const matchesFilters = (game) => {
                                   const viewMode = shelfViewMode[shelf.id] || 'list';
                                   const gameImage = gameImages[game.id];
                                   
-                                  // Calculer la taille de police en fonction du nombre de jeux
-                                  const baseFontSize = 1.5; // 150% par défaut
-                                  const fontMultiplier = gamesInCell.length > 1 ? 1 / Math.sqrt(gamesInCell.length) : 1;
+                                  // Calculer la taille de police : 100% par défaut, minimum 80%
+                                  const baseFontSize = 1; // 100% par défaut
+                                  const fontMultiplier = gamesInCell.length > 1 ? Math.max(0.8, 1 / Math.sqrt(gamesInCell.length)) : 1;
                                   const calculatedFontSize = baseFontSize * fontMultiplier;
                                   
                                   return (
@@ -1726,20 +1748,12 @@ const matchesFilters = (game) => {
                                             </button>
                                           </div>
                                           {gamesInCell.length <= 2 && (
-                                            <div className="flex gap-1 text-gray-700 mt-0.5">
+                                            <div className="flex gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${0.7 * calculatedFontSize * zoomLevel}rem` }}>
                                               <span className="flex items-center gap-0.5">
-                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                                  <circle cx="9" cy="7" r="4"/>
-                                                </svg>
-                                                {game.players.split('-')[0]}
+                                                👥 {game.players.split('-')[0]}
                                               </span>
                                               <span className="flex items-center gap-0.5">
-                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                  <circle cx="12" cy="12" r="10"/>
-                                                  <polyline points="12 6 12 12 16 14"/>
-                                                </svg>
-                                                {game.duration}
+                                                ⏱️ {game.duration}
                                               </span>
                                             </div>
                                           )}
