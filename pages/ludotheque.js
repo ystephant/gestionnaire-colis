@@ -654,14 +654,14 @@ const generateGameRules = async (game) => {
   }
     
   // Vérifier si les règles existent déjà en base de données
-  try {
-    const { data: existingRules, error: fetchError } = await supabase
-      .from('game_rules')
-      .select('rules_text')
-      .eq('game_name', game.name)
-      .single();
-
-    if (!fetchError && existingRules && existingRules.rules_text) {
+    try {
+      const { data: existingRules, error: fetchError } = await supabase
+        .from('game_rules')
+        .select('rules_text')
+        .eq('game_name', game.name)
+        .maybeSingle();  // ⚠️ CHANGEMENT ICI : maybeSingle() au lieu de single()
+    
+      if (!fetchError && existingRules && existingRules.rules_text) {
       // Règles trouvées en base de données
       setGameRules(prev => ({ ...prev, [game.name]: existingRules.rules_text }));
       setEditedRules(existingRules.rules_text);
@@ -673,12 +673,129 @@ const generateGameRules = async (game) => {
   }
 
   // Génération par IA si aucune règle n'existe
+  // Génération par IA si aucune règle n'existe
+let rulesText = null;
+let retryCount = 0;
+const maxRetries = 2;
+
+while (retryCount <= maxRetries && !rulesText) {
   try {
+    if (retryCount > 0) {
+      showToastMessage(`⏳ Tentative ${retryCount + 1}/${maxRetries + 1}...`);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Attendre 2 secondes
+    }
+
     const response = await fetch('/api/gemini', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    prompt: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: `Génère un résumé détaillé des règles du jeu de société "${game.name}" en français.
+
+- But du jeu
+- Nombre de joueurs: ${game.players}
+- Durée: ${game.duration} minutes
+- Matériel
+- Mise en place
+- Déroulement
+- Conditions de victoire
+
+Maximum 600 mots.`
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Erreur API Response:', errorText);
+      
+      // Si erreur 503 (surcharge), réessayer
+      if (response.status === 503 && retryCount < maxRetries) {
+        retryCount++;
+        continue;
+      }
+      
+      throw new Error(`Erreur API Gemini: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('Réponse complète de Gemini:', data);
+    
+    if (data.error) {
+      console.error('Erreur retournée par Gemini:', data.error);
+      
+      // Si erreur de surcharge, réessayer
+      if (data.error.error?.code === 503 && retryCount < maxRetries) {
+        retryCount++;
+        continue;
+      }
+      
+      throw new Error(data.error.message || 'Erreur API Gemini');
+    }
+    
+    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      rulesText = data.candidates[0].content.parts[0].text;
+    } else if (data?.text) {
+      rulesText = data.text;
+    } else if (data?.response) {
+      rulesText = data.response;
+    } else if (data?.content) {
+      rulesText = data.content;
+    } else if (typeof data === 'string') {
+      rulesText = data;
+    }
+
+    if (!rulesText) {
+      console.error('Structure de réponse non reconnue:', data);
+      throw new Error('Réponse Gemini invalide - structure non reconnue');
+    }
+
+    // Si on arrive ici, on a réussi, sortir de la boucle
+    break;
+
+  } catch (error) {
+    console.error(`Erreur IA (tentative ${retryCount + 1}):`, error);
+    
+    // Si c'est la dernière tentative ou erreur non-503
+    if (retryCount >= maxRetries || !error.message.includes('503')) {
+      const errorMsg = `Erreur lors du chargement des règles: ${error.message}. Vous pouvez les saisir manuellement.`;
+      setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
+      setEditedRules(errorMsg);
+      setIsLoadingRules(false);
+      return;
+    }
+    
+    retryCount++;
+  }
+}
+
+// Sauvegarder les règles générées
+if (rulesText) {
+  try {
+    const { error: upsertError } = await supabase
+      .from('game_rules')
+      .upsert(
+        { 
+          game_name: game.name, 
+          rules_text: rulesText,
+          user_id: username
+        },
+        { onConflict: 'game_name' }
+      );
+
+    if (upsertError) {
+      console.error('Erreur lors de la sauvegarde:', upsertError);
+    }
+
+    setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
+    setEditedRules(rulesText);
+  } catch (error) {
+    console.error('Erreur sauvegarde:', error);
+    // Afficher quand même les règles générées
+    setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
+    setEditedRules(rulesText);
+  }
+}
+
+setIsLoadingRules(false);
 
 - But du jeu
 - Nombre de joueurs: ${game.players}
@@ -739,15 +856,6 @@ Maximum 600 mots.`
 
     setGameRules(prev => ({ ...prev, [game.name]: rulesText }));
     setEditedRules(rulesText);
-
-  } catch (error) {
-    console.error('Erreur IA complète:', error);
-    const errorMsg = `Erreur lors du chargement des règles: ${error.message}. Vous pouvez les saisir manuellement.`;
-    setGameRules(prev => ({ ...prev, [game.name]: errorMsg }));
-    setEditedRules(errorMsg);
-  } finally {
-    setIsLoadingRules(false);
-  }
 };
   
   const saveEditedRules = async () => {
