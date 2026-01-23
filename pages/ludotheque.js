@@ -180,7 +180,9 @@ useEffect(() => {
               ...prev,
               [payload.new.id]: {
                 url: payload.new.image_url,
-                crop: payload.new.image_crop ? JSON.parse(payload.new.image_crop) : { x: 50, y: 50, scale: 1 }
+                crop: typeof payload.new.image_crop === 'string' 
+                  ? JSON.parse(payload.new.image_crop) 
+                  : (payload.new.image_crop || { x: 50, y: 50, scale: 1 })
               }
             }));
           } else {
