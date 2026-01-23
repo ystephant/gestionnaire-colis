@@ -130,7 +130,7 @@ export default function Ludotheque() {
     }
   }, [isLoggedIn, username]);
 
-  / NOUVEAU : Synchronisation temps réel
+  // NOUVEAU : Synchronisation temps réel
 useEffect(() => {
   if (!isLoggedIn || !username) return;
 
