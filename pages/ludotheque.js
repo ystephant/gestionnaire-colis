@@ -1728,6 +1728,8 @@ const matchesFilters = (game) => {
                                   const gameColor = getColorByPlayers(game.players);
                                   const viewMode = shelfViewMode[shelf.id] || 'list';
                                   const gameImage = gameImages[game.id];
+
+                                  console.log('Game:', game.name, 'Image:', gameImage);
                                   
                                   // Calculer la taille de police : 100% par défaut, minimum 80%
                                   const baseFontSize = 1; // 100% par défaut
