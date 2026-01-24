@@ -568,58 +568,31 @@ useEffect(() => {
   setImageSearchResults([]);
   
   try {
-    // 1. Rechercher sur BoardGameGeek
-    const bggResponse = await fetch(`https://boardgamegeek.com/xmlapi2/search?query=${encodeURIComponent(gameName)}&type=boardgame`);
-    const bggXml = await bggResponse.text();
+    // 1. Chercher sur BoardGameGeek via notre API
+    const bggResponse = await fetch('/api/search-bgg-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gameName })
+    });
     
-    // Parser le XML
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(bggXml, 'text/xml');
-    const items = xmlDoc.getElementsByTagName('item');
+    const bggData = await bggResponse.json();
     
-    const bggImages = [];
+    // 2. Chercher via l'API existante
+    const response = await fetch('/api/search-game-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gameName })
+    });
     
-    // Récupérer les 3 premiers résultats
-    for (let i = 0; i < Math.min(3, items.length); i++) {
-      const gameId = items[i].getAttribute('id');
-      
-      // Récupérer les détails du jeu pour avoir l'image
-      const detailResponse = await fetch(`https://boardgamegeek.com/xmlapi2/thing?id=${gameId}`);
-      const detailXml = await detailResponse.text();
-      const detailDoc = parser.parseFromString(detailXml, 'text/xml');
-      
-      const imageElement = detailDoc.getElementsByTagName('image')[0];
-      const thumbnailElement = detailDoc.getElementsByTagName('thumbnail')[0];
-      const nameElement = detailDoc.querySelector('name[type="primary"]');
-      
-      if (imageElement && imageElement.textContent) {
-        bggImages.push({
-          id: `bgg-${gameId}`,
-          url: imageElement.textContent,
-          thumb: thumbnailElement?.textContent || imageElement.textContent,
-          source: `BoardGameGeek - ${nameElement?.getAttribute('value') || gameName}`
-        });
-      }
-    }
+    const data = await response.json();
     
-    // 2. Si pas d'images BGG, chercher via l'API existante
-    if (bggImages.length === 0) {
-      const response = await fetch('/api/search-game-images', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameName })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Erreur recherche images');
-      }
-      
-      const data = await response.json();
-      const realImages = data.images.filter(img => img.source !== 'Placeholder');
-      setImageSearchResults(realImages.length > 0 ? realImages : data.images);
-    } else {
-      setImageSearchResults(bggImages);
-    }
+    // Combiner les résultats : BGG en premier, puis les autres
+    const allImages = [
+      ...bggData.images,
+      ...data.images.filter(img => img.source !== 'Placeholder')
+    ];
+    
+    setImageSearchResults(allImages.length > 0 ? allImages : data.images);
     
   } catch (error) {
     console.error('Erreur recherche images:', error);
