@@ -57,6 +57,21 @@ const formatDuration = (duration, duration_max) => {
   return `${duration}min`;
 };
 
+const getCloudinaryCroppedUrl = (url, crop) => {
+  if (!url || !crop) return url;
+
+  const { x = 50, y = 50, scale = 1 } = crop;
+
+  const zoom = Math.max(1, scale);
+  const offsetX = Math.round((x - 50) * 10);
+  const offsetY = Math.round((y - 50) * 10);
+
+  return url.replace(
+    '/upload/',
+    `/upload/c_fill,g_xy_center,x_${offsetX},y_${offsetY},z_${zoom}/`
+  );
+};
+
 export default function Ludotheque() {
   const [darkMode, setDarkMode] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -1785,18 +1800,18 @@ const matchesFilters = (game) => {
                                         minHeight: viewMode === 'list' ? `${2 * zoomLevel}rem` : 'auto' // Hauteur minimum
                                       }}
                                     >
-                                      {viewMode === 'images' && gameImage ? (
-                                        <div className="relative w-full h-full overflow-hidden rounded">
-                                          <img
-                                            src={gameImage.url}
-                                            alt={game.name}
-                                            className="absolute inset-0 w-full h-full object-cover"
-                                            style={{
-                                              objectPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
-                                              transform: `scale(${gameImage.crop.scale})`,
-                                              transformOrigin: 'center'
-                                            }}
-                                          />
+                                      {gameImages[game.id] ? (
+                                        <img
+                                          src={getCloudinaryCroppedUrl(
+                                            gameImages[game.id].url,
+                                            gameImages[game.id].crop
+                                          )}
+                                          alt={game.name}
+                                          className="absolute inset-0 w-full h-full object-cover"
+                                          draggable={false}
+                                        />
+                                      ) : null}
+
                                           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
                                             <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
                                           </div>
