@@ -115,13 +115,6 @@ export default function Ludotheque() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [zoomLevel, setZoomLevel] = useState(1); // 0.7, 0.85, 1, 1.15, 1.3
-  const [shelfViewMode, setShelfViewMode] = useState({}); // { shelfId: 'list' | 'images' }
-  const [gameImages, setGameImages] = useState({}); // { gameId: { url, crop: { x, y, scale } } }
-  const [selectingImageFor, setSelectingImageFor] = useState(null);
-  const [imageSearchResults, setImageSearchResults] = useState([]);
-  const [isLoadingImages, setIsLoadingImages] = useState(false);
-  const [croppingImage, setCroppingImage] = useState(null);
-  const [cropSettings, setCropSettings] = useState({ x: 0, y: 0, scale: 1 });
 
   useEffect(() => {
     checkAuth();
@@ -188,26 +181,9 @@ useEffect(() => {
           setGames(prev => [...prev, payload.new]);
         } else if (payload.eventType === 'UPDATE') {
           setGames(prev => prev.map(g => g.id === payload.new.id ? payload.new : g));
-          
-          // Synchroniser les images aussi
-          if (payload.new.image_url) {
-            setGameImages(prev => ({
-              ...prev,
-              [payload.new.id]: {
-                url: payload.new.image_url,
-                crop: typeof payload.new.image_crop === 'string' 
-                  ? JSON.parse(payload.new.image_crop) 
-                  : (payload.new.image_crop || { x: 50, y: 50, scale: 1 })
-              }
-            }));
-          } else {
-            // Si l'image a été supprimée
-            setGameImages(prev => {
-              const newImages = { ...prev };
-              delete newImages[payload.new.id];
-              return newImages;
-            });
-          }
+        } else if (payload.eventType === 'DELETE') {
+          setGames(prev => prev.filter(g => g.id !== payload.old.id));
+        }
         } else if (payload.eventType === 'DELETE') {
           setGames(prev => prev.filter(g => g.id !== payload.old.id));
           // Supprimer aussi l'image du jeu supprimé
@@ -270,35 +246,13 @@ useEffect(() => {
       }
 
       const { data: gamesData, error: gamesError } = await supabase
-        .from('board_games')
-        .select('*')
-        .eq('user_id', username)
-        .order('created_at', { ascending: true });
+  .from('board_games')
+  .select('*')
+  .eq('user_id', username)
+  .order('created_at', { ascending: true });
 
-      if (gamesError) throw gamesError;
-    setGames(gamesData || []);
-    
-    // Charger les images des jeux
-      const imagesMap = {};
-        (gamesData || []).forEach(game => {
-          if (game.image_url) {
-            try {
-              imagesMap[game.id] = {
-                url: game.image_url,
-                crop: typeof game.image_crop === 'string' 
-                  ? JSON.parse(game.image_crop) 
-                  : (game.image_crop || { x: 50, y: 50, scale: 1 })
-              };
-            } catch (e) {
-              console.error('Erreur parsing image_crop:', e);
-              imagesMap[game.id] = {
-                url: game.image_url,
-                crop: { x: 50, y: 50, scale: 1 }
-              };
-            }
-          }
-        });
-        setGameImages(imagesMap);
+if (gamesError) throw gamesError;
+setGames(gamesData || []);
         
   } catch (error) {
     console.error('Erreur de chargement:', error);
@@ -577,132 +531,6 @@ useEffect(() => {
       console.error('Erreur:', error);
     }
   };
-
-  const searchGameImages = async (gameName) => {
-  console.log('🔍 Recherche images pour:', gameName);
-  setIsLoadingImages(true);
-  setImageSearchResults([]);
-  
-  try {
-    // 1. Chercher sur BoardGameGeek via notre API
-    console.log('📡 Appel API BGG...');
-    const bggResponse = await fetch('/api/search-bgg-images', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameName })
-    });
-    
-    console.log('📥 Réponse BGG status:', bggResponse.status);
-    
-    let bggImages = [];
-    if (bggResponse.ok) {
-      const bggData = await bggResponse.json();
-      console.log('📦 Données BGG reçues:', bggData);
-      bggImages = bggData.images || [];
-    }
-    
-    console.log('🖼️ Images BGG trouvées:', bggImages.length);
-    
-    // 2. Chercher via l'API existante
-    console.log('📡 Appel API search-game-images...');
-    const response = await fetch('/api/search-game-images', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameName })
-    });
-    
-    if (!response.ok) {
-      throw new Error('Erreur recherche images');
-    }
-    
-    const data = await response.json();
-    console.log('📦 Données search-game-images:', data);
-    
-    // Filtrer les placeholders
-    const realImages = data.images.filter(img => img.source !== 'Placeholder');
-    console.log('🖼️ Images réelles (sans placeholders):', realImages.length);
-    
-    // Combiner les résultats : BGG en premier, puis les autres
-    const allImages = [...bggImages, ...realImages];
-    console.log('📊 Total images combinées:', allImages.length);
-    
-    setImageSearchResults(allImages.length > 0 ? allImages : data.images);
-    
-  } catch (error) {
-    console.error('❌ Erreur recherche images:', error);
-    showToastMessage('❌ Erreur lors de la recherche d\'images');
-  } finally {
-    setIsLoadingImages(false);
-  }
-};
-const uploadToCloudinary = async (imageUrl) => {
-  try {
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          file: imageUrl,
-          upload_preset: process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
-        })
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error(`Cloudinary error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data.secure_url;
-  } catch (error) {
-    console.error('Erreur upload Cloudinary:', error);
-    throw error;
-  }
-};
-
-const selectGameImage = async (gameId, imageUrl, source) => {
-  try {
-    let cloudinaryUrl = imageUrl;
-    
-    if (source !== 'uploaded') {
-      showToastMessage('⏳ Upload vers Cloudinary...');
-      cloudinaryUrl = await uploadToCloudinary(imageUrl);
-    }
-    
-    setCroppingImage({ gameId, url: cloudinaryUrl });
-    setCropSettings({ x: 50, y: 50, scale: 1 });
-  } catch (error) {
-    showToastMessage('❌ Erreur lors de l\'upload de l\'image');
-  }
-};
-
-const saveCroppedImage = async () => {
-  if (!croppingImage) return;
-  
-  try {
-    const cropData = JSON.stringify(cropSettings);
-    
-    const { error } = await supabase
-      .from('board_games')
-      .update({ 
-        image_url: croppingImage.url,
-        image_crop: cropData
-      })
-      .eq('id', croppingImage.gameId);
-    
-    if (error) throw error;
-    
-    // Mettre à jour l'état local IMMÉDIATEMENT
-    setGameImages(prev => ({
-      ...prev,
-      [croppingImage.gameId]: {
-        url: croppingImage.url,
-        crop: cropSettings
-      }
-    }));
     
     // Ne PAS modifier l'état des jeux ici car la synchro temps réel le fera
     
@@ -1584,7 +1412,14 @@ const matchesFilters = (game) => {
   <span className={`text-base sm:text-lg font-bold ${textPrimary}`}>
     {shelf.name}
   </span>
-  <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+  <s<span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+  {(() => {
+    const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
+    const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
+    return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
+  })()}
+</span>
+  ded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
     {(() => {
       const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
       const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
@@ -1766,136 +1601,87 @@ const matchesFilters = (game) => {
                             <div className="w-full h-full p-0.5 sm:p-1 md:p-2 overflow-y-auto scrollbar-thin">
                               <div className="space-y-0.5 sm:space-y-1">
                                 {gamesInCell.map((game, gameIndex) => {
-                                  const isHighlighted = matchesFilters(game);
-                                  const gameColor = getColorByPlayers(game.players);
-                                  const viewMode = shelfViewMode[shelf.id] || 'list';
-                                  const gameImage = gameImages[game.id];
-
-                                  console.log('Game:', game.name, 'Image:', gameImage);
-                                  if (gameImage) {
-                                    console.log('ViewMode:', viewMode, 'URL:', gameImage.url);
-                                  }
-                                  
-                                  // Calculer la taille de police : 100% par défaut, minimum 80%
-                                  const baseFontSize = 1; // 100% par défaut
-                                  const fontMultiplier = gamesInCell.length > 1 ? Math.max(0.8, 1 / Math.sqrt(gamesInCell.length)) : 1;
-                                  const calculatedFontSize = baseFontSize * fontMultiplier;
-                                  
-                                  return (
-                                    <div
-                                      key={game.id}
-                                      draggable={isOnline}
-                                      onDragStart={(e) => {
-                                        handleDragStart(game, e);
-                                        e.currentTarget.classList.add('opacity-50');
-                                      }}
-                                      onDragEnd={(e) => {
-                                        e.currentTarget.classList.remove('opacity-50');
-                                        setIsDragging(false);
-                                        document.querySelectorAll('[data-cell]').forEach(cell => {
-                                          cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
-                                        });
-                                      }}
-                                      onDoubleClick={() => generateGameRules(game)}
-                                      className={`rounded shadow-sm cursor-move group relative transition-all ${
-                                        hasActiveFilters
-                                          ? isHighlighted
-                                            ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
-                                            : 'opacity-20 grayscale hover:opacity-40'
-                                          : 'opacity-90 hover:opacity-100'
-                                      } ${viewMode === 'images' ? 'h-full' : `p-1 sm:p-1.5 md:p-2 ${gameColor}`}`}
-                                      style={{ 
-                                        fontSize: `${Math.max(0.6, calculatedFontSize * zoomLevel)}rem`, // Minimum 0.6rem pour rester lisible
-                                        lineHeight: gamesInCell.length > 2 ? '1.2' : '1.4',
-                                        minHeight: viewMode === 'list' ? `${2 * zoomLevel}rem` : 'auto' // Hauteur minimum
-                                      }}
-                                    >
-                                      {viewMode === 'images' ? (
-                                        gameImages[game.id] ? (
-                                          <div className="relative w-full h-full overflow-hidden rounded">
-                                            <img
-                                              src={getCloudinaryCroppedUrl(
-                                                gameImages[game.id].url,
-                                                gameImages[game.id].crop
-                                              )}
-                                              alt={game.name}
-                                              className="absolute inset-0 w-full h-full object-cover"
-                                              draggable={false}
-                                            />
-                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
-                                              <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
-                                            </div>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectingImageFor(game);
-                                                searchGameImages(game.name);
-                                              }}
-                                              className="absolute top-1 right-1 bg-white/90 p-1 rounded opacity-0 group-hover:opacity-100 transition"
-                                            >
-                                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                                <circle cx="8.5" cy="8.5" r="1.5"/>
-                                                <polyline points="21 15 16 10 5 21"/>
-                                              </svg>
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <div className={`w-full h-full flex flex-col items-center justify-center ${gameColor} rounded p-2`}>
-                                            <span className="text-xs font-bold text-center line-clamp-2 mb-2">{game.name}</span>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectingImageFor(game);
-                                                searchGameImages(game.name);
-                                              }}
-                                              className="bg-white/90 p-1.5 rounded hover:bg-white transition"
-                                            >
-                                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                                <circle cx="8.5" cy="8.5" r="1.5"/>
-                                                <polyline points="21 15 16 10 5 21"/>
-                                              </svg>
-                                            </button>
-                                          </div>
-                                        )
-                                      ) : (
-                                        <>
-                                          {/* Mode liste avec nouvelles icônes */}
-                                          <div className="flex items-start justify-between gap-0.5 sm:gap-1">
-                                            <span className="font-bold text-gray-900 leading-tight flex-1 break-words">
-                                              {game.name}
-                                            </span>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                removeGameFromShelf(game.id);
-                                              }}
-                                              disabled={!isOnline}
-                                              className="text-red-600 hover:text-red-800 transition flex-shrink-0 opacity-0 group-hover:opacity-100"
-                                              title="Retirer de l'étagère"
-                                            >
-                                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                                <line x1="18" y1="6" x2="6" y2="18"/>
-                                                <line x1="6" y1="6" x2="18" y2="18"/>
-                                              </svg>
-                                            </button>
-                                          </div>
-                                          {gamesInCell.length <= 2 && (
-                                            <div className="flex gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${0.7 * calculatedFontSize * zoomLevel}rem` }}>
-                                              <span className="flex items-center gap-0.5">
-                                                👥 {game.players.split('-')[0]}
-                                              </span>
-                                              <span className="flex items-center gap-0.5">
-                                                ⏱️ {game.duration}
-                                              </span>
-                                            </div>
-                                          )}
-                                        </>
-                                      )}
-                                    </div>
-                                  );
-                                })}
+  const isHighlighted = matchesFilters(game);
+  const gameColor = getColorByPlayers(game.players);
+  
+  // Calcul adaptatif de la taille de police
+  const numGames = gamesInCell.length;
+  let baseFontSize = 0.75; // Taille de base en rem
+  
+  // Ajuster selon le nombre de jeux
+  if (numGames === 1) baseFontSize = 0.875; // ~14px
+  else if (numGames === 2) baseFontSize = 0.75; // ~12px
+  else if (numGames <= 4) baseFontSize = 0.625; // ~10px
+  else baseFontSize = 0.5; // ~8px minimum
+  
+  const finalFontSize = baseFontSize * zoomLevel;
+  
+  return (
+    <div
+      key={game.id}
+      draggable={isOnline}
+      onDragStart={(e) => {
+        handleDragStart(game, e);
+        e.currentTarget.classList.add('opacity-50');
+      }}
+      onDragEnd={(e) => {
+        e.currentTarget.classList.remove('opacity-50');
+        setIsDragging(false);
+        document.querySelectorAll('[data-cell]').forEach(cell => {
+          cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
+        });
+      }}
+      onDoubleClick={() => generateGameRules(game)}
+      className={`rounded shadow-sm cursor-move group relative transition-all p-0.5 sm:p-1 ${gameColor} ${
+        hasActiveFilters
+          ? isHighlighted
+            ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
+            : 'opacity-20 grayscale hover:opacity-40'
+          : 'opacity-90 hover:opacity-100'
+      }`}
+      style={{ 
+        fontSize: `${Math.max(0.5, finalFontSize)}rem`,
+        lineHeight: numGames > 3 ? '1.1' : '1.3',
+      }}
+    >
+      <div className="flex items-start justify-between gap-0.5">
+        <span className="font-bold text-gray-900 leading-tight flex-1 break-words overflow-hidden" 
+              style={{ 
+                display: '-webkit-box',
+                WebkitLineClamp: numGames > 4 ? '1' : '2',
+                WebkitBoxOrient: 'vertical',
+              }}>
+          {game.name}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            removeGameFromShelf(game.id);
+          }}
+          disabled={!isOnline}
+          className="text-red-600 hover:text-red-800 transition flex-shrink-0 opacity-0 group-hover:opacity-100"
+          title="Retirer de l'étagère"
+          style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
+        >
+          <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      {numGames <= 3 && (
+        <div className="flex gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
+          <span className="flex items-center gap-0.5 whitespace-nowrap">
+            👥 {game.players.split('-')[0]}
+          </span>
+          <span className="flex items-center gap-0.5 whitespace-nowrap">
+            ⏱️ {game.duration}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+})}
                               </div>
                             </div>
                           ) : (
@@ -1938,174 +1724,7 @@ const matchesFilters = (game) => {
         </div>
       )}
 
-     {/* Modal sélection d'image */}
-{selectingImageFor && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div className={`${cardBg} rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col`}>
-      <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
-        <h2 className={`text-xl font-bold ${textPrimary}`}>
-          Choisir une image pour "{selectingImageFor.name}"
-        </h2>
-        <button
-          onClick={() => {
-            setSelectingImageFor(null);
-            setImageSearchResults([]);
-          }}
-          className={`${textSecondary} p-2 rounded-lg hover:bg-gray-500 hover:bg-opacity-10 transition`}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
-      
-      <div className="p-4 overflow-y-auto flex-1">
-        {/* Upload manuel */}
-        <div className="mb-6">
-          <label className={`block text-sm font-semibold ${textPrimary} mb-2`}>
-            Ou uploader votre propre image :
-          </label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={async (e) => {
-              const file = e.target.files[0];
-              if (!file) return;
-              
-              try {
-                showToastMessage('⏳ Upload en cours...');
-                const formData = new FormData();
-                formData.append('file', file);
-                formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
-                
-                const response = await fetch(
-                  `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
-                  { method: 'POST', body: formData }
-                );
-                
-                const data = await response.json();
-                await selectGameImage(selectingImageFor.id, data.secure_url, 'uploaded');
-              } catch (error) {
-                showToastMessage('❌ Erreur lors de l\'upload');
-              }
-            }}
-            className={`w-full px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary}`}
-          />
-        </div>
-
-        {/* Résultats de recherche */}
-        {isLoadingImages ? (
-          <div className="flex items-center justify-center py-12">
-            <svg className="animate-spin h-8 w-8 text-indigo-600" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-            </svg>
-          </div>
-        ) : imageSearchResults.length > 0 ? (
-          <>
-            <h3 className={`text-sm font-semibold ${textPrimary} mb-3`}>
-              Images trouvées ({imageSearchResults.length}) :
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {imageSearchResults.map((img) => (
-                <div
-                  key={img.id}
-                  className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-transparent hover:border-indigo-500 transition"
-                  onClick={() => selectGameImage(selectingImageFor.id, img.url, img.source)}
-                >
-                  <img
-                    src={img.thumb}
-                    alt={selectingImageFor.name}
-                    className="w-full h-48 object-cover"
-                  />
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                    <span className="text-white text-xs">{img.source}</span>
-                  </div>
-                  <div className="absolute inset-0 bg-indigo-600 bg-opacity-0 group-hover:bg-opacity-20 transition flex items-center justify-center">
-                    <span className="text-white font-bold opacity-0 group-hover:opacity-100 transition">
-                      Sélectionner
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className={`text-center py-8 ${textSecondary}`}>
-            Recherche d'images pour "{selectingImageFor.name}"...
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-
-{/* Modal crop d'image */}
-{croppingImage && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div className={`${cardBg} rounded-xl shadow-2xl max-w-2xl w-full`}>
-      <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-        <h2 className={`text-xl font-bold ${textPrimary}`}>Ajuster l'image</h2>
-      </div>
-      
-      <div className="p-4">
-        <div className="relative w-full h-64 bg-gray-200 rounded-lg overflow-hidden mb-4">
-          <div
-            className="absolute inset-0 bg-cover bg-center transition-transform"
-            style={{
-              backgroundImage: `url(${croppingImage.url})`,
-              backgroundPosition: `${cropSettings.x}% ${cropSettings.y}%`,
-              transform: `scale(${cropSettings.scale})`
-            }}
-          />
-        </div>
-        
-        <div className="space-y-4">
-          <div>
-            <label className={`text-sm font-semibold ${textPrimary} block mb-2`}>
-              Position horizontale : {cropSettings.x}%
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={cropSettings.x}
-              onChange={(e) => setCropSettings(prev => ({ ...prev, x: parseInt(e.target.value) }))}
-              className="w-full"
-            />
-          </div>
-          
-          <div>
-            <label className={`text-sm font-semibold ${textPrimary} block mb-2`}>
-              Position verticale : {cropSettings.y}%
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={cropSettings.y}
-              onChange={(e) => setCropSettings(prev => ({ ...prev, y: parseInt(e.target.value) }))}
-              className="w-full"
-            />
-          </div>
-          
-          <div>
-            <label className={`text-sm font-semibold ${textPrimary} block mb-2`}>
-              Zoom : {Math.round(cropSettings.scale * 100)}%
-            </label>
-            <input
-              type="range"
-              min="0.5"
-              max="2"
-              step="0.1"
-              value={cropSettings.scale}
-              onChange={(e) => setCropSettings(prev => ({ ...prev, scale: parseFloat(e.target.value) }))}
-              className="w-full"
-            />
-          </div>
-        </div>
-      </div>
+    
       
       <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex gap-2 justify-end`}>
         <button
