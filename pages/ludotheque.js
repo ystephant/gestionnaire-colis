@@ -1526,16 +1526,15 @@ const matchesFilters = (game) => {
   const gameColor = getColorByPlayers(game.players);
   
   // Calcul adaptatif de la taille de police
-  const numGames = gamesInCell.length;
-  let baseFontSize = 0.75; // Taille de base en rem
-  
-  // Ajuster selon le nombre de jeux
-  if (numGames === 1) baseFontSize = 0.875; // ~14px
-  else if (numGames === 2) baseFontSize = 0.75; // ~12px
-  else if (numGames <= 4) baseFontSize = 0.625; // ~10px
-  else baseFontSize = 0.5; // ~8px minimum
-  
-  const finalFontSize = baseFontSize * zoomLevel;
+const numGames = gamesInCell.length;
+let baseFontSize = 0.75; // Taille de base en rem
+
+// Ajuster selon le nombre de jeux
+if (numGames === 1) baseFontSize = 0.875; // ~14px
+else if (numGames === 2) baseFontSize = 0.75; // ~12px
+else baseFontSize = 0.625; // ~10px - taille minimum même avec 3+ jeux
+                                  
+const finalFontSize = baseFontSize * zoomLevel;
   
   return (
     <div
