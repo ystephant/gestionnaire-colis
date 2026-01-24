@@ -6,40 +6,52 @@ export default async function handler(req, res) {
   const { gameName } = req.body;
 
   try {
-    // 1. Rechercher le jeu sur BGG
+    // 1. Recherche du jeu
     const searchResponse = await fetch(
       `https://boardgamegeek.com/xmlapi2/search?query=${encodeURIComponent(gameName)}&type=boardgame`
     );
     const searchXml = await searchResponse.text();
 
-    // Parser le XML (simple parsing)
     const gameIdMatch = searchXml.match(/id="(\d+)"/);
-    
     if (!gameIdMatch) {
       return res.status(200).json({ images: [] });
     }
 
     const gameId = gameIdMatch[1];
 
-    // 2. Récupérer les détails du jeu
-    const detailResponse = await fetch(
-      `https://boardgamegeek.com/xmlapi2/thing?id=${gameId}`
-    );
-    const detailXml = await detailResponse.text();
+    // 2. Récupération du détail AVEC RETRY
+    let detailXml = null;
 
-    // Extraire l'image et le thumbnail
+    for (let i = 0; i < 3; i++) {
+      const detailResponse = await fetch(
+        `https://boardgamegeek.com/xmlapi2/thing?id=${gameId}`
+      );
+
+      if (detailResponse.status === 200) {
+        detailXml = await detailResponse.text();
+        break;
+      }
+
+      // ⏳ attendre avant retry
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    if (!detailXml) {
+      return res.status(200).json({ images: [] });
+    }
+
     const imageMatch = detailXml.match(/<image>([^<]+)<\/image>/);
     const thumbnailMatch = detailXml.match(/<thumbnail>([^<]+)<\/thumbnail>/);
     const nameMatch = detailXml.match(/<name[^>]*type="primary"[^>]*value="([^"]+)"/);
 
     const images = [];
 
-    if (imageMatch && imageMatch[1]) {
+    if (imageMatch?.[1]) {
       images.push({
         id: `bgg-${gameId}`,
         url: imageMatch[1],
         thumb: thumbnailMatch?.[1] || imageMatch[1],
-        source: `BoardGameGeek - ${nameMatch?.[1] || gameName}`
+        source: `BoardGameGeek${nameMatch?.[1] ? ` – ${nameMatch[1]}` : ''}`
       });
     }
 
