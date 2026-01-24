@@ -1644,9 +1644,6 @@ const matchesFilters = (game) => {
           </div>
         </div>
       )}
-    </div>
-  </div>
-)} 
 
       {/* Modal règles */}
       {selectedGame && (
