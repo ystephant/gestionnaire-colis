@@ -1800,20 +1800,7 @@ const matchesFilters = (game) => {
                                         minHeight: viewMode === 'list' ? `${2 * zoomLevel}rem` : 'auto' // Hauteur minimum
                                       }}
                                     >
-                                      {gameImages[game.id] ? (
-                                        <div className="relative w-full h-full">
-                                          <img
-                                            src={getCloudinaryCroppedUrl(
-                                              gameImages[game.id].url,
-                                              gameImages[game.id].crop
-                                            )}
-                                            alt={game.name}
-                                            className="absolute inset-0 w-full h-full object-cover"
-                                            draggable={false}
-                                          />
-                                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
-                                            <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
-                                          </div>
+                                      gameImages[game.id] ? 
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
