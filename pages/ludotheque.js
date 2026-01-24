@@ -57,21 +57,6 @@ const formatDuration = (duration, duration_max) => {
   return `${duration}min`;
 };
 
-const getCloudinaryCroppedUrl = (url, crop) => {
-  if (!url || !crop) return url;
-
-  const { x = 50, y = 50, scale = 1 } = crop;
-
-  const zoom = Math.max(1, scale);
-  const offsetX = Math.round((x - 50) * 10);
-  const offsetY = Math.round((y - 50) * 10);
-
-  return url.replace(
-    '/upload/',
-    `/upload/c_fill,g_xy_center,x_${offsetX},y_${offsetY},z_${zoom}/`
-  );
-};
-
 export default function Ludotheque() {
   const [darkMode, setDarkMode] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -183,15 +168,6 @@ useEffect(() => {
           setGames(prev => prev.map(g => g.id === payload.new.id ? payload.new : g));
         } else if (payload.eventType === 'DELETE') {
           setGames(prev => prev.filter(g => g.id !== payload.old.id));
-        }
-        } else if (payload.eventType === 'DELETE') {
-          setGames(prev => prev.filter(g => g.id !== payload.old.id));
-          // Supprimer aussi l'image du jeu supprimé
-          setGameImages(prev => {
-            const newImages = { ...prev };
-            delete newImages[payload.old.id];
-            return newImages;
-          });
         }
       }
     )
@@ -531,18 +507,6 @@ setGames(gamesData || []);
       console.error('Erreur:', error);
     }
   };
-    
-    // Ne PAS modifier l'état des jeux ici car la synchro temps réel le fera
-    
-    showToastMessage('✅ Image enregistrée');
-    setCroppingImage(null);
-    setSelectingImageFor(null);
-    setImageSearchResults([]);
-  } catch (error) {
-    console.error('Erreur sauvegarde image:', error);
-    showToastMessage('❌ Erreur lors de la sauvegarde');
-  }
-};
 
 // PUIS LA FONCTION generateGameRules
 const generateGameRules = async (game) => {
@@ -1412,56 +1376,13 @@ const matchesFilters = (game) => {
   <span className={`text-base sm:text-lg font-bold ${textPrimary}`}>
     {shelf.name}
   </span>
-  <s<span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+  <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
   {(() => {
     const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
     const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
     return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
   })()}
 </span>
-  ded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
-    {(() => {
-      const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
-      const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
-      return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
-    })()}
-  </span>
-  <div className="flex gap-1 ml-2">
-    <button
-      onClick={() => setShelfViewMode(prev => ({ ...prev, [shelf.id]: 'list' }))}
-      className={`p-1.5 rounded transition ${
-        (shelfViewMode[shelf.id] || 'list') === 'list'
-          ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
-          : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'
-      }`}
-      title="Vue liste"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="8" y1="6" x2="21" y2="6"/>
-        <line x1="8" y1="12" x2="21" y2="12"/>
-        <line x1="8" y1="18" x2="21" y2="18"/>
-        <line x1="3" y1="6" x2="3.01" y2="6"/>
-        <line x1="3" y1="12" x2="3.01" y2="12"/>
-        <line x1="3" y1="18" x2="3.01" y2="18"/>
-      </svg>
-    </button>
-    <button
-      onClick={() => setShelfViewMode(prev => ({ ...prev, [shelf.id]: 'images' }))}
-      className={`p-1.5 rounded transition ${
-        shelfViewMode[shelf.id] === 'images'
-          ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
-          : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'
-      }`}
-      title="Vue images"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="7"/>
-        <rect x="14" y="3" width="7" height="7"/>
-        <rect x="14" y="14" width="7" height="7"/>
-        <rect x="3" y="14" width="7" height="7"/>
-      </svg>
-    </button>
-  </div>
 </div>
         <button
           onClick={() => {
@@ -1723,26 +1644,6 @@ const matchesFilters = (game) => {
           </div>
         </div>
       )}
-
-    
-      
-      <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex gap-2 justify-end`}>
-        <button
-          onClick={() => {
-            setCroppingImage(null);
-            setSelectingImageFor(null);
-          }}
-          className="px-4 py-2 rounded-lg font-semibold bg-gray-500 text-white hover:bg-gray-600 transition"
-        >
-          Annuler
-        </button>
-        <button
-          onClick={saveCroppedImage}
-          className="px-4 py-2 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition"
-        >
-          💾 Enregistrer
-        </button>
-      </div>
     </div>
   </div>
 )} 
