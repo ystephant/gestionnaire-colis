@@ -1787,13 +1787,14 @@ const matchesFilters = (game) => {
                                     >
                                       {viewMode === 'images' && gameImage ? (
                                         <div className="relative w-full h-full overflow-hidden rounded">
-                                          <div
-                                            className="absolute inset-0"
+                                          <img
+                                            src={gameImage.url}
+                                            alt={game.name}
+                                            className="absolute inset-0 w-full h-full object-cover"
                                             style={{
-                                              backgroundImage: `url(${gameImage.url})`,
-                                              backgroundSize: `${gameImage.crop.scale * 100}%`,
-                                              backgroundPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
-                                              backgroundRepeat: 'no-repeat'
+                                              objectPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
+                                              transform: `scale(${gameImage.crop.scale})`,
+                                              transformOrigin: 'center'
                                             }}
                                           />
                                           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
