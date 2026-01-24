@@ -568,23 +568,59 @@ useEffect(() => {
   setImageSearchResults([]);
   
   try {
-    const response = await fetch('/api/search-game-images', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameName })
-    });
+    // 1. Rechercher sur BoardGameGeek
+    const bggResponse = await fetch(`https://boardgamegeek.com/xmlapi2/search?query=${encodeURIComponent(gameName)}&type=boardgame`);
+    const bggXml = await bggResponse.text();
     
-    if (!response.ok) {
-      throw new Error('Erreur recherche images');
+    // Parser le XML
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(bggXml, 'text/xml');
+    const items = xmlDoc.getElementsByTagName('item');
+    
+    const bggImages = [];
+    
+    // Récupérer les 3 premiers résultats
+    for (let i = 0; i < Math.min(3, items.length); i++) {
+      const gameId = items[i].getAttribute('id');
+      
+      // Récupérer les détails du jeu pour avoir l'image
+      const detailResponse = await fetch(`https://boardgamegeek.com/xmlapi2/thing?id=${gameId}`);
+      const detailXml = await detailResponse.text();
+      const detailDoc = parser.parseFromString(detailXml, 'text/xml');
+      
+      const imageElement = detailDoc.getElementsByTagName('image')[0];
+      const thumbnailElement = detailDoc.getElementsByTagName('thumbnail')[0];
+      const nameElement = detailDoc.querySelector('name[type="primary"]');
+      
+      if (imageElement && imageElement.textContent) {
+        bggImages.push({
+          id: `bgg-${gameId}`,
+          url: imageElement.textContent,
+          thumb: thumbnailElement?.textContent || imageElement.textContent,
+          source: `BoardGameGeek - ${nameElement?.getAttribute('value') || gameName}`
+        });
+      }
     }
     
-    const data = await response.json();
+    // 2. Si pas d'images BGG, chercher via l'API existante
+    if (bggImages.length === 0) {
+      const response = await fetch('/api/search-game-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameName })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Erreur recherche images');
+      }
+      
+      const data = await response.json();
+      const realImages = data.images.filter(img => img.source !== 'Placeholder');
+      setImageSearchResults(realImages.length > 0 ? realImages : data.images);
+    } else {
+      setImageSearchResults(bggImages);
+    }
     
-    // Filtrer les placeholders si des vraies images existent
-    const realImages = data.images.filter(img => img.source !== 'Placeholder');
-    const imagesToShow = realImages.length > 0 ? realImages : data.images;
-    
-    setImageSearchResults(imagesToShow);
   } catch (error) {
     console.error('Erreur recherche images:', error);
     showToastMessage('❌ Erreur lors de la recherche d\'images');
@@ -1769,16 +1805,15 @@ const matchesFilters = (game) => {
                                       }}
                                     >
                                       {viewMode === 'images' && gameImage ? (
-                                        <div className="relative w-full h-full overflow-hidden rounded" style={{ backgroundColor: 'red' }}>
-                                          <img 
-                                            src={gameImage.url}
-                                            alt={game.name}
-                                            className="w-full h-full"
+                                        <div className="relative w-full h-full overflow-hidden rounded">
+                                          <div
+                                            className="absolute inset-0"
                                             style={{
-                                              objectFit: 'cover'
+                                              backgroundImage: `url(${gameImage.url})`,
+                                              backgroundSize: `${gameImage.crop.scale * 100}%`,
+                                              backgroundPosition: `${gameImage.crop.x}% ${gameImage.crop.y}%`,
+                                              backgroundRepeat: 'no-repeat'
                                             }}
-                                            onError={(e) => console.log('Erreur chargement image:', game.name, gameImage.url)}
-                                            onLoad={(e) => console.log('Image chargée:', game.name)}
                                           />
                                           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
                                             <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
