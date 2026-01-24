@@ -1800,7 +1800,20 @@ const matchesFilters = (game) => {
                                         minHeight: viewMode === 'list' ? `${2 * zoomLevel}rem` : 'auto' // Hauteur minimum
                                       }}
                                     >
-                                      gameImages[game.id] ? 
+                                      {viewMode === 'images' && gameImages[game.id] ? (
+                                        <div className="relative w-full h-full overflow-hidden rounded">
+                                          <img
+                                            src={getCloudinaryCroppedUrl(
+                                              gameImages[game.id].url,
+                                              gameImages[game.id].crop
+                                            )}
+                                            alt={game.name}
+                                            className="absolute inset-0 w-full h-full object-cover"
+                                            draggable={false}
+                                          />
+                                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+                                            <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
+                                          </div>
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
@@ -1816,7 +1829,7 @@ const matchesFilters = (game) => {
                                             </svg>
                                           </button>
                                         </div>
-                                      ) : viewMode === 'images' ? (
+                                      ) : viewMode === 'images' && !gameImages[game.id] ? (
                                         <div className={`w-full h-full flex flex-col items-center justify-center ${gameColor} rounded p-2`}>
                                           <span className="text-xs font-bold text-center line-clamp-2 mb-2">{game.name}</span>
                                           <button
