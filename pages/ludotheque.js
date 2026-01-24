@@ -579,24 +579,32 @@ useEffect(() => {
   };
 
   const searchGameImages = async (gameName) => {
+  console.log('🔍 Recherche images pour:', gameName);
   setIsLoadingImages(true);
   setImageSearchResults([]);
   
   try {
     // 1. Chercher sur BoardGameGeek via notre API
+    console.log('📡 Appel API BGG...');
     const bggResponse = await fetch('/api/search-bgg-images', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ gameName })
     });
     
+    console.log('📥 Réponse BGG status:', bggResponse.status);
+    
     let bggImages = [];
     if (bggResponse.ok) {
       const bggData = await bggResponse.json();
+      console.log('📦 Données BGG reçues:', bggData);
       bggImages = bggData.images || [];
     }
     
+    console.log('🖼️ Images BGG trouvées:', bggImages.length);
+    
     // 2. Chercher via l'API existante
+    console.log('📡 Appel API search-game-images...');
     const response = await fetch('/api/search-game-images', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -608,23 +616,25 @@ useEffect(() => {
     }
     
     const data = await response.json();
+    console.log('📦 Données search-game-images:', data);
     
     // Filtrer les placeholders
     const realImages = data.images.filter(img => img.source !== 'Placeholder');
+    console.log('🖼️ Images réelles (sans placeholders):', realImages.length);
     
     // Combiner les résultats : BGG en premier, puis les autres
     const allImages = [...bggImages, ...realImages];
+    console.log('📊 Total images combinées:', allImages.length);
     
     setImageSearchResults(allImages.length > 0 ? allImages : data.images);
     
   } catch (error) {
-    console.error('Erreur recherche images:', error);
+    console.error('❌ Erreur recherche images:', error);
     showToastMessage('❌ Erreur lors de la recherche d\'images');
   } finally {
     setIsLoadingImages(false);
   }
 };
-
 const uploadToCloudinary = async (imageUrl) => {
   try {
     const response = await fetch(
@@ -1800,53 +1810,55 @@ const matchesFilters = (game) => {
                                         minHeight: viewMode === 'list' ? `${2 * zoomLevel}rem` : 'auto' // Hauteur minimum
                                       }}
                                     >
-                                      {viewMode === 'images' && gameImages[game.id] ? (
-                                        <div className="relative w-full h-full overflow-hidden rounded">
-                                          <img
-                                            src={getCloudinaryCroppedUrl(
-                                              gameImages[game.id].url,
-                                              gameImages[game.id].crop
-                                            )}
-                                            alt={game.name}
-                                            className="absolute inset-0 w-full h-full object-cover"
-                                            draggable={false}
-                                          />
-                                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
-                                            <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
+                                      {viewMode === 'images' ? (
+                                        gameImages[game.id] ? (
+                                          <div className="relative w-full h-full overflow-hidden rounded">
+                                            <img
+                                              src={getCloudinaryCroppedUrl(
+                                                gameImages[game.id].url,
+                                                gameImages[game.id].crop
+                                              )}
+                                              alt={game.name}
+                                              className="absolute inset-0 w-full h-full object-cover"
+                                              draggable={false}
+                                            />
+                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+                                              <span className="text-white text-xs font-bold line-clamp-1">{game.name}</span>
+                                            </div>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectingImageFor(game);
+                                                searchGameImages(game.name);
+                                              }}
+                                              className="absolute top-1 right-1 bg-white/90 p-1 rounded opacity-0 group-hover:opacity-100 transition"
+                                            >
+                                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                                <polyline points="21 15 16 10 5 21"/>
+                                              </svg>
+                                            </button>
                                           </div>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSelectingImageFor(game);
-                                              searchGameImages(game.name);
-                                            }}
-                                            className="absolute top-1 right-1 bg-white/90 p-1 rounded opacity-0 group-hover:opacity-100 transition"
-                                          >
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                              <circle cx="8.5" cy="8.5" r="1.5"/>
-                                              <polyline points="21 15 16 10 5 21"/>
-                                            </svg>
-                                          </button>
-                                        </div>
-                                      ) : viewMode === 'images' && !gameImages[game.id] ? (
-                                        <div className={`w-full h-full flex flex-col items-center justify-center ${gameColor} rounded p-2`}>
-                                          <span className="text-xs font-bold text-center line-clamp-2 mb-2">{game.name}</span>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSelectingImageFor(game);
-                                              searchGameImages(game.name);
-                                            }}
-                                            className="bg-white/90 p-1.5 rounded hover:bg-white transition"
-                                          >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                              <circle cx="8.5" cy="8.5" r="1.5"/>
-                                              <polyline points="21 15 16 10 5 21"/>
-                                            </svg>
-                                          </button>
-                                        </div>
+                                        ) : (
+                                          <div className={`w-full h-full flex flex-col items-center justify-center ${gameColor} rounded p-2`}>
+                                            <span className="text-xs font-bold text-center line-clamp-2 mb-2">{game.name}</span>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectingImageFor(game);
+                                                searchGameImages(game.name);
+                                              }}
+                                              className="bg-white/90 p-1.5 rounded hover:bg-white transition"
+                                            >
+                                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                                <polyline points="21 15 16 10 5 21"/>
+                                              </svg>
+                                            </button>
+                                          </div>
+                                        )
                                       ) : (
                                         <>
                                           {/* Mode liste avec nouvelles icônes */}
