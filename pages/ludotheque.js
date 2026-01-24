@@ -575,7 +575,11 @@ useEffect(() => {
       body: JSON.stringify({ gameName })
     });
     
-    const bggData = await bggResponse.json();
+    let bggImages = [];
+    if (bggResponse.ok) {
+      const bggData = await bggResponse.json();
+      bggImages = bggData.images || [];
+    }
     
     // 2. Chercher via l'API existante
     const response = await fetch('/api/search-game-images', {
@@ -584,13 +588,17 @@ useEffect(() => {
       body: JSON.stringify({ gameName })
     });
     
+    if (!response.ok) {
+      throw new Error('Erreur recherche images');
+    }
+    
     const data = await response.json();
     
+    // Filtrer les placeholders
+    const realImages = data.images.filter(img => img.source !== 'Placeholder');
+    
     // Combiner les résultats : BGG en premier, puis les autres
-    const allImages = [
-      ...bggData.images,
-      ...data.images.filter(img => img.source !== 'Placeholder')
-    ];
+    const allImages = [...bggImages, ...realImages];
     
     setImageSearchResults(allImages.length > 0 ? allImages : data.images);
     
