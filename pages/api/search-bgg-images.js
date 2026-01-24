@@ -13,13 +13,14 @@ export default async function handler(req, res) {
   console.log('🎲 BGG: Recherche pour:', gameName);
 
   try {
-    // 1. Recherche du jeu (sans exact=1 pour être plus flexible)
+    // 1. Recherche du jeu
     const searchUrl = `https://boardgamegeek.com/xmlapi2/search?query=${encodeURIComponent(gameName)}&type=boardgame`;
     console.log('📡 BGG: URL de recherche:', searchUrl);
     
     const searchResponse = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'LudothequeApp/1.0'
+        'User-Agent': 'Mozilla/5.0 (compatible; LudothequeApp/1.0; +https://yoursite.com)',
+        'Accept': 'application/xml',
       }
     });
 
@@ -31,6 +32,12 @@ export default async function handler(req, res) {
     const searchXml = await searchResponse.text();
     console.log('📄 BGG: XML reçu:', searchXml.substring(0, 500));
 
+    // Vérifier si le XML contient une erreur
+    if (searchXml.includes('<error>') || searchXml.includes('Rate limit')) {
+      console.log('❌ BGG: Rate limit ou erreur détectée');
+      return res.status(200).json({ images: [] });
+    }
+
     // Extraire l'ID du premier résultat
     const gameIdMatch = searchXml.match(/<item[^>]*id="(\d+)"/);
     if (!gameIdMatch) {
@@ -41,19 +48,20 @@ export default async function handler(req, res) {
     const gameId = gameIdMatch[1];
     console.log('✅ BGG: Game ID trouvé:', gameId);
 
-    // 2. Attendre 1 seconde (requis par BGG)
-    await new Promise(r => setTimeout(r, 1000));
+    // 2. Attendre 2 secondes (recommandé par BGG)
+    await new Promise(r => setTimeout(r, 2000));
 
-    // 3. Récupération des détails avec retry
+    // 3. Récupération des détails avec retry amélioré
     let detailXml = null;
     const detailUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${gameId}&type=boardgame`;
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      console.log(`🔄 BGG: Tentative ${attempt}/3 pour récupérer les détails`);
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      console.log(`🔄 BGG: Tentative ${attempt}/5 pour récupérer les détails`);
       
       const detailResponse = await fetch(detailUrl, {
         headers: {
-          'User-Agent': 'LudothequeApp/1.0'
+          'User-Agent': 'Mozilla/5.0 (compatible; LudothequeApp/1.0; +https://yoursite.com)',
+          'Accept': 'application/xml',
         }
       });
 
@@ -61,25 +69,38 @@ export default async function handler(req, res) {
 
       if (detailResponse.status === 200) {
         detailXml = await detailResponse.text();
-        console.log('📄 BGG: XML détails reçu:', detailXml.substring(0, 500));
-        break;
+        
+        // Vérifier que le XML n'est pas vide ou invalide
+        if (detailXml && detailXml.includes('<item')) {
+          console.log('📄 BGG: XML détails reçu:', detailXml.substring(0, 500));
+          break;
+        } else {
+          console.log('⚠️ BGG: XML vide ou invalide, nouvelle tentative...');
+          detailXml = null;
+        }
       }
 
       if (detailResponse.status === 202) {
-        console.log('⏳ BGG: 202 reçu, attente...');
-        await new Promise(r => setTimeout(r, 2000));
+        console.log('⏳ BGG: 202 reçu (requête en cours de traitement), attente 3s...');
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+
+      if (detailResponse.status === 429 || detailResponse.status === 503) {
+        console.log('⏳ BGG: Rate limit (429/503), attente 5s...');
+        await new Promise(r => setTimeout(r, 5000));
         continue;
       }
 
       console.log('❌ BGG: Erreur détails, status:', detailResponse.status);
       
-      if (attempt < 3) {
-        await new Promise(r => setTimeout(r, 1500));
+      if (attempt < 5) {
+        await new Promise(r => setTimeout(r, 2500));
       }
     }
 
     if (!detailXml) {
-      console.log('❌ BGG: Impossible de récupérer les détails après 3 tentatives');
+      console.log('❌ BGG: Impossible de récupérer les détails après 5 tentatives');
       return res.status(200).json({ images: [] });
     }
 
