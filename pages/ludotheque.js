@@ -119,6 +119,7 @@ export default function Ludotheque() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [showDetailedView, setShowDetailedView] = useState(false);
+  const [gameDetailsPopup, setGameDetailsPopup] = useState(null);
 
   useEffect(() => {
     checkAuth();
@@ -1564,7 +1565,10 @@ const matchesFilters = (game) => {
                                       });
                                     }}
                                     onDoubleClick={() => generateGameRules(game)}
-                                    onClick={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setGameDetailsPopup(game);
+                                    }}
                                     className={`rounded shadow-sm cursor-move group relative transition-all p-0.5 sm:p-1 ${gameColor} ${
                                       hasActiveFilters
                                         ? isHighlighted
@@ -1915,6 +1919,110 @@ const matchesFilters = (game) => {
                 className="px-4 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 transition"
               >
                 💾 Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup détails du jeu */}
+      {gameDetailsPopup && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center p-4 z-50"
+          onClick={() => setGameDetailsPopup(null)}
+        >
+          <div 
+            className={`${cardBg} rounded-xl shadow-2xl max-w-md w-full p-6`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-xl font-bold ${textPrimary}`}>Détails du jeu</h3>
+              <button
+                onClick={() => setGameDetailsPopup(null)}
+                className={`${textSecondary} p-2 rounded-lg hover:bg-opacity-10 hover:bg-gray-500 transition`}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className={`p-4 rounded-lg ${getColorByPlayers(gameDetailsPopup.players)}`}>
+                <h4 className="text-2xl font-bold text-gray-900 mb-2">{gameDetailsPopup.name}</h4>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-600">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    <span className={`text-sm font-semibold ${textSecondary}`}>Joueurs</span>
+                  </div>
+                  <p className={`text-2xl font-bold ${textPrimary}`}>{gameDetailsPopup.players}</p>
+                </div>
+                
+                <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-600">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <span className={`text-sm font-semibold ${textSecondary}`}>Durée</span>
+                  </div>
+                  <p className={`text-2xl font-bold ${textPrimary}`}>
+                    {formatDuration(gameDetailsPopup.duration, gameDetailsPopup.duration_max)}
+                  </p>
+                </div>
+              </div>
+              
+              <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-600">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                  </svg>
+                  <span className={`text-sm font-semibold ${textSecondary}`}>Type de jeu</span>
+                </div>
+                <p className={`text-xl font-bold ${textPrimary}`}>
+                  {gameDetailsPopup.game_type || 'Versus'}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={() => {
+                  setGameDetailsPopup(null);
+                  generateGameRules(gameDetailsPopup);
+                }}
+                className="flex-1 px-4 py-2 rounded-lg font-semibold bg-purple-600 text-white hover:bg-purple-700 transition flex items-center justify-center gap-2"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                </svg>
+                Voir les règles
+              </button>
+              <button
+                onClick={() => {
+                  setGameDetailsPopup(null);
+                  startEditGame(gameDetailsPopup);
+                }}
+                className="flex-1 px-4 py-2 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                Modifier
               </button>
             </div>
           </div>
