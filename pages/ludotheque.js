@@ -103,7 +103,6 @@ export default function Ludotheque() {
   const [showUnplacedGames, setShowUnplacedGames] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
-  const [zoomLevel, setZoomLevel] = useState(1); // 0.7, 0.85, 1, 1.15, 1.3
 
   useEffect(() => {
     checkAuth();
