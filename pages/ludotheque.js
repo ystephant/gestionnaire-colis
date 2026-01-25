@@ -118,6 +118,7 @@ export default function Ludotheque() {
   const [showUnplacedGames, setShowUnplacedGames] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const [showDetailedView, setShowDetailedView] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -1351,6 +1352,29 @@ const matchesFilters = (game) => {
   </span>
   
   {/* Légende des couleurs */}
+  <div className="flex items-center gap-2">
+  <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+    {(() => {
+      const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
+      const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
+      return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
+    })()}
+  </span>
+  
+  {/* Bouton pour basculer la vue */}
+  <button
+    onClick={() => setShowDetailedView(!showDetailedView)}
+    className={`px-2 py-1 rounded text-xs font-semibold transition ${
+      showDetailedView 
+        ? 'bg-blue-600 text-white' 
+        : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+    }`}
+    title={showDetailedView ? "Vue simple (nom uniquement)" : "Vue détaillée (+ infos)"}
+  >
+    {showDetailedView ? '📋 Détails' : '📝 Simple'}
+  </button>
+  
+  {/* Légende des couleurs */}
   <div className="flex flex-wrap gap-1 text-[10px]">
     {Array.from(new Set(games.filter(g => g.shelf_id === shelf.id).map(g => g.players))).sort().map(playerRange => {
       const color = getColorByPlayers(playerRange);
@@ -1586,19 +1610,21 @@ const matchesFilters = (game) => {
                                           </button>
                                         </div>
                                       </div>
-                                      <div className="flex items-center gap-1 text-gray-700" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
-                                        <span className="font-bold whitespace-nowrap">👥{game.players}</span>
-                                        {numGames <= 3 && (
-                                          <>
-                                            <span className="whitespace-nowrap">⏱️{formatDuration(game.duration, game.duration_max)}</span>
-                                            {game.game_type && (
-                                              <span className="px-1 bg-white/30 rounded text-[0.85em]">
-                                                {game.game_type}
-                                              </span>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
+                                      {showDetailedView && (
+                                        <div className="flex items-center gap-1 text-gray-700" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
+                                          <span className="font-bold whitespace-nowrap">👥{game.players}</span>
+                                          {numGames <= 3 && (
+                                            <>
+                                              <span className="whitespace-nowrap">⏱️{formatDuration(game.duration, game.duration_max)}</span>
+                                              {game.game_type && (
+                                                <span className="px-1 bg-white/30 rounded text-[0.85em]">
+                                                  {game.game_type}
+                                                </span>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 );
