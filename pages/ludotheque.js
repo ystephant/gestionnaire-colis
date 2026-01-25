@@ -1244,6 +1244,17 @@ const matchesFilters = (game) => {
                                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                                 </svg>
                               </button>
+                              <button
+                                onClick={() => deleteGame(game.id)}
+                                disabled={!isOnline}
+                                className="p-1 rounded hover:bg-red-500 transition"
+                                title="Supprimer"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="3 6 5 6 21 6"/>
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                                </svg>
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1365,21 +1376,18 @@ const matchesFilters = (game) => {
         <button
           key={playerRange}
           onClick={() => {
-            // Trouver toutes les valeurs de joueurs compatibles avec cette plage
-            const compatibleValues = playerOptions
-              .map(opt => opt.value)
-              .filter(val => {
-                const target = val === '6+' ? 6 : parseInt(val);
-                return target >= min && target <= max;
-              });
-            
-            // Si toutes les valeurs compatibles sont déjà sélectionnées, on les désélectionne
-            const allSelected = compatibleValues.every(v => selectedPlayers.includes(v));
-            if (allSelected) {
-              setSelectedPlayers(selectedPlayers.filter(v => !compatibleValues.includes(v)));
+            // Si déjà actif, on désélectionne tout
+            if (selectedPlayers.length > 0) {
+              setSelectedPlayers([]);
             } else {
-              // Sinon on les ajoute
-              setSelectedPlayers([...new Set([...selectedPlayers, ...compatibleValues])]);
+              // Sinon on active uniquement cette plage
+              const compatibleValues = playerOptions
+                .map(opt => opt.value)
+                .filter(val => {
+                  const target = val === '6+' ? 6 : parseInt(val);
+                  return target >= min && target <= max;
+                });
+              setSelectedPlayers(compatibleValues);
             }
           }}
           className={`${color} px-2 py-0.5 rounded text-gray-900 font-semibold flex items-center gap-1 cursor-pointer hover:ring-2 hover:ring-indigo-600 transition ${
@@ -1576,23 +1584,29 @@ const matchesFilters = (game) => {
         lineHeight: numGames > 3 ? '1.1' : '1.3',
       }}
     >
-      <div className="flex items-start justify-between gap-0.5">
-        <span className="font-bold text-gray-900 leading-tight flex-1 break-words overflow-hidden" 
-              style={{ 
-                display: '-webkit-box',
-                WebkitLineClamp: numGames > 4 ? '1' : '2',
-                WebkitBoxOrient: 'vertical',
-              }}>
-          {game.name}
-        </span>
-        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+      <div className="flex items-center justify-between gap-0.5">
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          <span className="font-bold text-gray-900 leading-tight truncate" 
+                style={{ 
+                  maxWidth: numGames > 2 ? '60%' : '50%',
+                }}>
+            {game.name}
+          </span>
+          <div className="flex items-center gap-0.5 text-gray-700 text-[0.7em] whitespace-nowrap">
+            <span className="font-bold">👥{game.players}</span>
+            {numGames <= 3 && (
+              <span>⏱️{formatDuration(game.duration, game.duration_max)}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
           <button
             onClick={(e) => {
               e.stopPropagation();
               startEditGame(game);
             }}
             disabled={!isOnline}
-            className="text-indigo-600 hover:text-indigo-800 transition flex-shrink-0"
+            className="text-indigo-600 hover:text-indigo-800 transition"
             title="Modifier le jeu"
             style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
           >
@@ -1607,7 +1621,7 @@ const matchesFilters = (game) => {
               removeGameFromShelf(game.id);
             }}
             disabled={!isOnline}
-            className="text-red-600 hover:text-red-800 transition flex-shrink-0"
+            className="text-red-600 hover:text-red-800 transition"
             title="Retirer de l'étagère"
             style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
           >
@@ -1617,26 +1631,6 @@ const matchesFilters = (game) => {
             </svg>
           </button>
         </div>
-      </div>
-      
-      <div className="flex justify-between items-center gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
-        <div className="flex flex-wrap gap-1">
-          {numGames <= 3 && (
-            <>
-              <span className="flex items-center gap-0.5 whitespace-nowrap">
-                ⏱️ {formatDuration(game.duration, game.duration_max)}
-              </span>
-              {game.game_type && (
-                <span className="px-1 bg-white/30 rounded text-[0.6em]">
-                  {game.game_type}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-        <span className="flex items-center gap-0.5 whitespace-nowrap font-bold">
-          👥 {game.players}
-        </span>
       </div>
     </div>
   );
