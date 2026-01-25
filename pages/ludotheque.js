@@ -1600,7 +1600,6 @@ const matchesFilters = (game) => {
           )}
         </div>
     </div>
-  );
 )}
                               </div>
                             </div>
