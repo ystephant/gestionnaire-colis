@@ -40,7 +40,22 @@ const gameTypeOptions = [
 ];
 
 const getColorByPlayers = (players) => {
-  const min = parseInt(players.split('-')[0]);
+  const [min, max] = players.split('-').map(p => parseInt(p));
+  const range = `${min}-${max}`;
+  
+  // Fourchettes spécifiques
+  if (range === '1-1') return 'bg-purple-400';
+  if (range === '2-2') return 'bg-indigo-400';
+  if (range === '2-4') return 'bg-blue-400';
+  if (range === '2-5') return 'bg-cyan-400';
+  if (range === '2-6') return 'bg-teal-400';
+  if (range === '3-5') return 'bg-green-400';
+  if (range === '3-6') return 'bg-lime-400';
+  if (range === '4-6') return 'bg-yellow-400';
+  if (range === '1-5') return 'bg-pink-400';
+  if (range === '1-6') return 'bg-rose-400';
+  
+  // Par défaut, couleur selon min
   if (min === 1) return 'bg-purple-400';
   if (min === 2) return 'bg-blue-400';
   if (min === 3) return 'bg-green-400';
@@ -251,7 +266,8 @@ setGames(gamesData || []);
 
   try {
     const playersRange = `${newGameMinPlayers}-${newGameMaxPlayers}`;
-    const durationValue = parseInt(newGameMinDuration);
+    const durationMin = parseInt(newGameMinDuration);
+    const durationMax = parseInt(newGameMaxDuration);
     
     const { data, error } = await supabase
       .from('board_games')
@@ -259,7 +275,8 @@ setGames(gamesData || []);
         user_id: username,
         name: newGameName.trim(),
         players: playersRange,
-        duration: durationValue,
+        duration: durationMin,
+        duration_max: durationMax !== durationMin ? durationMax : null,
         game_type: newGameType,
         position: null,
         shelf_id: null
@@ -1061,18 +1078,17 @@ const matchesFilters = (game) => {
     </div>
     
     <div>
-      <label className={`text-xs ${textSecondary} mb-1 block`}>Joueurs max</label>
-      <select
-        value={newGameMaxPlayers}
-        onChange={(e) => setNewGameMaxPlayers(e.target.value)}
-        className={`w-full px-2 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm focus:ring-2 focus:ring-indigo-500`}
-        disabled={!isOnline}
-      >
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map(n => (
-          <option key={n} value={n}>{n}</option>
-        ))}
-      </select>
-    </div>
+  <label className={`text-xs ${textSecondary} mb-1 block`}>Joueurs max</label>
+  <input
+    type="number"
+    value={newGameMaxPlayers}
+    onChange={(e) => setNewGameMaxPlayers(e.target.value)}
+    className={`w-full px-2 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm focus:ring-2 focus:ring-indigo-500`}
+    disabled={!isOnline}
+    min="1"
+    max="99"
+  />
+</div>
   </div>
   
   <div className="grid grid-cols-2 gap-2">
@@ -1134,31 +1150,37 @@ const matchesFilters = (game) => {
         </button>
       </div>
 
-              <div className="relative mb-3 sm:mb-4">
-                <svg className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${textSecondary}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="m21 21-4.35-4.35"/>
-                </svg>
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Rechercher un jeu dans toute la ludothèque..."
-                  className={`w-full pl-9 sm:pl-10 pr-10 sm:pr-12 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${textSecondary} hover:text-red-500 transition`}
-                    title="Effacer la recherche"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18"/>
-                      <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </button>
-                )}
-              </div>
+             <div className="relative mb-3 sm:mb-4">
+  <svg className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${textSecondary}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="11" cy="11" r="8"/>
+    <path d="m21 21-4.35-4.35"/>
+  </svg>
+  <input
+    type="text"
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    placeholder="Rechercher un jeu dans toute la ludothèque..."
+    className={`w-full pl-9 sm:pl-10 pr-10 sm:pr-12 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} text-sm sm:text-base focus:ring-2 focus:ring-indigo-500`}
+    list="game-suggestions"
+  />
+  <datalist id="game-suggestions">
+    {games.map(game => (
+      <option key={game.id} value={game.name} />
+    ))}
+  </datalist>
+  {searchTerm && (
+    <button
+      onClick={() => setSearchTerm('')}
+      className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${textSecondary} hover:text-red-500 transition`}
+      title="Effacer la recherche"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  )}
+</div>
 
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {filteredUnplacedGames.map(game => (
@@ -1405,13 +1427,29 @@ const matchesFilters = (game) => {
   <span className={`text-base sm:text-lg font-bold ${textPrimary}`}>
     {shelf.name}
   </span>
+  <div className="flex items-center gap-2">
   <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
-  {(() => {
-    const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
-    const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
-    return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
-  })()}
-</span>
+    {(() => {
+      const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
+      const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
+      return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
+    })()}
+  </span>
+  
+  {/* Légende des couleurs */}
+  <div className="flex flex-wrap gap-1 text-[10px]">
+    {Array.from(new Set(games.filter(g => g.shelf_id === shelf.id).map(g => g.players))).sort().map(playerRange => {
+      const color = getColorByPlayers(playerRange);
+      const count = games.filter(g => g.shelf_id === shelf.id && g.players === playerRange).length;
+      return (
+        <div key={playerRange} className={`${color} px-2 py-0.5 rounded text-gray-900 font-semibold flex items-center gap-1`}>
+          <span>👥{playerRange}</span>
+          <span className="opacity-75">({count})</span>
+        </div>
+      );
+    })}
+  </div>
+</div>
 </div>
         <button
           onClick={() => {
@@ -1604,36 +1642,58 @@ const finalFontSize = baseFontSize * zoomLevel;
               }}>
           {game.name}
         </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            removeGameFromShelf(game.id);
-          }}
-          disabled={!isOnline}
-          className="text-red-600 hover:text-red-800 transition flex-shrink-0 opacity-0 group-hover:opacity-100"
-          title="Retirer de l'étagère"
-          style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
-        >
-          <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
+        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      startEditGame(game);
+    }}
+    disabled={!isOnline}
+    className="text-indigo-600 hover:text-indigo-800 transition flex-shrink-0"
+    title="Modifier le jeu"
+    style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
+  >
+    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+    </svg>
+  </button>
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      removeGameFromShelf(game.id);
+    }}
+    disabled={!isOnline}
+    className="text-red-600 hover:text-red-800 transition flex-shrink-0"
+    title="Retirer de l'étagère"
+    style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
+  >
+    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  </button>
+</div>
       </div>
-      {numGames <= 3 && (
-        <div className="flex flex-wrap gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
-          <span className="flex items-center gap-0.5 whitespace-nowrap">
-            👥 {game.players}
+      <div className="flex justify-between items-center gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
+  <div className="flex flex-wrap gap-1">
+    {numGames <= 3 && (
+      <>
+        <span className="flex items-center gap-0.5 whitespace-nowrap">
+          ⏱️ {formatDuration(game.duration, game.duration_max)}
+        </span>
+        {game.game_type && (
+          <span className="px-1 bg-white/30 rounded text-[0.6em]">
+            {game.game_type}
           </span>
-          <span className="flex items-center gap-0.5 whitespace-nowrap">
-            ⏱️ {formatDuration(game.duration, game.duration_max)}
-          </span>
-          {game.game_type && (
-            <span className="px-1 bg-white/30 rounded text-[0.6em]">
-              {game.game_type}
-            </span>
-          )}
-        </div>
+        )}
+      </>
+    )}
+  </div>
+  <span className="flex items-center gap-0.5 whitespace-nowrap font-bold">
+    👥 {game.players}
+  </span>
+</div>
       )}
     </div>
   );
