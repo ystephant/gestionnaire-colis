@@ -746,18 +746,8 @@ setIsLoadingRules(false);
   const matchesPlayerFilter = (gamePlayersRange, selectedPlayerValues) => {
   if (selectedPlayerValues.length === 0) return true;
   
-  const [minPlayers, maxPlayers] = gamePlayersRange.split('-').map(p => parseInt(p.trim()));
-  
-  return selectedPlayerValues.some(filterValue => {
-    let targetPlayers;
-    if (filterValue === '6+') {
-      targetPlayers = 6;
-    } else {
-      targetPlayers = parseInt(filterValue);
-    }
-    
-    return targetPlayers >= minPlayers && targetPlayers <= (maxPlayers || minPlayers);
-  });
+  // Si on a sélectionné depuis la légende, on cherche la plage exacte
+  return selectedPlayerValues.includes(gamePlayersRange);
 };
 
 const matchesDurationFilter = (gameDuration, gameDurationMax, selectedDurationValues) => {
@@ -1366,32 +1356,21 @@ const matchesFilters = (game) => {
       const color = getColorByPlayers(playerRange);
       const count = games.filter(g => g.shelf_id === shelf.id && g.players === playerRange).length;
       const isActive = selectedPlayers.length > 0;
-      const [min, max] = playerRange.split('-').map(p => parseInt(p));
-      const isHighlighted = selectedPlayers.some(sp => {
-        const target = sp === '6+' ? 6 : parseInt(sp);
-        return target >= min && target <= max;
-      });
       
       return (
         <button
           key={playerRange}
           onClick={() => {
-            // Si déjà actif, on désélectionne tout
-            if (selectedPlayers.length > 0) {
+            // Si cette plage est déjà sélectionnée, on désélectionne
+            if (selectedPlayers.includes(playerRange)) {
               setSelectedPlayers([]);
             } else {
-              // Sinon on active uniquement cette plage
-              const compatibleValues = playerOptions
-                .map(opt => opt.value)
-                .filter(val => {
-                  const target = val === '6+' ? 6 : parseInt(val);
-                  return target >= min && target <= max;
-                });
-              setSelectedPlayers(compatibleValues);
+              // Sinon on sélectionne uniquement cette plage exacte
+              setSelectedPlayers([playerRange]);
             }
           }}
           className={`${color} px-2 py-0.5 rounded text-gray-900 font-semibold flex items-center gap-1 cursor-pointer hover:ring-2 hover:ring-indigo-600 transition ${
-            isActive && isHighlighted ? 'ring-2 ring-blue-500 scale-105' : isActive ? 'opacity-40' : ''
+            isActive && selectedPlayers.includes(playerRange) ? 'ring-2 ring-blue-500 scale-105' : isActive ? 'opacity-40' : ''
           }`}
         >
           <span>👥{playerRange}</span>
@@ -1584,54 +1563,42 @@ const matchesFilters = (game) => {
         lineHeight: numGames > 3 ? '1.1' : '1.3',
       }}
     >
-      <div className="flex items-center justify-between gap-0.5">
-        <div className="flex items-center gap-1 flex-1 min-w-0">
-          <span className="font-bold text-gray-900 leading-tight truncate" 
-                style={{ 
-                  maxWidth: numGames > 2 ? '60%' : '50%',
-                }}>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between gap-0.5">
+          <span className="font-bold text-gray-900 leading-tight break-words flex-1">
             {game.name}
           </span>
-          <div className="flex items-center gap-0.5 text-gray-700 text-[0.7em] whitespace-nowrap">
-            <span className="font-bold">👥{game.players}</span>
-            {numGames <= 3 && (
-              <span>⏱️{formatDuration(game.duration, game.duration_max)}</span>
-            )}
+          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                startEditGame(game);
+              }}
+              disabled={!isOnline}
+              className="text-indigo-600 hover:text-indigo-800 transition"
+              title="Modifier le jeu"
+              style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
+            >
+              <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
           </div>
         </div>
-        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              startEditGame(game);
-            }}
-            disabled={!isOnline}
-            className="text-indigo-600 hover:text-indigo-800 transition"
-            title="Modifier le jeu"
-            style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
-          >
-            <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              removeGameFromShelf(game.id);
-            }}
-            disabled={!isOnline}
-            className="text-red-600 hover:text-red-800 transition"
-            title="Retirer de l'étagère"
-            style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
-          >
-            <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
+        <div className="flex items-center gap-1 text-gray-700" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
+          <span className="font-bold whitespace-nowrap">👥{game.players}</span>
+          {numGames <= 3 && (
+            <>
+              <span className="whitespace-nowrap">⏱️{formatDuration(game.duration, game.duration_max)}</span>
+              {game.game_type && (
+                <span className="px-1 bg-white/30 rounded text-[0.85em]">
+                  {game.game_type}
+                </span>
+              )}
+            </>
+          )}
         </div>
-      </div>
     </div>
   );
 })}
