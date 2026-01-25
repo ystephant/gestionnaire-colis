@@ -1618,11 +1618,12 @@ const matchesFilters = (game) => {
                 </div>
               </>
             )}
-              </div>
-            );
-          })}
+          </div>
         </div>
-      </div>
+      );
+    })}
+  </div>
+</div>
 
       {/* Aperçu fantôme du jeu en cours de déplacement */}
       {isDragging && draggedGame && (
