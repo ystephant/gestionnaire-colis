@@ -85,6 +85,10 @@ export default function Ludotheque() {
   const [collapsedShelves, setCollapsedShelves] = useState(new Set());
   const [editingShelfId, setEditingShelfId] = useState(null);
   const [editingShelfName, setEditingShelfName] = useState('');
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [showGameSelector, setShowGameSelector] = useState(false);
+  const [selectorPosition, setSelectorPosition] = useState({ row: 0, col: 0, shelfId: null });
+  const [selectorSearchTerm, setSelectorSearchTerm] = useState('');
   
   // État pour l'édition de jeu
   const [editingGameId, setEditingGameId] = useState(null);
@@ -373,28 +377,54 @@ setGames(gamesData || []);
   };
 
   const handleDrop = async (row, col, shelfId) => {
-    if (!draggedGame || !isOnline) {
-      setDraggedGame(null);
-      return;
-    }
-    
-    const position = `${row}-${col}`;
-
-    try {
-      const { error } = await supabase
-        .from('board_games')
-        .update({ position, shelf_id: shelfId })
-        .eq('id', draggedGame.id);
-
-      if (error) throw error;
-      setGames(games.map(g => g.id === draggedGame.id ? { ...g, position, shelf_id: shelfId } : g));
-    } catch (error) {
-      console.error('Erreur:', error);
-    }
-
+  if (!draggedGame || !isOnline) {
     setDraggedGame(null);
-    setDropZoneActive(false);
-  };
+    return;
+  }
+  
+  const position = `${row}-${col}`;
+
+  try {
+    const { error } = await supabase
+      .from('board_games')
+      .update({ position, shelf_id: shelfId })
+      .eq('id', draggedGame.id);
+
+    if (error) throw error;
+    setGames(games.map(g => g.id === draggedGame.id ? { ...g, position, shelf_id: shelfId } : g));
+  } catch (error) {
+    console.error('Erreur:', error);
+  }
+
+  setDraggedGame(null);
+  setDropZoneActive(false);
+};
+
+const openGameSelector = (row, col, shelfId) => {
+  setSelectorPosition({ row, col, shelfId });
+  setSelectorSearchTerm('');
+  setShowGameSelector(true);
+};
+
+const addGameToCell = async (game) => {
+  if (!isOnline) return;
+  
+  const { row, col, shelfId } = selectorPosition;
+  const position = `${row}-${col}`;
+
+  try {
+    const { error } = await supabase
+      .from('board_games')
+      .update({ position, shelf_id: shelfId })
+      .eq('id', game.id);
+
+    if (error) throw error;
+    setGames(games.map(g => g.id === game.id ? { ...g, position, shelf_id: shelfId } : g));
+    showToastMessage(`✅ "${game.name}" ajouté à la case`);
+  } catch (error) {
+    console.error('Erreur:', error);
+  }
+};
 
   const handleDropToDelete = async () => {
     if (draggedGame && draggedGame.position && isOnline) {
@@ -1483,6 +1513,12 @@ const matchesFilters = (game) => {
                         <div
                           key={`${row}-${col}`}
                           data-cell="true"
+                          onClick={(e) => {
+                            // Vérifier si on clique sur la partie grise (pas sur un jeu)
+                            if (!e.target.closest('[data-game-card]')) {
+                              openGameSelector(row, col, shelf.id);
+                            }
+                          }}
                           onDragOver={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -1500,13 +1536,7 @@ const matchesFilters = (game) => {
                           onDragEnd={(e) => {
                             e.currentTarget.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
                           }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.currentTarget.classList.remove('ring-2', 'ring-indigo-500', 'scale-105');
-                            handleDrop(row, col, shelf.id);
-                          }}
-                          className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden transition-all duration-300 ease-out ${
+                          className={`aspect-square border-2 sm:border-4 rounded-lg overflow-hidden transition-all duration-300 ease-out cursor-pointer ${
                             gamesInCell.length > 0
                               ? (() => {
                                   const hasFilteredGame = hasActiveFilters && gamesInCell.some(g => matchesFilters(g));
@@ -1515,7 +1545,7 @@ const matchesFilters = (game) => {
                                   }
                                   return darkMode ? 'border-indigo-600 bg-gray-600' : 'border-indigo-500 bg-indigo-50';
                                 })()
-                              : darkMode ? 'border-gray-600 border-dashed hover:border-gray-500' : 'border-gray-300 border-dashed hover:border-gray-400'
+                              : darkMode ? 'border-gray-600 border-dashed hover:border-indigo-400 hover:bg-gray-700' : 'border-gray-300 border-dashed hover:border-indigo-400 hover:bg-indigo-50'
                           }`}
                         >
                           {gamesInCell.length > 0 ? (
@@ -1539,6 +1569,7 @@ const finalFontSize = baseFontSize * zoomLevel;
   return (
     <div
       key={game.id}
+      data-game-card="true"
       draggable={isOnline}
       onDragStart={(e) => {
         handleDragStart(game, e);
@@ -1552,6 +1583,7 @@ const finalFontSize = baseFontSize * zoomLevel;
         });
       }}
       onDoubleClick={() => generateGameRules(game)}
+      onClick={(e) => e.stopPropagation()}
       className={`rounded shadow-sm cursor-move group relative transition-all p-0.5 sm:p-1 ${gameColor} ${
         hasActiveFilters
           ? isHighlighted
@@ -1590,13 +1622,18 @@ const finalFontSize = baseFontSize * zoomLevel;
         </button>
       </div>
       {numGames <= 3 && (
-        <div className="flex gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
+        <div className="flex flex-wrap gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
           <span className="flex items-center gap-0.5 whitespace-nowrap">
-            👥 {game.players.split('-')[0]}
+            👥 {game.players}
           </span>
           <span className="flex items-center gap-0.5 whitespace-nowrap">
-            ⏱️ {game.duration}
+            ⏱️ {formatDuration(game.duration, game.duration_max)}
           </span>
+          {game.game_type && (
+            <span className="px-1 bg-white/30 rounded text-[0.6em]">
+              {game.game_type}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -1606,7 +1643,9 @@ const finalFontSize = baseFontSize * zoomLevel;
                             </div>
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
-                              <span className={`${textSecondary}`} style={{ fontSize: `${0.75 * zoomLevel}rem` }}>Vide</span>
+                              <span className={`${textSecondary} text-center px-2`} style={{ fontSize: `${0.7 * zoomLevel}rem` }}>
+                                Cliquez pour<br/>ajouter un jeu
+                              </span>
                             </div>
                           )}
                         </div>
@@ -1782,6 +1821,73 @@ const finalFontSize = baseFontSize * zoomLevel;
                   </>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de sélection de jeux */}
+      {showGameSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 backdrop-blur-sm">
+          <div className={`${cardBg} rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col`}>
+            <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
+              <h2 className={`text-xl font-bold ${textPrimary}`}>
+                Ajouter un jeu à la case ({selectorPosition.row}, {selectorPosition.col})
+              </h2>
+              <button
+                onClick={() => setShowGameSelector(false)}
+                className={`${textSecondary} p-2 rounded-lg hover:bg-opacity-10 hover:bg-gray-500 transition`}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <input
+                type="text"
+                value={selectorSearchTerm}
+                onChange={(e) => setSelectorSearchTerm(e.target.value)}
+                placeholder="Rechercher un jeu..."
+                className={`w-full px-4 py-2 border-2 ${inputBg} rounded-lg ${textPrimary} focus:ring-2 focus:ring-indigo-500 mb-4`}
+                autoFocus
+              />
+            </div>
+            
+            <div className="overflow-y-auto flex-1 px-4 pb-4">
+              <div className="space-y-2">
+                {unplacedGames
+                  .filter(g => g.name.toLowerCase().includes(selectorSearchTerm.toLowerCase()))
+                  .map(game => (
+                    <button
+                      key={game.id}
+                      onClick={() => {
+                        addGameToCell(game);
+                        setShowGameSelector(false);
+                      }}
+                      className={`w-full text-left p-3 rounded-lg transition-all ${
+                        darkMode 
+                          ? 'bg-gray-700 hover:bg-gray-600' 
+                          : 'bg-gray-100 hover:bg-gray-200'
+                      }`}
+                    >
+                      <div className="font-semibold text-sm mb-1">{game.name}</div>
+                      <div className="flex gap-2 text-xs opacity-75">
+                        <span>👥 {game.players}</span>
+                        <span>⏱️ {formatDuration(game.duration, game.duration_max)}</span>
+                        {game.game_type && <span>{game.game_type}</span>}
+                      </div>
+                    </button>
+                  ))}
+              </div>
+              
+              {unplacedGames.filter(g => g.name.toLowerCase().includes(selectorSearchTerm.toLowerCase())).length === 0 && (
+                <div className={`text-center py-8 ${textSecondary}`}>
+                  Aucun jeu disponible
+                </div>
+              )}
             </div>
           </div>
         </div>
