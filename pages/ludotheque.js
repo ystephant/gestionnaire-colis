@@ -1351,16 +1351,6 @@ const matchesFilters = (game) => {
     })()}
   </span>
   
-  {/* Légende des couleurs */}
-  <div className="flex items-center gap-2">
-  <span className={`text-lg sm:text-xl font-bold px-3 py-1 rounded ${darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
-    {(() => {
-      const totalGames = games.filter(g => g.shelf_id === shelf.id).length;
-      const filteredGames = games.filter(g => g.shelf_id === shelf.id && matchesFilters(g)).length;
-      return hasActiveFilters ? `${filteredGames}/${totalGames}` : totalGames;
-    })()}
-  </span>
-  
   {/* Bouton pour basculer la vue */}
   <button
     onClick={() => setShowDetailedView(!showDetailedView)}
