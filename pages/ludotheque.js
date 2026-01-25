@@ -584,8 +584,7 @@ const generateGameRules = async (game) => {
   } catch (error) {
     console.log('Aucune règle existante trouvée, génération par IA...');
   }
-
-  // Génération par IA si aucune règle n'existe
+  
   // Génération par IA si aucune règle n'existe
 let rulesText = null;
 let retryCount = 0;
@@ -1034,8 +1033,6 @@ const matchesFilters = (game) => {
         </div>
 
         {/* Jeux disponibles */}
-
-        {/* Jeux disponibles */}
         <div className={`${cardBg} rounded-xl shadow-lg p-3 sm:p-4 md:p-6 mb-4 sm:mb-6`}>
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <h2 className={`text-lg sm:text-xl font-bold ${textPrimary}`}>
@@ -1251,7 +1248,6 @@ const matchesFilters = (game) => {
                           </div>
                         </div>
                       </div>
-                    )}
                   </div>
                 ))}
               </div>
