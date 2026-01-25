@@ -1698,10 +1698,6 @@ const finalFontSize = baseFontSize * zoomLevel;
     </div>
   );
 })}
-      )}
-    </div>
-  );
-})}
                               </div>
                             </div>
                           ) : (
