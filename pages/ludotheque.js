@@ -1519,87 +1519,89 @@ const matchesFilters = (game) => {
                             <div className="w-full h-full p-0.5 sm:p-1 md:p-2 overflow-y-auto scrollbar-thin">
                               <div className="space-y-0.5 sm:space-y-1">
                                 {gamesInCell.map((game, gameIndex) => {
-  const isHighlighted = matchesFilters(game);
-  const gameColor = getColorByPlayers(game.players);
-  
-  // Calcul adaptatif de la taille de police
-  const numGames = gamesInCell.length;
-  let baseFontSize = 0.75; // Taille de base en rem
-
-  // Ajuster selon le nombre de jeux
-  if (numGames === 1) baseFontSize = 0.875; // ~14px
-  else if (numGames === 2) baseFontSize = 0.75; // ~12px
-  else baseFontSize = 0.625; // ~10px - taille minimum même avec 3+ jeux
+                                  const isHighlighted = matchesFilters(game);
+                                  const gameColor = getColorByPlayers(game.players);
                                   
-  const finalFontSize = baseFontSize * zoomLevel;
-  
-  return (
-    <div
-      key={game.id}
-      data-game-card="true"
-      draggable={isOnline}
-      onDragStart={(e) => {
-        handleDragStart(game, e);
-        e.currentTarget.classList.add('opacity-50');
-      }}
-      onDragEnd={(e) => {
-        e.currentTarget.classList.remove('opacity-50');
-        setIsDragging(false);
-        document.querySelectorAll('[data-cell]').forEach(cell => {
-          cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
-        });
-      }}
-      onDoubleClick={() => generateGameRules(game)}
-      onClick={(e) => e.stopPropagation()}
-      className={`rounded shadow-sm cursor-move group relative transition-all p-0.5 sm:p-1 ${gameColor} ${
-        hasActiveFilters
-          ? isHighlighted
-            ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
-            : 'opacity-20 grayscale hover:opacity-40'
-          : 'opacity-90 hover:opacity-100'
-      }`}
-      style={{ 
-        fontSize: `${Math.max(0.5, finalFontSize)}rem`,
-        lineHeight: numGames > 3 ? '1.1' : '1.3',
-      }}
-    >
-      <div className="flex flex-col gap-0.5">
-        <div className="flex items-center justify-between gap-0.5">
-          <span className="font-bold text-gray-900 leading-tight break-words flex-1">
-            {game.name}
-          </span>
-          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                startEditGame(game);
-              }}
-              disabled={!isOnline}
-              className="text-indigo-600 hover:text-indigo-800 transition"
-              title="Modifier le jeu"
-              style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
-            >
-              <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-1 text-gray-700" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
-          <span className="font-bold whitespace-nowrap">👥{game.players}</span>
-          {numGames <= 3 && (
-            <>
-              <span className="whitespace-nowrap">⏱️{formatDuration(game.duration, game.duration_max)}</span>
-              {game.game_type && (
-                <span className="px-1 bg-white/30 rounded text-[0.85em]">
-                  {game.game_type}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-    </div>
+                                  // Calcul adaptatif de la taille de police
+                                  const numGames = gamesInCell.length;
+                                  let baseFontSize = 0.75; // Taille de base en rem
+                                
+                                  // Ajuster selon le nombre de jeux
+                                  if (numGames === 1) baseFontSize = 0.875; // ~14px
+                                  else if (numGames === 2) baseFontSize = 0.75; // ~12px
+                                  else baseFontSize = 0.625; // ~10px - taille minimum même avec 3+ jeux
+                                                                  
+                                  const finalFontSize = baseFontSize * zoomLevel;
+                                  
+                                  return (
+                                    <div
+                                      key={game.id}
+                                      data-game-card="true"
+                                      draggable={isOnline}
+                                      onDragStart={(e) => {
+                                        handleDragStart(game, e);
+                                        e.currentTarget.classList.add('opacity-50');
+                                      }}
+                                      onDragEnd={(e) => {
+                                        e.currentTarget.classList.remove('opacity-50');
+                                        setIsDragging(false);
+                                        document.querySelectorAll('[data-cell]').forEach(cell => {
+                                          cell.classList.remove('ring-4', 'ring-indigo-500', 'scale-110', 'shadow-2xl');
+                                        });
+                                      }}
+                                      onDoubleClick={() => generateGameRules(game)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className={`rounded shadow-sm cursor-move group relative transition-all p-0.5 sm:p-1 ${gameColor} ${
+                                        hasActiveFilters
+                                          ? isHighlighted
+                                            ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
+                                            : 'opacity-20 grayscale hover:opacity-40'
+                                          : 'opacity-90 hover:opacity-100'
+                                      }`}
+                                      style={{ 
+                                        fontSize: `${Math.max(0.5, finalFontSize)}rem`,
+                                        lineHeight: numGames > 3 ? '1.1' : '1.3',
+                                      }}
+                                    >
+                                      <div className="flex flex-col gap-0.5">
+                                        <div className="flex items-center justify-between gap-0.5">
+                                          <span className="font-bold text-gray-900 leading-tight break-words flex-1">
+                                            {game.name}
+                                          </span>
+                                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                startEditGame(game);
+                                              }}
+                                              disabled={!isOnline}
+                                              className="text-indigo-600 hover:text-indigo-800 transition"
+                                              title="Modifier le jeu"
+                                              style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
+                                            >
+                                              <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                              </svg>
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-gray-700" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
+                                          <span className="font-bold whitespace-nowrap">👥{game.players}</span>
+                                          {numGames <= 3 && (
+                                            <>
+                                              <span className="whitespace-nowrap">⏱️{formatDuration(game.duration, game.duration_max)}</span>
+                                              {game.game_type && (
+                                                <span className="px-1 bg-white/30 rounded text-[0.85em]">
+                                                  {game.game_type}
+                                                </span>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                    </div>
+                                          );
+                                  })}
                               </div>
                             </div>
                           ) : (
