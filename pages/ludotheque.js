@@ -1675,25 +1675,29 @@ const finalFontSize = baseFontSize * zoomLevel;
   </button>
 </div>
       </div>
+      </div>
       <div className="flex justify-between items-center gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
-  <div className="flex flex-wrap gap-1">
-    {numGames <= 3 && (
-      <>
-        <span className="flex items-center gap-0.5 whitespace-nowrap">
-          ⏱️ {formatDuration(game.duration, game.duration_max)}
+        <div className="flex flex-wrap gap-1">
+          {numGames <= 3 && (
+            <>
+              <span className="flex items-center gap-0.5 whitespace-nowrap">
+                ⏱️ {formatDuration(game.duration, game.duration_max)}
+              </span>
+              {game.game_type && (
+                <span className="px-1 bg-white/30 rounded text-[0.6em]">
+                  {game.game_type}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+        <span className="flex items-center gap-0.5 whitespace-nowrap font-bold">
+          👥 {game.players}
         </span>
-        {game.game_type && (
-          <span className="px-1 bg-white/30 rounded text-[0.6em]">
-            {game.game_type}
-          </span>
-        )}
-      </>
-    )}
-  </div>
-  <span className="flex items-center gap-0.5 whitespace-nowrap font-bold">
-    👥 {game.players}
-  </span>
-</div>
+      </div>
+    </div>
+  );
+})}
       )}
     </div>
   );
