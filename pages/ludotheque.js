@@ -1593,15 +1593,15 @@ const matchesFilters = (game) => {
   const gameColor = getColorByPlayers(game.players);
   
   // Calcul adaptatif de la taille de police
-const numGames = gamesInCell.length;
-let baseFontSize = 0.75; // Taille de base en rem
+  const numGames = gamesInCell.length;
+  let baseFontSize = 0.75; // Taille de base en rem
 
-// Ajuster selon le nombre de jeux
-if (numGames === 1) baseFontSize = 0.875; // ~14px
-else if (numGames === 2) baseFontSize = 0.75; // ~12px
-else baseFontSize = 0.625; // ~10px - taille minimum même avec 3+ jeux
+  // Ajuster selon le nombre de jeux
+  if (numGames === 1) baseFontSize = 0.875; // ~14px
+  else if (numGames === 2) baseFontSize = 0.75; // ~12px
+  else baseFontSize = 0.625; // ~10px - taille minimum même avec 3+ jeux
                                   
-const finalFontSize = baseFontSize * zoomLevel;
+  const finalFontSize = baseFontSize * zoomLevel;
   
   return (
     <div
@@ -1643,39 +1643,39 @@ const finalFontSize = baseFontSize * zoomLevel;
           {game.name}
         </span>
         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      startEditGame(game);
-    }}
-    disabled={!isOnline}
-    className="text-indigo-600 hover:text-indigo-800 transition flex-shrink-0"
-    title="Modifier le jeu"
-    style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
-  >
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-    </svg>
-  </button>
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      removeGameFromShelf(game.id);
-    }}
-    disabled={!isOnline}
-    className="text-red-600 hover:text-red-800 transition flex-shrink-0"
-    title="Retirer de l'étagère"
-    style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
-  >
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-      <line x1="18" y1="6" x2="6" y2="18"/>
-      <line x1="6" y1="6" x2="18" y2="18"/>
-    </svg>
-  </button>
-</div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              startEditGame(game);
+            }}
+            disabled={!isOnline}
+            className="text-indigo-600 hover:text-indigo-800 transition flex-shrink-0"
+            title="Modifier le jeu"
+            style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
+          >
+            <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              removeGameFromShelf(game.id);
+            }}
+            disabled={!isOnline}
+            className="text-red-600 hover:text-red-800 transition flex-shrink-0"
+            title="Retirer de l'étagère"
+            style={{ width: `${Math.max(8, finalFontSize * 12)}px`, height: `${Math.max(8, finalFontSize * 12)}px` }}
+          >
+            <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
       </div>
-      </div>
+      
       <div className="flex justify-between items-center gap-1 text-gray-700 mt-0.5" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
         <div className="flex flex-wrap gap-1">
           {numGames <= 3 && (
