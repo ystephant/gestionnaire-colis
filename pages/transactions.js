@@ -29,7 +29,7 @@ export default function TransactionsTracker() {
   const [gameNameSuggestions, setGameNameSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedGameFilter, setSelectedGameFilter] = useState('');
-  const [timeGrouping, setTimeGrouping] = useState('month'); // 'day', 'month', 'year'
+  const [timeGrouping, setTimeGrouping] = useState('day'); // 'day', 'month', 'year'
   const [expandedSections, setExpandedSections] = useState({
     evolution: true,
     comparison: true,
@@ -819,7 +819,7 @@ export default function TransactionsTracker() {
 
             {/* Global Stats */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
-              <div className="grid md:grid-cols-5 gap-4 text-center">
+              <div className="grid md:grid-cols-7 gap-4 text-center">
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Total Achats
@@ -834,6 +834,18 @@ export default function TransactionsTracker() {
 
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Prix Achat Moyen
+                  </div>
+                  <div className="text-2xl font-bold text-orange-500">
+                    {globalStats.buyCount > 0 ? (globalStats.totalBuy / globalStats.buyCount).toFixed(2) : '0.00'}€
+                  </div>
+                  <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    par transaction
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Total Ventes
                   </div>
                   <div className="text-2xl font-bold text-green-500">
@@ -841,6 +853,18 @@ export default function TransactionsTracker() {
                   </div>
                   <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                     {globalStats.sellCount} transactions
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Prix Vente Moyen
+                  </div>
+                  <div className="text-2xl font-bold text-teal-500">
+                    {globalStats.sellCount > 0 ? (globalStats.totalSell / globalStats.sellCount).toFixed(2) : '0.00'}€
+                  </div>
+                  <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    par transaction
                   </div>
                 </div>
 
@@ -1245,7 +1269,7 @@ export default function TransactionsTracker() {
                     📋 Statistiques détaillées
                   </h2>
                   <div className="space-y-3 max-h-64 overflow-y-auto">
-                    {chartData.reverse().map((data, index) => (
+                    {chartData.map((data, index) => (
                       <div key={index} className={`p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                         <div className={`font-bold mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
                           {data.month}
