@@ -38,7 +38,9 @@ export default function TransactionsTracker() {
     top10Profitable: true,
     top10LeastProfitable: true,
     detailProfitable: true,
-    detailLosses: true
+    detailLosses: true,
+    avgPrices: false 
+    
   });
 
   useEffect(() => {
@@ -818,9 +820,9 @@ export default function TransactionsTracker() {
             </div>
 
             {/* Global Stats */}
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
-              {/* Ligne 1: Achats */}
-              <div className="grid md:grid-cols-2 gap-4 text-center mb-3">
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-4 mb-6`}>
+              {/* Ligne 1: Stats principales - toujours visible */}
+              <div className="grid md:grid-cols-4 gap-4 text-center">
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Total Achats
@@ -835,21 +837,6 @@ export default function TransactionsTracker() {
 
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Prix Achat Moyen
-                  </div>
-                  <div className="text-2xl font-bold text-orange-500">
-                    {globalStats.buyCount > 0 ? (globalStats.totalBuy / globalStats.buyCount).toFixed(2) : '0.00'}€
-                  </div>
-                  <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                    par transaction
-                  </div>
-                </div>
-              </div>
-
-              {/* Ligne 2: Ventes */}
-              <div className="grid md:grid-cols-2 gap-4 text-center mb-3">
-                <div>
-                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Total Ventes
                   </div>
                   <div className="text-2xl font-bold text-green-500">
@@ -860,21 +847,6 @@ export default function TransactionsTracker() {
                   </div>
                 </div>
 
-                <div>
-                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Prix Vente Moyen
-                  </div>
-                  <div className="text-2xl font-bold text-teal-500">
-                    {globalStats.sellCount > 0 ? (globalStats.totalSell / globalStats.sellCount).toFixed(2) : '0.00'}€
-                  </div>
-                  <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                    par transaction
-                  </div>
-                </div>
-              </div>
-
-              {/* Ligne 3: Bénéfice et Total */}
-              <div className="grid md:grid-cols-2 gap-4 text-center">
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Bénéfice
@@ -893,6 +865,49 @@ export default function TransactionsTracker() {
                   </div>
                 </div>
               </div>
+
+              {/* Bouton pour afficher/masquer les prix moyens */}
+              <div className="text-center mt-3">
+                <button
+                  onClick={() => setExpandedSections(prev => ({ ...prev, avgPrices: !prev.avgPrices }))}
+                  className={`text-xs px-3 py-1 rounded-lg transition ${
+                    darkMode 
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {expandedSections.avgPrices ? '▲ Masquer prix moyens' : '▼ Afficher prix moyens'}
+                </button>
+              </div>
+
+              {/* Ligne 2: Prix moyens - masquée par défaut */}
+              {expandedSections.avgPrices && (
+                <div className={`grid md:grid-cols-2 gap-4 text-center mt-3 pt-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <div>
+                    <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Prix Achat Moyen
+                    </div>
+                    <div className="text-2xl font-bold text-orange-500">
+                      {globalStats.buyCount > 0 ? (globalStats.totalBuy / globalStats.buyCount).toFixed(2) : '0.00'}€
+                    </div>
+                    <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      par transaction
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Prix Vente Moyen
+                    </div>
+                    <div className="text-2xl font-bold text-teal-500">
+                      {globalStats.sellCount > 0 ? (globalStats.totalSell / globalStats.sellCount).toFixed(2) : '0.00'}€
+                    </div>
+                    <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      par transaction
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Two Columns Layout */}
