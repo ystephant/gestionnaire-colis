@@ -819,7 +819,8 @@ export default function TransactionsTracker() {
 
             {/* Global Stats */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
-              <div className="grid md:grid-cols-7 gap-4 text-center">
+              {/* Ligne 1: Achats */}
+              <div className="grid md:grid-cols-2 gap-4 text-center mb-3">
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Total Achats
@@ -843,7 +844,10 @@ export default function TransactionsTracker() {
                     par transaction
                   </div>
                 </div>
+              </div>
 
+              {/* Ligne 2: Ventes */}
+              <div className="grid md:grid-cols-2 gap-4 text-center mb-3">
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Total Ventes
@@ -867,22 +871,16 @@ export default function TransactionsTracker() {
                     par transaction
                   </div>
                 </div>
+              </div>
 
+              {/* Ligne 3: Bénéfice et Total */}
+              <div className="grid md:grid-cols-2 gap-4 text-center">
                 <div>
                   <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Bénéfice
                   </div>
                   <div className={`text-2xl font-bold ${globalStats.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                     {globalStats.profit >= 0 ? '+' : ''}{globalStats.profit.toFixed(2)}€
-                  </div>
-                </div>
-
-                <div>
-                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Marge
-                  </div>
-                  <div className={`text-2xl font-bold ${globalStats.profitPercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {globalStats.profitPercent >= 0 ? '+' : ''}{globalStats.profitPercent.toFixed(1)}%
                   </div>
                 </div>
 
