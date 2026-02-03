@@ -34,6 +34,8 @@ export default function TransactionsTracker() {
   const [showStatsFilterMenu, setShowStatsFilterMenu] = useState(false);
   const [customMonth, setCustomMonth] = useState('');
   const [customYear, setCustomYear] = useState('');
+  const [gameSearch, setGameSearch] = useState('');
+  const [showGameSearch, setShowGameSearch] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     evolution: true,
     comparison: true,
@@ -748,8 +750,23 @@ const loadUserPreferences = async () => {
     return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
   };
 
-  const buyMonthlyGroups = groupByMonth(buyTransactions);
-  const sellMonthlyGroups = groupByMonth(sellTransactions);
+  // Filtrer par recherche de jeu si active
+  const filteredBySearch = gameSearch.trim() !== '' 
+    ? {
+        buys: buyTransactions.filter(t => 
+          t.game_name && t.game_name.toLowerCase().includes(gameSearch.toLowerCase())
+        ),
+        sells: sellTransactions.filter(t => 
+          t.game_name && t.game_name.toLowerCase().includes(gameSearch.toLowerCase())
+        )
+      }
+    : {
+        buys: buyTransactions,
+        sells: sellTransactions
+      };
+
+  const buyMonthlyGroups = groupByMonth(filteredBySearch.buys);
+  const sellMonthlyGroups = groupByMonth(filteredBySearch.sells);
   const { filteredBuys, filteredSells } = getFilteredTransactions();
   const globalStats = calculateStats(filteredBuys, filteredSells);
   const chartData = getChartData();
@@ -798,7 +815,10 @@ const loadUserPreferences = async () => {
               </div>
             </div>
             
-            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+           Parfait ! Voici le code complet avec le bouton Export et le bouton de recherche :
+ÉTAPE 3 COMPLÈTE : Remplacer tout le bloc des boutons
+REMPLACEZ votre code actuel par :
+javascript            <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <button
                 onClick={exportToExcel}
                 className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
@@ -823,6 +843,31 @@ const loadUserPreferences = async () => {
               >
                 {statsView ? '📝 Transactions' : '📊 Statistiques'}
               </button>
+
+              {/* Bouton de recherche - visible uniquement en mode Transactions */}
+              {!statsView && (
+                <button
+                  onClick={() => {
+                    setShowGameSearch(!showGameSearch);
+                    if (showGameSearch) {
+                      setGameSearch(''); // Réinitialiser la recherche quand on ferme
+                    }
+                  }}
+                  className={`p-2 md:p-3 rounded-xl transition ${
+                    showGameSearch
+                      ? 'bg-indigo-600 text-white'
+                      : darkMode 
+                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' 
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                  }`}
+                  title="Rechercher un jeu"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                  </svg>
+                </button>
+              )}
               
               <button
                 onClick={toggleDarkMode}
@@ -1160,6 +1205,86 @@ const loadUserPreferences = async () => {
               )}
             </div>
 
+            {/* Barre de recherche de jeu - affichable/masquable */}
+            {showGameSearch && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-4 mb-6`}>
+                <div className="flex items-center gap-3">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                  </svg>
+                  
+                  <input
+                    type="text"
+                    value={gameSearch}
+                    onChange={(e) => setGameSearch(e.target.value)}
+                    placeholder="Rechercher un jeu... (ex: Catan, Monopoly)"
+                    className={`flex-1 px-4 py-2 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                        : 'bg-white border-gray-200 text-gray-900 placeholder-gray-500'
+                    }`}
+                  />
+                  
+                  {gameSearch && (
+                    <button
+                      onClick={() => setGameSearch('')}
+                      className={`p-2 rounded-lg transition ${
+                        darkMode 
+                          ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300' 
+                          : 'hover:bg-gray-100 text-gray-600 hover:text-gray-800'
+                      }`}
+                      title="Effacer"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                
+                {gameSearch && filteredBySearch.buys.length === 0 && filteredBySearch.sells.length === 0 && (
+                  <div className={`mt-3 text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-600'}`}>
+                    Aucun résultat pour "{gameSearch}"
+                  </div>
+                )}
+                
+                {gameSearch && (filteredBySearch.buys.length > 0 || filteredBySearch.sells.length > 0) && (
+                  <div className={`mt-3 flex items-center justify-center gap-4 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <span>
+                      <span className="font-bold text-red-500">{filteredBySearch.buys.length}</span> achat{filteredBySearch.buys.length > 1 ? 's' : ''}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      <span className="font-bold text-green-500">{filteredBySearch.sells.length}</span> vente{filteredBySearch.sells.length > 1 ? 's' : ''}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      Total: <span className="font-bold">{filteredBySearch.buys.length + filteredBySearch.sells.length}</span> transaction{(filteredBySearch.buys.length + filteredBySearch.sells.length) > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Badge de recherche active */}
+            {!showGameSearch && gameSearch && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-3 mb-6 text-center`}>
+                <span className={`inline-flex items-center gap-2 text-sm px-3 py-1 rounded-full ${
+                  darkMode ? 'bg-indigo-900 text-indigo-300' : 'bg-indigo-100 text-indigo-700'
+                }`}>
+                  🔍 Filtré par: <span className="font-bold">{gameSearch}</span>
+                  <button
+                    onClick={() => setGameSearch('')}
+                    className="ml-1 hover:text-indigo-500"
+                  >
+                    ✕
+                  </button>
+                </span>
+              </div>
+            )}
+            
             {/* Two Columns Layout */}
             <div className="grid md:grid-cols-2 gap-6">
               {/* Buy Column */}
