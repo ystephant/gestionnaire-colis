@@ -36,6 +36,7 @@ export default function TransactionsTracker() {
   const [customYear, setCustomYear] = useState('');
   const [gameSearch, setGameSearch] = useState('');
   const [showGameSearch, setShowGameSearch] = useState(false);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     evolution: true,
     comparison: true,
@@ -1216,8 +1217,8 @@ const loadUserPreferences = async () => {
                       type="text"
                       value={gameSearch}
                       onChange={(e) => setGameSearch(e.target.value)}
-                      onFocus={() => setShowSuggestions(gameSearch.length > 0)}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                      onFocus={() => setShowSearchSuggestions(gameSearch.length > 0)}
+                      onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
                       placeholder="Rechercher un jeu... (ex: Catan, Monopoly)"
                       className={`w-full px-4 py-2 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
                         darkMode 
@@ -1227,7 +1228,7 @@ const loadUserPreferences = async () => {
                     />
                     
                     {/* Suggestions d'autocomplétion */}
-                    {showSuggestions && gameSearch.length > 0 && (
+                    {showSearchSuggestions && gameSearch.length > 0 && (
                       (() => {
                         const searchSuggestions = gameNameSuggestions.filter(name => 
                           name.toLowerCase().includes(gameSearch.toLowerCase())
@@ -1242,7 +1243,7 @@ const loadUserPreferences = async () => {
                                 key={index}
                                 onClick={() => {
                                   setGameSearch(suggestion);
-                                  setShowSuggestions(false);
+                                  setShowSearchSuggestions(false);
                                 }}
                                 className={`w-full text-left px-4 py-2 hover:bg-indigo-500 hover:text-white transition ${
                                   darkMode ? 'text-gray-200' : 'text-gray-800'
