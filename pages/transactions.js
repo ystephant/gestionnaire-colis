@@ -1216,7 +1216,10 @@ const loadUserPreferences = async () => {
                     <input
                       type="text"
                       value={gameSearch}
-                      onChange={(e) => setGameSearch(e.target.value)}
+                      onChange={(e) => {
+                        setGameSearch(e.target.value);
+                        setShowSearchSuggestions(e.target.value.length > 0);
+                      }}
                       onFocus={() => setShowSearchSuggestions(gameSearch.length > 0)}
                       onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
                       placeholder="Rechercher un jeu... (ex: Catan, Monopoly)"
