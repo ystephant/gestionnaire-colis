@@ -1286,18 +1286,42 @@ const loadUserPreferences = async () => {
                 )}
                 
                 {gameSearch && (filteredBySearch.buys.length > 0 || filteredBySearch.sells.length > 0) && (
-                  <div className={`mt-3 flex items-center justify-center gap-4 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    <span>
-                      <span className="font-bold text-red-500">{filteredBySearch.buys.length}</span> achat{filteredBySearch.buys.length > 1 ? 's' : ''}
-                    </span>
-                    <span>•</span>
-                    <span>
-                      <span className="font-bold text-green-500">{filteredBySearch.sells.length}</span> vente{filteredBySearch.sells.length > 1 ? 's' : ''}
-                    </span>
-                    <span>•</span>
-                    <span>
-                      Total: <span className="font-bold">{filteredBySearch.buys.length + filteredBySearch.sells.length}</span> transaction{(filteredBySearch.buys.length + filteredBySearch.sells.length) > 1 ? 's' : ''}
-                    </span>
+                  <div className={`mt-3 space-y-2`}>
+                    {/* Ligne 1: Nombre de transactions */}
+                    <div className={`flex items-center justify-center gap-4 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      <span>
+                        <span className="font-bold text-red-500">{filteredBySearch.buys.length}</span> achat{filteredBySearch.buys.length > 1 ? 's' : ''}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        <span className="font-bold text-green-500">{filteredBySearch.sells.length}</span> vente{filteredBySearch.sells.length > 1 ? 's' : ''}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Total: <span className="font-bold">{filteredBySearch.buys.length + filteredBySearch.sells.length}</span> transaction{(filteredBySearch.buys.length + filteredBySearch.sells.length) > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    
+                    {/* Ligne 2: Prix moyens */}
+                    <div className={`flex items-center justify-center gap-4 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {filteredBySearch.buys.length > 0 && (
+                        <>
+                          <span>
+                            Prix achat moyen: <span className="font-bold text-orange-500">
+                              {(filteredBySearch.buys.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.buys.length).toFixed(2)}€
+                            </span>
+                          </span>
+                          {filteredBySearch.sells.length > 0 && <span>•</span>}
+                        </>
+                      )}
+                      {filteredBySearch.sells.length > 0 && (
+                        <span>
+                          Prix vente moyen: <span className="font-bold text-teal-500">
+                            {(filteredBySearch.sells.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.sells.length).toFixed(2)}€
+                          </span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
