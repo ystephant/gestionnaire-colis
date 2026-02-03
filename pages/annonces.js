@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 export default function GenerateurAnnonces() {
   const router = useRouter();
@@ -25,6 +31,8 @@ export default function GenerateurAnnonces() {
   const [elementsManquants, setElementsManquants] = useState('');
   const [description, setDescription] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
+  const [gameNameSuggestions, setGameNameSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const etatOptions = [
     "Bon état", "Boîte usée un peu partout", "Comme neuf", "Correct avec marques d'usage",
@@ -44,6 +52,7 @@ export default function GenerateurAnnonces() {
 
   useEffect(() => {
     checkAuth();
+    loadGameNames();
   }, []);
 
   useEffect(() => {
@@ -62,6 +71,38 @@ export default function GenerateurAnnonces() {
     setLoading(false);
   };
 
+  const loadGameNames = async () => {
+    const savedUsername = localStorage.getItem('username');
+    if (!savedUsername) return;
+    
+    try {
+      const { data: buys, error: buyError } = await supabase
+        .from('transactions')
+        .select('game_name')
+        .eq('user_id', savedUsername)
+        .not('game_name', 'is', null);
+
+      const { data: sells, error: sellError } = await supabase
+        .from('transactions')
+        .select('game_name')
+        .eq('user_id', savedUsername)
+        .not('game_name', 'is', null);
+
+      if (buyError) console.error('Erreur buys:', buyError);
+      if (sellError) console.error('Erreur sells:', sellError);
+
+      const allTransactions = [...(buys || []), ...(sells || [])];
+      const uniqueNames = [...new Set(allTransactions
+        .map(t => t.game_name)
+        .filter(name => name && name.trim() !== '')
+      )].sort();
+      
+      setGameNameSuggestions(uniqueNames);
+    } catch (error) {
+      console.error('Erreur de chargement:', error);
+    }
+  };
+  
   const genererDescription = () => {
     let desc = '';
 
@@ -255,14 +296,19 @@ export default function GenerateurAnnonces() {
               </div>
 
               {/* Nom du jeu */}
-              <div>
+              <div className="relative">
                 <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Nom du jeu :
                 </label>
                 <input
                   type="text"
                   value={nomJeu}
-                  onChange={(e) => setNomJeu(e.target.value)}
+                  onChange={(e) => {
+                    setNomJeu(e.target.value);
+                    setShowSuggestions(e.target.value.length > 0);
+                  }}
+                  onFocus={() => setShowSuggestions(nomJeu.length > 0)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="Ex: Catane, Azul..."
                   className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
                     darkMode 
@@ -270,6 +316,36 @@ export default function GenerateurAnnonces() {
                       : 'bg-white border-gray-200 text-gray-900'
                   }`}
                 />
+                
+                {/* Suggestions d'autocomplétion */}
+                {showSuggestions && nomJeu.length > 0 && (
+                  (() => {
+                    const filteredSuggestions = gameNameSuggestions.filter(name => 
+                      name.toLowerCase().includes(nomJeu.toLowerCase())
+                    );
+                    
+                    return filteredSuggestions.length > 0 && (
+                      <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                        darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                      }`}>
+                        {filteredSuggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setNomJeu(suggestion);
+                              setShowSuggestions(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 hover:bg-emerald-500 hover:text-white transition ${
+                              darkMode ? 'text-gray-200' : 'text-gray-800'
+                            }`}
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()
+                )}
               </div>
 
               {/* État du matériel */}
