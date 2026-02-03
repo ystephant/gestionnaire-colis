@@ -815,10 +815,7 @@ const loadUserPreferences = async () => {
               </div>
             </div>
             
-           Parfait ! Voici le code complet avec le bouton Export et le bouton de recherche :
-ÉTAPE 3 COMPLÈTE : Remplacer tout le bloc des boutons
-REMPLACEZ votre code actuel par :
-javascript            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <button
                 onClick={exportToExcel}
                 className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
