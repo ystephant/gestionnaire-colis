@@ -54,11 +54,12 @@ export default function TransactionsTracker() {
   useEffect(() => {
     if (isLoggedIn && username) {
       loadTransactions();
+      loadUserPreferences();
       const cleanup = subscribeToChanges();
       return cleanup;
     }
   }, [isLoggedIn, username]);
-
+  
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
@@ -116,6 +117,55 @@ export default function TransactionsTracker() {
     }
   };
 
+const loadUserPreferences = async () => {
+    if (!username) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('*')
+        .eq('user_id', username)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+        console.error('Erreur de chargement des préférences:', error);
+        return;
+      }
+
+      if (data) {
+        setGlobalStatsFilter(data.global_stats_filter || 'all');
+        setCustomMonth(data.custom_month || '');
+        setCustomYear(data.custom_year || '');
+      }
+    } catch (error) {
+      console.error('Erreur de chargement des préférences:', error);
+    }
+  };
+
+  const saveUserPreferences = async (filter, month = '', year = '') => {
+    if (!username) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: username,
+          global_stats_filter: filter,
+          custom_month: month,
+          custom_year: year,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (error) {
+        console.error('Erreur de sauvegarde des préférences:', error);
+      }
+    } catch (error) {
+      console.error('Erreur de sauvegarde des préférences:', error);
+    }
+  };
+  
   const subscribeToChanges = () => {
     if (!username) return () => {};
     
@@ -916,6 +966,9 @@ export default function TransactionsTracker() {
                     <button
                       onClick={() => {
                         setGlobalStatsFilter('all');
+                        setCustomMonth('');
+                        setCustomYear('');
+                        saveUserPreferences('all', '', '');
                         setShowStatsFilterMenu(false);
                       }}
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition ${
@@ -930,6 +983,9 @@ export default function TransactionsTracker() {
                     <button
                       onClick={() => {
                         setGlobalStatsFilter('current-month');
+                        setCustomMonth('');
+                        setCustomYear('');
+                        saveUserPreferences('current-month', '', '');
                         setShowStatsFilterMenu(false);
                       }}
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition ${
@@ -944,6 +1000,9 @@ export default function TransactionsTracker() {
                     <button
                       onClick={() => {
                         setGlobalStatsFilter('current-year');
+                        setCustomMonth('');
+                        setCustomYear('');
+                        saveUserPreferences('current-year', '', '');
                         setShowStatsFilterMenu(false);
                       }}
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-2 transition ${
@@ -972,6 +1031,7 @@ export default function TransactionsTracker() {
                                   setGlobalStatsFilter('custom');
                                   setCustomMonth(my.month.toString());
                                   setCustomYear(my.year);
+                                  saveUserPreferences('custom', my.month.toString(), my.year);
                                   setShowStatsFilterMenu(false);
                                 }}
                                 className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition ${
