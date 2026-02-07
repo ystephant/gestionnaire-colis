@@ -9,7 +9,7 @@ export default function MasquagePDF() {
   const [processing, setProcessing] = useState(false);
   const [maskHeight, setMaskHeight] = useState(420);
   const [maskWidth, setMaskWidth] = useState(297.5);
-  const [selectedZones, setSelectedZones] = useState(['top-left']);
+  const [selectedZones, setSelectedZones] = useState(['top-left', 'top-right']);
   const [previewMode, setPreviewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [processedPdfBlob, setProcessedPdfBlob] = useState(null);
@@ -423,30 +423,52 @@ export default function MasquagePDF() {
                   Aperçu
                 </h3>
                 <div className="relative bg-gray-100 rounded-lg p-2 mb-4 overflow-hidden">
-                  <div className="relative w-full h-48">
+                  <div className="relative w-full" style={{ paddingBottom: '141.4%' }}>
                     <iframe
                       src={previewImage}
-                      className="w-full h-full rounded border-2 border-gray-300"
+                      className="absolute inset-0 w-full h-full rounded border-2 border-gray-300"
                       title="Preview PDF"
                     />
-                    <div className="absolute inset-2 pointer-events-none z-10">
+                    <div className="absolute inset-0 pointer-events-none z-10">
                       {selectedZones.map(zone => {
+                        // Calcul en pourcentage basé sur les dimensions A4 réelles
+                        // A4 = 595 x 842 points
                         const heightPercent = (maskHeight / 842) * 100;
                         const widthPercent = (maskWidth / 595) * 100;
                         
                         let overlayStyle = {};
                         switch(zone) {
                           case 'top-left':
-                            overlayStyle = { top: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                            overlayStyle = { 
+                              top: 0, 
+                              left: 0, 
+                              width: `${widthPercent}%`, 
+                              height: `${heightPercent}%` 
+                            };
                             break;
                           case 'top-right':
-                            overlayStyle = { top: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                            overlayStyle = { 
+                              top: 0, 
+                              right: 0, 
+                              width: `${widthPercent}%`, 
+                              height: `${heightPercent}%` 
+                            };
                             break;
                           case 'bottom-left':
-                            overlayStyle = { bottom: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                            overlayStyle = { 
+                              bottom: 0, 
+                              left: 0, 
+                              width: `${widthPercent}%`, 
+                              height: `${heightPercent}%` 
+                            };
                             break;
                           case 'bottom-right':
-                            overlayStyle = { bottom: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                            overlayStyle = { 
+                              bottom: 0, 
+                              right: 0, 
+                              width: `${widthPercent}%`, 
+                              height: `${heightPercent}%` 
+                            };
                             break;
                         }
                         
