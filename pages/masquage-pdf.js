@@ -8,24 +8,14 @@ export default function MasquagePDF() {
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [maskHeight, setMaskHeight] = useState(420); // 14.85cm par défaut
-  const [selectedZones, setSelectedZones] = useState(['top']); // top, bottom, left, right
+  const [maskWidth, setMaskWidth] = useState(297.5); // 10.5cm par défaut
+  const [selectedZones, setSelectedZones] = useState(['top-left']); // top-left, top-right, bottom-left, bottom-right
   const [previewMode, setPreviewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [processedPdfBlob, setProcessedPdfBlob] = useState(null);
   const [currentFileName, setCurrentFileName] = useState('');
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
-
-  // Calculer les dimensions selon les zones sélectionnées
-  const isHorizontal = selectedZones.includes('left') || selectedZones.includes('right');
-  const maxDimension = isHorizontal ? 595 : 842; // 21cm ou 29.7cm en points
-
-  useEffect(() => {
-    // Ajuster automatiquement la hauteur si on passe en mode horizontal
-    if (isHorizontal && maskHeight > 595) {
-      setMaskHeight(297.5); // 10.5cm par défaut pour horizontal
-    }
-  }, [selectedZones]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -127,36 +117,36 @@ export default function MasquagePDF() {
           let rectConfig;
           
           switch(zone) {
-            case 'top':
+            case 'top-left':
               rectConfig = {
                 x: 0,
                 y: height - maskHeight,
-                width: width,
+                width: maskWidth,
                 height: maskHeight,
               };
               break;
-            case 'bottom':
+            case 'top-right':
               rectConfig = {
-                x: 0,
-                y: 0,
-                width: width,
+                x: width - maskWidth,
+                y: height - maskHeight,
+                width: maskWidth,
                 height: maskHeight,
               };
               break;
-            case 'left':
+            case 'bottom-left':
               rectConfig = {
                 x: 0,
                 y: 0,
-                width: maskHeight,
-                height: height,
+                width: maskWidth,
+                height: maskHeight,
               };
               break;
-            case 'right':
+            case 'bottom-right':
               rectConfig = {
-                x: width - maskHeight,
+                x: width - maskWidth,
                 y: 0,
-                width: maskHeight,
-                height: height,
+                width: maskWidth,
+                height: maskHeight,
               };
               break;
           }
@@ -241,14 +231,30 @@ export default function MasquagePDF() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={toggleDarkMode}
-              className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 flex-shrink-0 ${
-                darkMode 
-                  ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-              }`}
-            >
+            <div className="flex items-center gap-2 sm:gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={previewMode}
+                  onChange={(e) => setPreviewMode(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className={`text-xs sm:text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} hidden sm:inline`}>
+                  Prévisualisation
+                </span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="sm:hidden">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </label>
+              <button
+                onClick={toggleDarkMode}
+                className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 flex-shrink-0 ${
+                  darkMode 
+                    ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
               {darkMode ? (
                 <svg width="18" height="18" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="5"/>
@@ -281,98 +287,99 @@ export default function MasquagePDF() {
               <div className="flex justify-center">
                 <div className="relative w-48 h-64 bg-white rounded-lg shadow-lg border-2 border-gray-300">
                   {/* Lignes de découpe en pointillés */}
-                  <div className="absolute inset-0">
+                  <div className="absolute inset-0 pointer-events-none">
                     <svg className="w-full h-full" viewBox="0 0 100 140">
                       <line x1="50" y1="0" x2="50" y2="140" stroke="#ccc" strokeWidth="0.5" strokeDasharray="2,2"/>
                       <line x1="0" y1="70" x2="100" y2="70" stroke="#ccc" strokeWidth="0.5" strokeDasharray="2,2"/>
                     </svg>
                   </div>
                   
-                  {/* Zone TOP */}
+                  {/* Zone TOP-LEFT */}
                   <button
-                    onClick={() => toggleZone('top')}
-                    className={`absolute top-0 left-0 right-0 h-1/2 border-b border-dashed border-gray-300 transition-all ${
-                      selectedZones.includes('top') 
+                    onClick={() => toggleZone('top-left')}
+                    className={`absolute top-0 left-0 w-1/2 h-1/2 transition-all ${
+                      selectedZones.includes('top-left') 
                         ? 'bg-green-400 bg-opacity-50' 
                         : 'hover:bg-gray-100 hover:bg-opacity-50'
                     }`}
-                    title="Haut"
+                    title="Haut Gauche"
                   />
                   
-                  {/* Zone BOTTOM */}
+                  {/* Zone TOP-RIGHT */}
                   <button
-                    onClick={() => toggleZone('bottom')}
-                    className={`absolute bottom-0 left-0 right-0 h-1/2 border-t border-dashed border-gray-300 transition-all ${
-                      selectedZones.includes('bottom') 
+                    onClick={() => toggleZone('top-right')}
+                    className={`absolute top-0 right-0 w-1/2 h-1/2 transition-all ${
+                      selectedZones.includes('top-right') 
                         ? 'bg-green-400 bg-opacity-50' 
                         : 'hover:bg-gray-100 hover:bg-opacity-50'
                     }`}
-                    title="Bas"
+                    title="Haut Droit"
                   />
                   
-                  {/* Zone LEFT */}
+                  {/* Zone BOTTOM-LEFT */}
                   <button
-                    onClick={() => toggleZone('left')}
-                    className={`absolute top-0 bottom-0 left-0 w-1/2 border-r border-dashed border-gray-300 transition-all ${
-                      selectedZones.includes('left') 
+                    onClick={() => toggleZone('bottom-left')}
+                    className={`absolute bottom-0 left-0 w-1/2 h-1/2 transition-all ${
+                      selectedZones.includes('bottom-left') 
                         ? 'bg-green-400 bg-opacity-50' 
                         : 'hover:bg-gray-100 hover:bg-opacity-50'
                     }`}
-                    title="Gauche"
+                    title="Bas Gauche"
                   />
                   
-                  {/* Zone RIGHT */}
+                  {/* Zone BOTTOM-RIGHT */}
                   <button
-                    onClick={() => toggleZone('right')}
-                    className={`absolute top-0 bottom-0 right-0 w-1/2 border-l border-dashed border-gray-300 transition-all ${
-                      selectedZones.includes('right') 
+                    onClick={() => toggleZone('bottom-right')}
+                    className={`absolute bottom-0 right-0 w-1/2 h-1/2 transition-all ${
+                      selectedZones.includes('bottom-right') 
                         ? 'bg-green-400 bg-opacity-50' 
                         : 'hover:bg-gray-100 hover:bg-opacity-50'
                     }`}
-                    title="Droite"
+                    title="Bas Droit"
                   />
                 </div>
               </div>
               <p className={`text-xs text-center mt-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Cliquez sur une ou plusieurs zones
+                Cliquez sur un ou plusieurs carrés
               </p>
             </div>
 
-            {/* Réglage de la hauteur/largeur */}
+            {/* Réglage de la hauteur */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3 sm:mb-4`}>
-                {isHorizontal ? 'Largeur' : 'Hauteur'} de la zone : <span className="text-indigo-600 dark:text-indigo-400">{Math.round(maskHeight / 28.35 * 10) / 10} cm</span>
+                Hauteur de la zone : <span className="text-indigo-600 dark:text-indigo-400">{Math.round(maskHeight / 28.35 * 10) / 10} cm</span>
               </label>
               <input
                 type="range"
                 min="0"
-                max={maxDimension}
+                max="842"
                 value={maskHeight}
                 onChange={(e) => setMaskHeight(Number(e.target.value))}
                 className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
               />
               <div className="flex justify-between text-xs mt-2">
                 <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>0 cm</span>
-                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>{isHorizontal ? '21' : '29.7'} cm</span>
+                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>29.7 cm</span>
               </div>
             </div>
 
-            {/* Option prévisualisation */}
+            {/* Réglage de la largeur */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={previewMode}
-                  onChange={(e) => setPreviewMode(e.target.checked)}
-                  className="w-5 h-5 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
-                />
-                <span className={`text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Activer la prévisualisation
-                </span>
+              <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3 sm:mb-4`}>
+                Largeur de la zone : <span className="text-purple-600 dark:text-purple-400">{Math.round(maskWidth / 28.35 * 10) / 10} cm</span>
               </label>
-              <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Aperçu avant téléchargement
-              </p>
+              <input
+                type="range"
+                min="0"
+                max="595"
+                value={maskWidth}
+                onChange={(e) => setMaskWidth(Number(e.target.value))}
+                className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-xs mt-2">
+                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>0 cm</span>
+                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>21 cm</span>
+              </div>
             </div>
           </div>
 
@@ -467,41 +474,64 @@ export default function MasquagePDF() {
                 <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   Aperçu
                 </h3>
-                <div className="relative bg-gray-100 rounded-lg p-4 mb-4">
-                  <iframe
-                    src={previewImage}
-                    className="w-full h-96 rounded border-2 border-gray-300"
-                    title="Preview PDF"
-                  />
-                  {/* Overlay pour montrer les zones masquées */}
-                  <div className="absolute inset-4 pointer-events-none">
-                    {selectedZones.map(zone => {
-                      let overlayClass = '';
-                      switch(zone) {
-                        case 'top':
-                          overlayClass = 'top-4 left-4 right-4 bg-green-500 bg-opacity-30';
-                          break;
-                        case 'bottom':
-                          overlayClass = 'bottom-4 left-4 right-4 bg-green-500 bg-opacity-30';
-                          break;
-                        case 'left':
-                          overlayClass = 'top-4 bottom-4 left-4 bg-green-500 bg-opacity-30';
-                          break;
-                        case 'right':
-                          overlayClass = 'top-4 bottom-4 right-4 bg-green-500 bg-opacity-30';
-                          break;
-                      }
-                      return (
-                        <div
-                          key={zone}
-                          className={`absolute ${overlayClass} border-2 border-green-500 border-dashed`}
-                          style={{
-                            height: zone === 'top' || zone === 'bottom' ? `${(maskHeight / 842) * 100}%` : 'auto',
-                            width: zone === 'left' || zone === 'right' ? `${(maskHeight / 595) * 100}%` : 'auto',
-                          }}
-                        />
-                      );
-                    })}
+                <div className="relative bg-gray-100 rounded-lg p-2 mb-4 overflow-hidden">
+                  <div className="relative w-full h-48">
+                    <iframe
+                      src={previewImage}
+                      className="w-full h-full rounded border-2 border-gray-300"
+                      title="Preview PDF"
+                    />
+                    {/* Overlay pour montrer les zones masquées */}
+                    <div className="absolute inset-2 pointer-events-none z-10">
+                      {selectedZones.map(zone => {
+                        const heightPercent = (maskHeight / 842) * 100;
+                        const widthPercent = (maskWidth / 595) * 100;
+                        
+                        let overlayStyle = {};
+                        switch(zone) {
+                          case 'top-left':
+                            overlayStyle = {
+                              top: 0,
+                              left: 0,
+                              width: `${widthPercent}%`,
+                              height: `${heightPercent}%`,
+                            };
+                            break;
+                          case 'top-right':
+                            overlayStyle = {
+                              top: 0,
+                              right: 0,
+                              width: `${widthPercent}%`,
+                              height: `${heightPercent}%`,
+                            };
+                            break;
+                          case 'bottom-left':
+                            overlayStyle = {
+                              bottom: 0,
+                              left: 0,
+                              width: `${widthPercent}%`,
+                              height: `${heightPercent}%`,
+                            };
+                            break;
+                          case 'bottom-right':
+                            overlayStyle = {
+                              bottom: 0,
+                              right: 0,
+                              width: `${widthPercent}%`,
+                              height: `${heightPercent}%`,
+                            };
+                            break;
+                        }
+                        
+                        return (
+                          <div
+                            key={zone}
+                            className="absolute bg-green-500 bg-opacity-30 border-2 border-green-500 border-dashed"
+                            style={overlayStyle}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
                 <button
