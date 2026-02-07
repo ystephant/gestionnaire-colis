@@ -5,7 +5,7 @@ export default function MasquagePDF() {
   const { darkMode, toggleDarkMode } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [maskHeight, setMaskHeight] = useState(300); // 10.6cm par défaut (300 points ≈ 10.6cm)
+  const [maskHeight, setMaskHeight] = useState(420); // 10.6cm par défaut (300 points ≈ 10.6cm)
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
 
@@ -169,8 +169,8 @@ export default function MasquagePDF() {
           </label>
           <input
             type="range"
-            min="28"
-            max="425"
+            min="0"
+            max="842"
             value={maskHeight}
             onChange={(e) => setMaskHeight(Number(e.target.value))}
             className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
@@ -179,8 +179,8 @@ export default function MasquagePDF() {
             }}
           />
           <div className="flex justify-between text-xs mt-2">
-            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>1 cm</span>
-            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>15 cm</span>
+            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>0 cm</span>
+            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>29.7 cm</span>
           </div>
         </div>
 
@@ -295,7 +295,7 @@ export default function MasquagePDF() {
           <ol className={`space-y-2 sm:space-y-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'} text-sm sm:text-base`}>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">1</span>
-              <span>Ajustez la hauteur de masquage selon vos besoins (par défaut 10.6 cm, soit la moitié d'une feuille A4)</span>
+              <span>Ajustez la hauteur de masquage selon vos besoins (par défaut 14.85 cm, soit la moitié d'une feuille A4)</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">2</span>
