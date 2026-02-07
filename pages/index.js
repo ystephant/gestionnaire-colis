@@ -177,33 +177,26 @@ export default function MenuPrincipal() {
     );
   }
 
-  if (loading) {
-    return (
-      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center transition-colors duration-300`}>
-        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
-      <div className="max-w-6xl mx-auto">
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} transition-colors duration-300`}>
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-8 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="bg-indigo-600 p-3 rounded-xl">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                   <polyline points="9 22 9 12 15 12 15 22"></polyline>
                 </svg>
               </div>
               <div>
                 <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Connecté: {username}</p>
+                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Bienvenue, {username}
+                </p>
               </div>
             </div>
-            
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={toggleDarkMode}
                 className={`p-3 rounded-xl transition-all duration-300 ${
@@ -231,13 +224,12 @@ export default function MenuPrincipal() {
                   </svg>
                 )}
               </button>
-              
               <button
                 onClick={handleLogout}
-                className={`text-sm px-4 py-2 rounded-lg transition ${
+                className={`px-4 py-2 rounded-xl font-semibold transition ${
                   darkMode 
-                    ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
-                    : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                 }`}
               >
                 Déconnexion
@@ -247,22 +239,24 @@ export default function MenuPrincipal() {
         </div>
 
         {urgentParcels > 0 && (
-          <div className="bg-gradient-to-r from-red-500 to-orange-500 rounded-2xl shadow-xl p-6 mb-6 animate-pulse">
-            <div className="flex items-center gap-4 text-white">
-              <div className="bg-white bg-opacity-20 p-4 rounded-xl">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                  <line x1="12" y1="9" x2="12" y2="13"></line>
-                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-2xl font-bold mb-1">
-                  ⚠️ {urgentParcels} colis urgent{urgentParcels > 1 ? 's' : ''} !
-                </h3>
-                <p className="text-white text-opacity-90">
-                  Il ne vous reste plus que 2 jours ou moins pour récupérer {urgentParcels > 1 ? 'ces colis' : 'ce colis'}
-                </p>
+          <div className="bg-gradient-to-r from-red-500 to-pink-600 rounded-2xl shadow-xl p-6 mb-8 text-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-white bg-opacity-20 p-4 rounded-xl">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold mb-1">
+                    ⚠️ {urgentParcels} colis urgent{urgentParcels > 1 ? 's' : ''} !
+                  </h3>
+                  <p className="text-white text-opacity-90">
+                    Il ne vous reste plus que 2 jours ou moins pour récupérer {urgentParcels > 1 ? 'ces colis' : 'ce colis'}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => router.push('/colis')}
@@ -407,6 +401,30 @@ export default function MenuPrincipal() {
               <div className="flex gap-2 flex-wrap justify-center text-sm">
                 <span className="bg-violet-100 text-violet-700 px-3 py-1 rounded-full">🎲 Organisation</span>
                 <span className="bg-fuchsia-100 text-fuchsia-700 px-3 py-1 rounded-full">📚 Règles IA</span>
+              </div>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => router.push('/masquage-pdf')}
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="bg-gradient-to-br from-red-500 to-orange-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <rect x="8" y="12" width="8" height="2" fill="white"></rect>
+                  <rect x="8" y="16" width="8" height="2" fill="white"></rect>
+                </svg>
+              </div>
+              <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Masquage PDF</h2>
+              <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                Masquez les informations sensibles sur vos étiquettes
+              </p>
+              <div className="flex gap-2 flex-wrap justify-center text-sm">
+                <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full">📄 PDF</span>
+                <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full">🔒 Confidentialité</span>
               </div>
             </div>
           </div>
