@@ -553,15 +553,15 @@ export default function MasquagePDF() {
           <ol className={`space-y-2 sm:space-y-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'} text-sm sm:text-base`}>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">1</span>
-              <span>Sélectionnez les zones à masquer en cliquant sur la feuille A4 (haut, bas, gauche, droite)</span>
+              <span>Sélectionnez un ou plusieurs carrés sur la feuille A4 (coins haut-gauche, haut-droit, bas-gauche, bas-droit)</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">2</span>
-              <span>Ajustez la taille de masquage avec le curseur (par défaut 14.85 cm)</span>
+              <span>Ajustez la hauteur (0-29.7 cm) et la largeur (0-21 cm) des zones à masquer</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">3</span>
-              <span>Activez la prévisualisation si vous voulez voir un aperçu avant téléchargement</span>
+              <span>Activez la prévisualisation dans le header pour voir un aperçu avant téléchargement</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">4</span>
