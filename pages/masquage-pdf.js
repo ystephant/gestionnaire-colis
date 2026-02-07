@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -7,9 +7,9 @@ export default function MasquagePDF() {
   const { darkMode, toggleDarkMode } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [maskHeight, setMaskHeight] = useState(420); // 14.85cm par défaut
-  const [maskWidth, setMaskWidth] = useState(297.5); // 10.5cm par défaut
-  const [selectedZones, setSelectedZones] = useState(['top-left']); // top-left, top-right, bottom-left, bottom-right
+  const [maskHeight, setMaskHeight] = useState(420);
+  const [maskWidth, setMaskWidth] = useState(297.5);
+  const [selectedZones, setSelectedZones] = useState(['top-left']);
   const [previewMode, setPreviewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [processedPdfBlob, setProcessedPdfBlob] = useState(null);
@@ -54,7 +54,7 @@ export default function MasquagePDF() {
     }
 
     for (const file of pdfFiles) {
-      await processPDF(file, true); // Auto-download pour les dossiers
+      await processPDF(file, true);
     }
   };
 
@@ -71,10 +71,7 @@ export default function MasquagePDF() {
   const generatePreview = async (pdfDoc) => {
     try {
       const { PDFDocument } = await import('pdf-lib');
-      const firstPage = pdfDoc.getPages()[0];
-      const { width, height } = firstPage.getSize();
       
-      // Créer une copie temporaire pour la preview
       const tempDoc = await PDFDocument.create();
       const [copiedPage] = await tempDoc.copyPages(pdfDoc, [0]);
       tempDoc.addPage(copiedPage);
@@ -114,7 +111,7 @@ export default function MasquagePDF() {
         const { width, height } = page.getSize();
         
         selectedZones.forEach(zone => {
-          let rectConfig;
+          let rectConfig = null;
           
           switch(zone) {
             case 'top-left':
@@ -203,7 +200,6 @@ export default function MasquagePDF() {
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} transition-colors duration-300`}>
       <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-6xl">
-        {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
@@ -249,44 +245,38 @@ export default function MasquagePDF() {
               </label>
               <button
                 onClick={toggleDarkMode}
-                className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 flex-shrink-0 ${
-                  darkMode 
-                    ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                }`}
+                className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 flex-shrink-0 ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
               >
-              {darkMode ? (
-                <svg width="18" height="18" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="5"/>
-                  <line x1="12" y1="1" x2="12" y2="3"/>
-                  <line x1="12" y1="21" x2="12" y2="23"/>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                  <line x1="1" y1="12" x2="3" y2="12"/>
-                  <line x1="21" y1="12" x2="23" y2="12"/>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                </svg>
-              ) : (
-                <svg width="18" height="18" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                </svg>
-              )}
-            </button>
+                {darkMode ? (
+                  <svg width="18" height="18" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
-          {/* Colonne gauche - Contrôles */}
           <div className="space-y-4 sm:space-y-6">
-            {/* Sélecteur de zones A4 */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                 Zones à masquer
               </h3>
               <div className="flex justify-center">
                 <div className="relative w-48 h-64 bg-white rounded-lg shadow-lg border-2 border-gray-300">
-                  {/* Lignes de découpe en pointillés */}
                   <div className="absolute inset-0 pointer-events-none">
                     <svg className="w-full h-full" viewBox="0 0 100 140">
                       <line x1="50" y1="0" x2="50" y2="140" stroke="#ccc" strokeWidth="0.5" strokeDasharray="2,2"/>
@@ -294,47 +284,27 @@ export default function MasquagePDF() {
                     </svg>
                   </div>
                   
-                  {/* Zone TOP-LEFT */}
                   <button
                     onClick={() => toggleZone('top-left')}
-                    className={`absolute top-0 left-0 w-1/2 h-1/2 transition-all ${
-                      selectedZones.includes('top-left') 
-                        ? 'bg-green-400 bg-opacity-50' 
-                        : 'hover:bg-gray-100 hover:bg-opacity-50'
-                    }`}
+                    className={`absolute top-0 left-0 w-1/2 h-1/2 transition-all ${selectedZones.includes('top-left') ? 'bg-green-400 bg-opacity-50' : 'hover:bg-gray-100 hover:bg-opacity-50'}`}
                     title="Haut Gauche"
                   />
                   
-                  {/* Zone TOP-RIGHT */}
                   <button
                     onClick={() => toggleZone('top-right')}
-                    className={`absolute top-0 right-0 w-1/2 h-1/2 transition-all ${
-                      selectedZones.includes('top-right') 
-                        ? 'bg-green-400 bg-opacity-50' 
-                        : 'hover:bg-gray-100 hover:bg-opacity-50'
-                    }`}
+                    className={`absolute top-0 right-0 w-1/2 h-1/2 transition-all ${selectedZones.includes('top-right') ? 'bg-green-400 bg-opacity-50' : 'hover:bg-gray-100 hover:bg-opacity-50'}`}
                     title="Haut Droit"
                   />
                   
-                  {/* Zone BOTTOM-LEFT */}
                   <button
                     onClick={() => toggleZone('bottom-left')}
-                    className={`absolute bottom-0 left-0 w-1/2 h-1/2 transition-all ${
-                      selectedZones.includes('bottom-left') 
-                        ? 'bg-green-400 bg-opacity-50' 
-                        : 'hover:bg-gray-100 hover:bg-opacity-50'
-                    }`}
+                    className={`absolute bottom-0 left-0 w-1/2 h-1/2 transition-all ${selectedZones.includes('bottom-left') ? 'bg-green-400 bg-opacity-50' : 'hover:bg-gray-100 hover:bg-opacity-50'}`}
                     title="Bas Gauche"
                   />
                   
-                  {/* Zone BOTTOM-RIGHT */}
                   <button
                     onClick={() => toggleZone('bottom-right')}
-                    className={`absolute bottom-0 right-0 w-1/2 h-1/2 transition-all ${
-                      selectedZones.includes('bottom-right') 
-                        ? 'bg-green-400 bg-opacity-50' 
-                        : 'hover:bg-gray-100 hover:bg-opacity-50'
-                    }`}
+                    className={`absolute bottom-0 right-0 w-1/2 h-1/2 transition-all ${selectedZones.includes('bottom-right') ? 'bg-green-400 bg-opacity-50' : 'hover:bg-gray-100 hover:bg-opacity-50'}`}
                     title="Bas Droit"
                   />
                 </div>
@@ -344,7 +314,6 @@ export default function MasquagePDF() {
               </p>
             </div>
 
-            {/* Réglage de la hauteur */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3 sm:mb-4`}>
                 Hauteur de la zone : <span className="text-indigo-600 dark:text-indigo-400">{Math.round(maskHeight / 28.35 * 10) / 10} cm</span>
@@ -363,7 +332,6 @@ export default function MasquagePDF() {
               </div>
             </div>
 
-            {/* Réglage de la largeur */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3 sm:mb-4`}>
                 Largeur de la zone : <span className="text-purple-600 dark:text-purple-400">{Math.round(maskWidth / 28.35 * 10) / 10} cm</span>
@@ -383,26 +351,13 @@ export default function MasquagePDF() {
             </div>
           </div>
 
-          {/* Colonne droite - Zone de drop et preview */}
           <div className="space-y-4 sm:space-y-6">
-            {/* Zone de drop */}
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`
-                ${darkMode ? 'bg-gray-800' : 'bg-white'} 
-                rounded-xl sm:rounded-2xl shadow-xl p-6 sm:p-12
-                border-3 sm:border-4 border-dashed 
-                ${isDragging 
-                  ? 'border-indigo-500 bg-indigo-50' 
-                  : darkMode 
-                    ? 'border-gray-600 hover:border-indigo-400' 
-                    : 'border-gray-300 hover:border-indigo-400'
-                }
-                transition-all duration-300 cursor-pointer
-              `}
+              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-6 sm:p-12 border-3 sm:border-4 border-dashed ${isDragging ? 'border-indigo-500 bg-indigo-50' : darkMode ? 'border-gray-600 hover:border-indigo-400' : 'border-gray-300 hover:border-indigo-400'} transition-all duration-300 cursor-pointer`}
             >
               <input
                 ref={fileInputRef}
@@ -440,15 +395,9 @@ export default function MasquagePDF() {
               </div>
             </div>
 
-            {/* Bouton sélection dossier */}
             <button
               onClick={() => directoryInputRef.current?.click()}
-              className={`
-                w-full ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'} 
-                rounded-xl shadow-lg p-4 transition-all duration-300 
-                border-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'}
-                flex items-center justify-center gap-3
-              `}
+              className={`w-full ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-lg p-4 transition-all duration-300 border-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-center gap-3`}
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-purple-400' : 'text-purple-600'}>
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -468,7 +417,6 @@ export default function MasquagePDF() {
               className="hidden"
             />
 
-            {/* Preview */}
             {previewMode && previewImage && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
@@ -481,7 +429,6 @@ export default function MasquagePDF() {
                       className="w-full h-full rounded border-2 border-gray-300"
                       title="Preview PDF"
                     />
-                    {/* Overlay pour montrer les zones masquées */}
                     <div className="absolute inset-2 pointer-events-none z-10">
                       {selectedZones.map(zone => {
                         const heightPercent = (maskHeight / 842) * 100;
@@ -490,36 +437,16 @@ export default function MasquagePDF() {
                         let overlayStyle = {};
                         switch(zone) {
                           case 'top-left':
-                            overlayStyle = {
-                              top: 0,
-                              left: 0,
-                              width: `${widthPercent}%`,
-                              height: `${heightPercent}%`,
-                            };
+                            overlayStyle = { top: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                           case 'top-right':
-                            overlayStyle = {
-                              top: 0,
-                              right: 0,
-                              width: `${widthPercent}%`,
-                              height: `${heightPercent}%`,
-                            };
+                            overlayStyle = { top: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                           case 'bottom-left':
-                            overlayStyle = {
-                              bottom: 0,
-                              left: 0,
-                              width: `${widthPercent}%`,
-                              height: `${heightPercent}%`,
-                            };
+                            overlayStyle = { bottom: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                           case 'bottom-right':
-                            overlayStyle = {
-                              bottom: 0,
-                              right: 0,
-                              width: `${widthPercent}%`,
-                              height: `${heightPercent}%`,
-                            };
+                            overlayStyle = { bottom: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                         }
                         
@@ -545,7 +472,6 @@ export default function MasquagePDF() {
           </div>
         </div>
 
-        {/* Instructions */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mt-4 sm:mt-6 transition-colors duration-300`}>
           <h3 className={`text-base sm:text-lg font-bold mb-3 sm:mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
             📋 Comment ça marche ?
