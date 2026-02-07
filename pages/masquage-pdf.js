@@ -1,11 +1,13 @@
 import React, { useState, useRef } from 'react';
+import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
 
 export default function MasquagePDF() {
+  const router = useRouter();
   const { darkMode, toggleDarkMode } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [maskHeight, setMaskHeight] = useState(420); // 10.6cm par défaut (300 points ≈ 10.6cm)
+  const [maskHeight, setMaskHeight] = useState(420); // 14.85cm par défaut (420 points ≈ 14.85cm)
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
 
@@ -118,6 +120,15 @@ export default function MasquagePDF() {
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <button
+                onClick={() => router.push('/')}
+                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition flex-shrink-0`}
+                title="Retour à l'accueil"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"></path>
+                </svg>
+              </button>
               <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-3 rounded-lg sm:rounded-xl flex-shrink-0">
                 <svg width="24" height="24" className="sm:w-8 sm:h-8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -126,7 +137,7 @@ export default function MasquagePDF() {
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className={`text-lg sm:text-2xl md:text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} truncate`}>
-                  Masquage de PDF
+                  Masquage PDF
                 </h1>
                 <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} hidden sm:block`}>
                   Masquez automatiquement le haut de vos étiquettes
