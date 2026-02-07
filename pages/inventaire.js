@@ -905,14 +905,38 @@ const resetInventory = async () => {
                     <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Inventaire de Jeux</h1>
                     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Avec Cloudinary - Upload ultra rapide ⚡</p>
                   </div>
-                  {selectedGame && !editMode && !detailedView && (
-                    <button
-                      onClick={changeGame}
-                      className="px-3 py-2 rounded-lg font-medium transition text-sm whitespace-nowrap bg-orange-600 text-white hover:bg-orange-700 flex items-center gap-1.5"
-                    >
-                      <Search size={16} />
-                      Rechercher
-                    </button>
+                  {selectedGame && !editMode && (
+                    <div className="flex items-center gap-2">
+                      {detailedView && (
+                        <button
+                          onClick={changeGame}
+                          className="px-3 py-2 rounded-lg font-medium transition text-sm whitespace-nowrap bg-orange-600 text-white hover:bg-orange-700 flex items-center gap-1.5"
+                          title="Retour à la recherche de jeu"
+                        >
+                          <Home size={16} />
+                          Rechercher un jeu
+                        </button>
+                      )}
+                      {detailedView && (
+                        <button
+                          onClick={closeDetailedView}
+                          className="px-3 py-2 rounded-lg font-medium transition text-sm whitespace-nowrap bg-purple-600 text-white hover:bg-purple-700 flex items-center gap-1.5"
+                          title="Retour aux éléments du jeu"
+                        >
+                          <ArrowLeft size={16} />
+                          Éléments du jeu
+                        </button>
+                      )}
+                      {!detailedView && (
+                        <button
+                          onClick={changeGame}
+                          className="px-3 py-2 rounded-lg font-medium transition text-sm whitespace-nowrap bg-orange-600 text-white hover:bg-orange-700 flex items-center gap-1.5"
+                        >
+                          <Search size={16} />
+                          Rechercher
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
