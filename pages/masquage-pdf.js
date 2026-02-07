@@ -126,7 +126,7 @@ export default function MasquagePDF() {
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className={`text-lg sm:text-2xl md:text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} truncate`}>
-                  Masquage PDF Mondial Relay
+                  Masquage de PDF
                 </h1>
                 <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} hidden sm:block`}>
                   Masquez automatiquement le haut de vos étiquettes
