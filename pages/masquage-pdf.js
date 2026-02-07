@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -7,9 +7,25 @@ export default function MasquagePDF() {
   const { darkMode, toggleDarkMode } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [maskHeight, setMaskHeight] = useState(420); // 14.85cm par défaut (420 points ≈ 14.85cm)
+  const [maskHeight, setMaskHeight] = useState(420); // 14.85cm par défaut
+  const [selectedZones, setSelectedZones] = useState(['top']); // top, bottom, left, right
+  const [previewMode, setPreviewMode] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [processedPdfBlob, setProcessedPdfBlob] = useState(null);
+  const [currentFileName, setCurrentFileName] = useState('');
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
+
+  // Calculer les dimensions selon les zones sélectionnées
+  const isHorizontal = selectedZones.includes('left') || selectedZones.includes('right');
+  const maxDimension = isHorizontal ? 595 : 842; // 21cm ou 29.7cm en points
+
+  useEffect(() => {
+    // Ajuster automatiquement la hauteur si on passe en mode horizontal
+    if (isHorizontal && maskHeight > 595) {
+      setMaskHeight(297.5); // 10.5cm par défaut pour horizontal
+    }
+  }, [selectedZones]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -40,7 +56,6 @@ export default function MasquagePDF() {
 
   const handleDirectorySelect = async (e) => {
     const files = e.target.files;
-    // Traiter tous les fichiers PDF du répertoire
     const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
     
     if (pdfFiles.length === 0) {
@@ -49,61 +64,120 @@ export default function MasquagePDF() {
     }
 
     for (const file of pdfFiles) {
-      await processPDF(file);
+      await processPDF(file, true); // Auto-download pour les dossiers
     }
   };
 
-  const processPDF = async (file) => {
+  const toggleZone = (zone) => {
+    setSelectedZones(prev => {
+      if (prev.includes(zone)) {
+        return prev.filter(z => z !== zone);
+      } else {
+        return [...prev, zone];
+      }
+    });
+  };
+
+  const generatePreview = async (pdfDoc) => {
+    try {
+      const { PDFDocument } = await import('pdf-lib');
+      const firstPage = pdfDoc.getPages()[0];
+      const { width, height } = firstPage.getSize();
+      
+      // Créer une copie temporaire pour la preview
+      const tempDoc = await PDFDocument.create();
+      const [copiedPage] = await tempDoc.copyPages(pdfDoc, [0]);
+      tempDoc.addPage(copiedPage);
+      
+      const pdfBytes = await tempDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      
+      setPreviewImage(url);
+    } catch (error) {
+      console.error('Erreur lors de la génération de la preview:', error);
+    }
+  };
+
+  const processPDF = async (file, autoDownload = false) => {
     if (!file || file.type !== 'application/pdf') {
       alert('Veuillez sélectionner un fichier PDF valide');
       return;
     }
 
     setProcessing(true);
+    setCurrentFileName(file.name);
 
     try {
-      // Charger la bibliothèque pdf-lib dynamiquement
       const { PDFDocument, rgb } = await import('pdf-lib');
       
-      // Lire le fichier PDF
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       
-      // Obtenir toutes les pages
+      if (previewMode && !autoDownload) {
+        await generatePreview(pdfDoc);
+      }
+      
       const pages = pdfDoc.getPages();
       
-      // Pour chaque page, ajouter un rectangle blanc en haut
       for (const page of pages) {
         const { width, height } = page.getSize();
         
-        // Dessiner un rectangle blanc depuis le haut de la page
-        page.drawRectangle({
-          x: 0,
-          y: height - maskHeight, // Position depuis le bas (PDF commence en bas)
-          width: width,
-          height: maskHeight,
-          color: rgb(1, 1, 1), // Blanc
+        selectedZones.forEach(zone => {
+          let rectConfig;
+          
+          switch(zone) {
+            case 'top':
+              rectConfig = {
+                x: 0,
+                y: height - maskHeight,
+                width: width,
+                height: maskHeight,
+              };
+              break;
+            case 'bottom':
+              rectConfig = {
+                x: 0,
+                y: 0,
+                width: width,
+                height: maskHeight,
+              };
+              break;
+            case 'left':
+              rectConfig = {
+                x: 0,
+                y: 0,
+                width: maskHeight,
+                height: height,
+              };
+              break;
+            case 'right':
+              rectConfig = {
+                x: width - maskHeight,
+                y: 0,
+                width: maskHeight,
+                height: height,
+              };
+              break;
+          }
+          
+          if (rectConfig) {
+            page.drawRectangle({
+              ...rectConfig,
+              color: rgb(1, 1, 1),
+            });
+          }
         });
       }
       
-      // Sauvegarder le PDF modifié
       const pdfBytes = await pdfDoc.save();
-      
-      // Créer le nom de fichier avec date du jour
-      const today = new Date();
-      const dateStr = today.toISOString().split('T')[0]; // Format YYYY-MM-DD
-      const originalName = file.name.replace('.pdf', '');
-      const newFileName = `${originalName}_masqué_${dateStr}.pdf`;
-      
-      // Créer un blob et télécharger
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = newFileName;
-      link.click();
       
-      URL.revokeObjectURL(url);
+      if (previewMode && !autoDownload) {
+        setProcessedPdfBlob(blob);
+      } else {
+        downloadPDF(blob, file.name);
+      }
       
     } catch (error) {
       console.error('Erreur lors du traitement du PDF:', error);
@@ -113,9 +187,32 @@ export default function MasquagePDF() {
     }
   };
 
+  const downloadPDF = (blob, originalName) => {
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+    const name = originalName.replace('.pdf', '');
+    const newFileName = `${name}_masqué_${dateStr}.pdf`;
+    
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = newFileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownload = () => {
+    if (processedPdfBlob) {
+      downloadPDF(processedPdfBlob, currentFileName);
+      setProcessedPdfBlob(null);
+      setPreviewImage(null);
+      setCurrentFileName('');
+    }
+  };
+
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} transition-colors duration-300`}>
-      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-4xl">
+      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-6xl">
         {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between gap-2 sm:gap-4">
@@ -140,7 +237,7 @@ export default function MasquagePDF() {
                   Masquage PDF
                 </h1>
                 <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} hidden sm:block`}>
-                  Masquez automatiquement le haut de vos étiquettes
+                  Masquez automatiquement vos étiquettes
                 </p>
               </div>
             </div>
@@ -173,156 +270,274 @@ export default function MasquagePDF() {
           </div>
         </div>
 
-        {/* Réglage de la hauteur */}
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
-          <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3 sm:mb-4`}>
-            Hauteur de la zone à masquer : <span className="text-indigo-600 dark:text-indigo-400">{Math.round(maskHeight / 28.35 * 10) / 10} cm</span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="842"
-            value={maskHeight}
-            onChange={(e) => setMaskHeight(Number(e.target.value))}
-            className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
-            style={{
-              WebkitAppearance: 'none',
-            }}
-          />
-          <div className="flex justify-between text-xs mt-2">
-            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>0 cm</span>
-            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>29.7 cm</span>
-          </div>
-        </div>
-
-        {/* Zone de drop */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`
-            ${darkMode ? 'bg-gray-800' : 'bg-white'} 
-            rounded-xl sm:rounded-2xl shadow-xl p-6 sm:p-12 mb-4 sm:mb-6 
-            border-3 sm:border-4 border-dashed 
-            ${isDragging 
-              ? 'border-indigo-500 bg-indigo-50' 
-              : darkMode 
-                ? 'border-gray-600 hover:border-indigo-400' 
-                : 'border-gray-300 hover:border-indigo-400'
-            }
-            transition-all duration-300 cursor-pointer
-          `}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          
-          <div className="flex flex-col items-center text-center">
-            {processing ? (
-              <>
-                <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-b-4 border-indigo-600 mb-3 sm:mb-4"></div>
-                <p className={`text-base sm:text-xl font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Traitement en cours...
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-4 sm:p-6 rounded-xl sm:rounded-2xl mb-3 sm:mb-4">
-                  <svg width="48" height="48" className="sm:w-16 sm:h-16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                  </svg>
+        <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
+          {/* Colonne gauche - Contrôles */}
+          <div className="space-y-4 sm:space-y-6">
+            {/* Sélecteur de zones A4 */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
+              <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                Zones à masquer
+              </h3>
+              <div className="flex justify-center">
+                <div className="relative w-48 h-64 bg-white rounded-lg shadow-lg border-2 border-gray-300">
+                  {/* Lignes de découpe en pointillés */}
+                  <div className="absolute inset-0">
+                    <svg className="w-full h-full" viewBox="0 0 100 140">
+                      <line x1="50" y1="0" x2="50" y2="140" stroke="#ccc" strokeWidth="0.5" strokeDasharray="2,2"/>
+                      <line x1="0" y1="70" x2="100" y2="70" stroke="#ccc" strokeWidth="0.5" strokeDasharray="2,2"/>
+                    </svg>
+                  </div>
+                  
+                  {/* Zone TOP */}
+                  <button
+                    onClick={() => toggleZone('top')}
+                    className={`absolute top-0 left-0 right-0 h-1/2 border-b border-dashed border-gray-300 transition-all ${
+                      selectedZones.includes('top') 
+                        ? 'bg-green-400 bg-opacity-50' 
+                        : 'hover:bg-gray-100 hover:bg-opacity-50'
+                    }`}
+                    title="Haut"
+                  />
+                  
+                  {/* Zone BOTTOM */}
+                  <button
+                    onClick={() => toggleZone('bottom')}
+                    className={`absolute bottom-0 left-0 right-0 h-1/2 border-t border-dashed border-gray-300 transition-all ${
+                      selectedZones.includes('bottom') 
+                        ? 'bg-green-400 bg-opacity-50' 
+                        : 'hover:bg-gray-100 hover:bg-opacity-50'
+                    }`}
+                    title="Bas"
+                  />
+                  
+                  {/* Zone LEFT */}
+                  <button
+                    onClick={() => toggleZone('left')}
+                    className={`absolute top-0 bottom-0 left-0 w-1/2 border-r border-dashed border-gray-300 transition-all ${
+                      selectedZones.includes('left') 
+                        ? 'bg-green-400 bg-opacity-50' 
+                        : 'hover:bg-gray-100 hover:bg-opacity-50'
+                    }`}
+                    title="Gauche"
+                  />
+                  
+                  {/* Zone RIGHT */}
+                  <button
+                    onClick={() => toggleZone('right')}
+                    className={`absolute top-0 bottom-0 right-0 w-1/2 border-l border-dashed border-gray-300 transition-all ${
+                      selectedZones.includes('right') 
+                        ? 'bg-green-400 bg-opacity-50' 
+                        : 'hover:bg-gray-100 hover:bg-opacity-50'
+                    }`}
+                    title="Droite"
+                  />
                 </div>
-                <p className={`text-base sm:text-xl font-semibold mb-1 sm:mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Glissez-déposez votre PDF ici
-                </p>
-                <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  ou cliquez pour sélectionner un fichier
-                </p>
-              </>
+              </div>
+              <p className={`text-xs text-center mt-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Cliquez sur une ou plusieurs zones
+              </p>
+            </div>
+
+            {/* Réglage de la hauteur/largeur */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
+              <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3 sm:mb-4`}>
+                {isHorizontal ? 'Largeur' : 'Hauteur'} de la zone : <span className="text-indigo-600 dark:text-indigo-400">{Math.round(maskHeight / 28.35 * 10) / 10} cm</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max={maxDimension}
+                value={maskHeight}
+                onChange={(e) => setMaskHeight(Number(e.target.value))}
+                className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-xs mt-2">
+                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>0 cm</span>
+                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>{isHorizontal ? '21' : '29.7'} cm</span>
+              </div>
+            </div>
+
+            {/* Option prévisualisation */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={previewMode}
+                  onChange={(e) => setPreviewMode(e.target.checked)}
+                  className="w-5 h-5 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className={`text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                  Activer la prévisualisation
+                </span>
+              </label>
+              <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Aperçu avant téléchargement
+              </p>
+            </div>
+          </div>
+
+          {/* Colonne droite - Zone de drop et preview */}
+          <div className="space-y-4 sm:space-y-6">
+            {/* Zone de drop */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`
+                ${darkMode ? 'bg-gray-800' : 'bg-white'} 
+                rounded-xl sm:rounded-2xl shadow-xl p-6 sm:p-12
+                border-3 sm:border-4 border-dashed 
+                ${isDragging 
+                  ? 'border-indigo-500 bg-indigo-50' 
+                  : darkMode 
+                    ? 'border-gray-600 hover:border-indigo-400' 
+                    : 'border-gray-300 hover:border-indigo-400'
+                }
+                transition-all duration-300 cursor-pointer
+              `}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              
+              <div className="flex flex-col items-center text-center">
+                {processing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-b-4 border-indigo-600 mb-3 sm:mb-4"></div>
+                    <p className={`text-base sm:text-xl font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                      Traitement en cours...
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-4 sm:p-6 rounded-xl sm:rounded-2xl mb-3 sm:mb-4">
+                      <svg width="48" height="48" className="sm:w-16 sm:h-16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                      </svg>
+                    </div>
+                    <p className={`text-base sm:text-xl font-semibold mb-1 sm:mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                      Glissez-déposez votre PDF ici
+                    </p>
+                    <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      ou cliquez pour sélectionner
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Bouton sélection dossier */}
+            <button
+              onClick={() => directoryInputRef.current?.click()}
+              className={`
+                w-full ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'} 
+                rounded-xl shadow-lg p-4 transition-all duration-300 
+                border-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'}
+                flex items-center justify-center gap-3
+              `}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-purple-400' : 'text-purple-600'}>
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span className={`font-semibold text-sm sm:text-base ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                Sélectionner un dossier
+              </span>
+            </button>
+
+            <input
+              ref={directoryInputRef}
+              type="file"
+              webkitdirectory=""
+              directory=""
+              multiple
+              onChange={handleDirectorySelect}
+              className="hidden"
+            />
+
+            {/* Preview */}
+            {previewMode && previewImage && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
+                <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  Aperçu
+                </h3>
+                <div className="relative bg-gray-100 rounded-lg p-4 mb-4">
+                  <iframe
+                    src={previewImage}
+                    className="w-full h-96 rounded border-2 border-gray-300"
+                    title="Preview PDF"
+                  />
+                  {/* Overlay pour montrer les zones masquées */}
+                  <div className="absolute inset-4 pointer-events-none">
+                    {selectedZones.map(zone => {
+                      let overlayClass = '';
+                      switch(zone) {
+                        case 'top':
+                          overlayClass = 'top-4 left-4 right-4 bg-green-500 bg-opacity-30';
+                          break;
+                        case 'bottom':
+                          overlayClass = 'bottom-4 left-4 right-4 bg-green-500 bg-opacity-30';
+                          break;
+                        case 'left':
+                          overlayClass = 'top-4 bottom-4 left-4 bg-green-500 bg-opacity-30';
+                          break;
+                        case 'right':
+                          overlayClass = 'top-4 bottom-4 right-4 bg-green-500 bg-opacity-30';
+                          break;
+                      }
+                      return (
+                        <div
+                          key={zone}
+                          className={`absolute ${overlayClass} border-2 border-green-500 border-dashed`}
+                          style={{
+                            height: zone === 'top' || zone === 'bottom' ? `${(maskHeight / 842) * 100}%` : 'auto',
+                            width: zone === 'left' || zone === 'right' ? `${(maskHeight / 595) * 100}%` : 'auto',
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+                <button
+                  onClick={handleDownload}
+                  className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-700 transition shadow-lg"
+                >
+                  📥 Télécharger le PDF masqué
+                </button>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Boutons de sélection */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`
-              ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'} 
-              rounded-xl shadow-lg p-4 transition-all duration-300 
-              border-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'}
-              flex items-center justify-center gap-3
-            `}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-indigo-400' : 'text-indigo-600'}>
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-            <span className={`font-semibold text-sm sm:text-base ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-              Sélectionner un fichier
-            </span>
-          </button>
-
-          <button
-            onClick={() => directoryInputRef.current?.click()}
-            className={`
-              ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'} 
-              rounded-xl shadow-lg p-4 transition-all duration-300 
-              border-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'}
-              flex items-center justify-center gap-3
-            `}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-purple-400' : 'text-purple-600'}>
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span className={`font-semibold text-sm sm:text-base ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-              Sélectionner un dossier
-            </span>
-          </button>
-
-          <input
-            ref={directoryInputRef}
-            type="file"
-            webkitdirectory=""
-            directory=""
-            multiple
-            onChange={handleDirectorySelect}
-            className="hidden"
-          />
-        </div>
-
         {/* Instructions */}
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mt-4 sm:mt-6 transition-colors duration-300`}>
           <h3 className={`text-base sm:text-lg font-bold mb-3 sm:mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
             📋 Comment ça marche ?
           </h3>
           <ol className={`space-y-2 sm:space-y-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'} text-sm sm:text-base`}>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">1</span>
-              <span>Ajustez la hauteur de masquage selon vos besoins (par défaut 14.85 cm, soit la moitié d'une feuille A4)</span>
+              <span>Sélectionnez les zones à masquer en cliquant sur la feuille A4 (haut, bas, gauche, droite)</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">2</span>
-              <span>Choisissez votre méthode : glisser-déposer, sélectionner un fichier unique ou un dossier complet</span>
+              <span>Ajustez la taille de masquage avec le curseur (par défaut 14.85 cm)</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">3</span>
-              <span>Le(s) PDF modifié(s) se téléchargera(ont) automatiquement avec "_masqué_YYYY-MM-DD" ajouté au nom</span>
+              <span>Activez la prévisualisation si vous voulez voir un aperçu avant téléchargement</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">4</span>
+              <span>Glissez-déposez votre PDF ou sélectionnez un dossier pour traiter plusieurs fichiers</span>
             </li>
           </ol>
-
-          <div className={`mt-4 sm:mt-6 p-3 sm:p-4 rounded-lg sm:rounded-xl ${darkMode ? 'bg-indigo-900 bg-opacity-30' : 'bg-indigo-50'}`}>
-            <p className={`text-xs sm:text-sm ${darkMode ? 'text-indigo-300' : 'text-indigo-800'}`}>
-              💡 <strong>Astuce :</strong> Un rectangle blanc sera ajouté en haut de chaque page du PDF pour masquer les informations personnelles. Vous pouvez traiter plusieurs fichiers en une fois en sélectionnant un dossier !
-            </p>
-          </div>
         </div>
       </div>
     </div>
