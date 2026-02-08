@@ -12,7 +12,7 @@ export default function MasquagePDF() {
   const [selectedZones, setSelectedZones] = useState(['top-left', 'top-right']);
   const [previewMode, setPreviewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
-  const [processedPdfBlob, setProcessedPdfBlob] = useState(null);
+  const [originalPdfFile, setOriginalPdfFile] = useState(null); // NOUVEAU: stocker le fichier original
   const [currentFileName, setCurrentFileName] = useState('');
   const [editingHeight, setEditingHeight] = useState(false);
   const [editingWidth, setEditingWidth] = useState(false);
@@ -202,10 +202,12 @@ export default function MasquagePDF() {
     handleWidthChange(297.64);
   };
 
+  // NOUVELLE FONCTION: Générer une image de prévisualisation pour mobile
   const generatePreview = async (pdfDoc) => {
     try {
       const { PDFDocument } = await import('pdf-lib');
       
+      // Créer un document temporaire avec juste la première page
       const tempDoc = await PDFDocument.create();
       const [copiedPage] = await tempDoc.copyPages(pdfDoc, [0]);
       tempDoc.addPage(copiedPage);
@@ -235,69 +237,16 @@ export default function MasquagePDF() {
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       
+      // MODIFIÉ: Stocker le fichier original pour pouvoir le retraiter plus tard
       if (previewMode && !autoDownload) {
+        setOriginalPdfFile(file);
         await generatePreview(pdfDoc);
       }
       
-      const pages = pdfDoc.getPages();
-      
-      for (const page of pages) {
-        const { width, height } = page.getSize();
-        
-        selectedZones.forEach(zone => {
-          let rectConfig = null;
-          
-          switch(zone) {
-            case 'top-left':
-              rectConfig = {
-                x: 0,
-                y: height - maskHeight,
-                width: maskWidth,
-                height: maskHeight,
-              };
-              break;
-            case 'top-right':
-              rectConfig = {
-                x: width - maskWidth,
-                y: height - maskHeight,
-                width: maskWidth,
-                height: maskHeight,
-              };
-              break;
-            case 'bottom-left':
-              rectConfig = {
-                x: 0,
-                y: 0,
-                width: maskWidth,
-                height: maskHeight,
-              };
-              break;
-            case 'bottom-right':
-              rectConfig = {
-                x: width - maskWidth,
-                y: 0,
-                width: maskWidth,
-                height: maskHeight,
-              };
-              break;
-          }
-          
-          if (rectConfig) {
-            page.drawRectangle({
-              ...rectConfig,
-              color: rgb(1, 1, 1),
-            });
-          }
-        });
-      }
-      
-      const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      
-      if (previewMode && !autoDownload) {
-        setProcessedPdfBlob(blob);
-      } else {
-        downloadPDF(blob, file.name);
+      // Si on est en mode auto-download (batch), traiter et télécharger immédiatement
+      if (autoDownload) {
+        const processedBlob = await applyMasking(pdfDoc);
+        downloadPDF(processedBlob, file.name);
       }
       
     } catch (error) {
@@ -306,6 +255,65 @@ export default function MasquagePDF() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // NOUVELLE FONCTION: Appliquer le masquage avec les valeurs actuelles
+  const applyMasking = async (pdfDoc) => {
+    const { rgb } = await import('pdf-lib');
+    const pages = pdfDoc.getPages();
+    
+    for (const page of pages) {
+      const { width, height } = page.getSize();
+      
+      selectedZones.forEach(zone => {
+        let rectConfig = null;
+        
+        switch(zone) {
+          case 'top-left':
+            rectConfig = {
+              x: 0,
+              y: height - maskHeight,
+              width: maskWidth,
+              height: maskHeight,
+            };
+            break;
+          case 'top-right':
+            rectConfig = {
+              x: width - maskWidth,
+              y: height - maskHeight,
+              width: maskWidth,
+              height: maskHeight,
+            };
+            break;
+          case 'bottom-left':
+            rectConfig = {
+              x: 0,
+              y: 0,
+              width: maskWidth,
+              height: maskHeight,
+            };
+            break;
+          case 'bottom-right':
+            rectConfig = {
+              x: width - maskWidth,
+              y: 0,
+              width: maskWidth,
+              height: maskHeight,
+            };
+            break;
+        }
+        
+        if (rectConfig) {
+          page.drawRectangle({
+            ...rectConfig,
+            color: rgb(1, 1, 1),
+          });
+        }
+      });
+    }
+    
+    const pdfBytes = await pdfDoc.save();
+    return new Blob([pdfBytes], { type: 'application/pdf' });
   };
 
   const downloadPDF = (blob, originalName) => {
@@ -322,11 +330,28 @@ export default function MasquagePDF() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownload = () => {
-    if (processedPdfBlob) {
-      downloadPDF(processedPdfBlob, currentFileName);
-      setProcessedPdfBlob(null);
+  // MODIFIÉ: Retraiter le PDF avec les valeurs actuelles avant de télécharger
+  const handleDownload = async () => {
+    if (!originalPdfFile) return;
+    
+    setProcessing(true);
+    try {
+      const { PDFDocument } = await import('pdf-lib');
+      const arrayBuffer = await originalPdfFile.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+      
+      // Appliquer le masquage avec les valeurs ACTUELLES de maskHeight et maskWidth
+      const processedBlob = await applyMasking(pdfDoc);
+      downloadPDF(processedBlob, currentFileName);
+      
+      // Réinitialiser après téléchargement
+      setOriginalPdfFile(null);
       setPreviewImage(null);
+    } catch (error) {
+      console.error('Erreur lors du téléchargement:', error);
+      alert('Erreur lors de la création du PDF masqué.');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -556,13 +581,14 @@ export default function MasquagePDF() {
             </div>
 
             {/* Bouton de téléchargement sous la largeur si preview activée */}
-            {previewMode && processedPdfBlob && (
+            {previewMode && originalPdfFile && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <button
                   onClick={handleDownload}
-                  className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl font-semibold hover:from-orange-600 hover:to-red-600 transition shadow-lg text-sm sm:text-base"
+                  disabled={processing}
+                  className={`w-full ${processing ? 'bg-gray-400' : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600'} text-white py-3 rounded-xl font-semibold transition shadow-lg text-sm sm:text-base`}
                 >
-                  📥 Télécharger le PDF masqué
+                  {processing ? '⏳ Traitement...' : '📥 Télécharger le PDF masqué'}
                 </button>
               </div>
             )}
@@ -641,7 +667,7 @@ export default function MasquagePDF() {
               className="hidden"
             />
 
-            {/* Aperçu réduit sans bandeau avec zones rouges */}
+            {/* Aperçu amélioré pour mobile et desktop */}
             {previewMode && previewImage && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
@@ -649,24 +675,14 @@ export default function MasquagePDF() {
                 </h3>
                 <div className="relative bg-gray-100 rounded-lg overflow-hidden mx-auto w-full sm:max-w-xs">
                   <div className="relative w-full" style={{ paddingBottom: '141.4%' }}>
-                    {/* Utiliser object pour meilleure compatibilité mobile */}
-                    <object
-                      data={`${previewImage}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-                      type="application/pdf"
+                    {/* Iframe pour meilleure compatibilité mobile */}
+                    <iframe
+                      src={`${previewImage}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
                       className="absolute inset-0 w-full h-full rounded border-2 border-gray-300"
                       style={{ pointerEvents: 'none' }}
-                    >
-                      {/* Fallback pour mobiles qui ne supportent pas l'affichage PDF */}
-                      <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
-                        <div className="text-center p-4">
-                          <svg className="w-16 h-16 mx-auto mb-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd"/>
-                          </svg>
-                          <p className="text-sm text-gray-600">Aperçu PDF prêt</p>
-                          <p className="text-xs text-gray-500 mt-1">Le masquage sera appliqué</p>
-                        </div>
-                      </div>
-                    </object>
+                      title="Aperçu PDF"
+                    />
+                    {/* Overlays des zones masquées */}
                     <div className="absolute inset-0 pointer-events-none z-10">
                       {selectedZones.map(zone => {
                         const heightPercent = (maskHeight / 842) * 100;
