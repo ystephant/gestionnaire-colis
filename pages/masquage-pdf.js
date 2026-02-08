@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -18,15 +18,9 @@ export default function MasquagePDF() {
   const [editingWidth, setEditingWidth] = useState(false);
   const [tempHeightValue, setTempHeightValue] = useState('');
   const [tempWidthValue, setTempWidthValue] = useState('');
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false);
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
-
-  // Réinitialiser le blob traité quand les paramètres changent
-  useEffect(() => {
-    if (processedPdfBlob) {
-      setProcessedPdfBlob(null);
-    }
-  }, [maskHeight, maskWidth, selectedZones]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -66,11 +60,41 @@ export default function MasquagePDF() {
       return;
     }
 
+    setIsProcessingBatch(true);
+    setPreviewMode(false); // Désactiver la prévisualisation en mode batch
+
     for (const file of pdfFiles) {
       await processPDF(file, true);
     }
+    
+    setIsProcessingBatch(false);
     // Réinitialiser l'input
     e.target.value = '';
+  };
+
+  // Calculer les limites maximales en fonction des zones sélectionnées
+  const getMaxWidth = () => {
+    const hasTopZones = selectedZones.includes('top-left') && selectedZones.includes('top-right');
+    const hasBottomZones = selectedZones.includes('bottom-left') && selectedZones.includes('bottom-right');
+    
+    // Si deux zones sur la même ligne, limite à 10.5 cm (297.64 points)
+    if (hasTopZones || hasBottomZones) {
+      return 297.64;
+    }
+    // Sinon, limite normale de 21 cm (595 points)
+    return 595;
+  };
+
+  const getMaxHeight = () => {
+    const hasLeftZones = selectedZones.includes('top-left') && selectedZones.includes('bottom-left');
+    const hasRightZones = selectedZones.includes('top-right') && selectedZones.includes('bottom-right');
+    
+    // Si deux zones sur la même colonne, limite à 14.85 cm (420.87 points)
+    if (hasLeftZones || hasRightZones) {
+      return 420.87;
+    }
+    // Sinon, limite normale de 29.7 cm (842 points)
+    return 842;
   };
 
   const toggleZone = (zone) => {
@@ -79,16 +103,29 @@ export default function MasquagePDF() {
         ? prev.filter(z => z !== zone)
         : [...prev, zone];
       
+      // Ajuster automatiquement les dimensions si nécessaire après changement de zones
+      // Cela évite les chevauchements sans bloquer l'utilisateur
+      setTimeout(() => {
+        const maxW = getMaxWidth();
+        const maxH = getMaxHeight();
+        if (maskWidth > maxW) setMaskWidth(maxW);
+        if (maskHeight > maxH) setMaskHeight(maxH);
+      }, 0);
+      
       return newZones;
     });
   };
 
   const handleWidthChange = (newWidth) => {
-    setMaskWidth(newWidth);
+    const maxWidth = getMaxWidth();
+    const constrainedWidth = Math.min(newWidth, maxWidth);
+    setMaskWidth(constrainedWidth);
   };
 
   const handleHeightChange = (newHeight) => {
-    setMaskHeight(newHeight);
+    const maxHeight = getMaxHeight();
+    const constrainedHeight = Math.min(newHeight, maxHeight);
+    setMaskHeight(constrainedHeight);
   };
 
   // Fonction pour recentrer la hauteur (14,85 cm = 420.87 points)
@@ -275,29 +312,11 @@ export default function MasquagePDF() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownload = async () => {
-    if (!currentFileName) {
-      alert('Veuillez d\'abord charger un fichier PDF');
-      return;
-    }
-
-    // Si le blob existe et que les paramètres n'ont pas changé, on télécharge directement
+  const handleDownload = () => {
     if (processedPdfBlob) {
       downloadPDF(processedPdfBlob, currentFileName);
-      return;
-    }
-
-    // Sinon, on retraite le fichier avec les paramètres actuels
-    // On récupère le fichier depuis l'input
-    const fileInput = fileInputRef.current;
-    if (fileInput && fileInput.files && fileInput.files.length > 0) {
-      await processPDF(fileInput.files[0], false);
-      // Après le traitement, le blob sera créé et on peut télécharger
-      setTimeout(() => {
-        if (processedPdfBlob) {
-          downloadPDF(processedPdfBlob, currentFileName);
-        }
-      }, 500);
+      setProcessedPdfBlob(null);
+      setPreviewImage(null);
     }
   };
 
@@ -317,7 +336,7 @@ export default function MasquagePDF() {
                   <path d="M19 12H5M12 19l-7-7 7-7"></path>
                 </svg>
               </button>
-              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-3 rounded-lg sm:rounded-xl flex-shrink-0">
+              <div className="bg-gradient-to-br from-orange-500 to-red-500 p-2 sm:p-3 rounded-lg sm:rounded-xl flex-shrink-0">
                 <svg width="24" height="24" className="sm:w-8 sm:h-8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                   <polyline points="14 2 14 8 20 8"></polyline>
@@ -362,9 +381,30 @@ export default function MasquagePDF() {
         <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
           <div className="space-y-4 sm:space-y-6">
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
-              <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                Zones à masquer
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`text-base sm:text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  Zones à masquer
+                </h3>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <span className={`text-xs sm:text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Prévisualisation
+                  </span>
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={previewMode}
+                      onChange={(e) => setPreviewMode(e.target.checked)}
+                      disabled={isProcessingBatch}
+                      className="sr-only peer"
+                    />
+                    <div className={`w-11 h-6 rounded-full peer transition-all ${
+                      isProcessingBatch 
+                        ? 'bg-gray-300 cursor-not-allowed' 
+                        : 'bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 peer-checked:bg-gradient-to-r peer-checked:from-orange-500 peer-checked:to-red-500 cursor-pointer'
+                    } peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all`}></div>
+                  </div>
+                </label>
+              </div>
               
               {/* Feuille A4 réduite de moitié avec couleur rouge */}
               <div className="relative bg-white rounded-lg shadow-inner mx-auto" 
@@ -412,25 +452,6 @@ export default function MasquagePDF() {
               <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'} text-center mt-3 sm:mt-4`}>
                 Cliquez sur les coins pour sélectionner les zones à masquer
               </p>
-
-              {/* Bouton de prévisualisation déplacé ici */}
-              <div className="mt-4">
-                <label className="flex items-center gap-2 cursor-pointer justify-center">
-                  <input
-                    type="checkbox"
-                    checked={previewMode}
-                    onChange={(e) => setPreviewMode(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Activer la prévisualisation
-                  </span>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                </label>
-              </div>
             </div>
 
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
@@ -461,7 +482,7 @@ export default function MasquagePDF() {
                 </label>
                 <button
                   onClick={centerHeight}
-                  className="ml-2 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg transition-colors duration-200 whitespace-nowrap"
+                  className="ml-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-lg transition-colors duration-200 whitespace-nowrap"
                   title="Centrer à 14.85 cm"
                 >
                   ⊙ 14.85
@@ -470,14 +491,14 @@ export default function MasquagePDF() {
               <input
                 type="range"
                 min="0"
-                max="842"
+                max={getMaxHeight()}
                 value={maskHeight}
                 onChange={(e) => handleHeightChange(Number(e.target.value))}
                 className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
               />
               <div className="flex justify-between text-xs mt-2">
                 <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>0 cm</span>
-                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>29.7 cm</span>
+                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>{Math.round(getMaxHeight() / 28.35 * 10) / 10} cm</span>
               </div>
             </div>
 
@@ -509,7 +530,7 @@ export default function MasquagePDF() {
                 </label>
                 <button
                   onClick={centerWidth}
-                  className="ml-2 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg transition-colors duration-200 whitespace-nowrap"
+                  className="ml-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-lg transition-colors duration-200 whitespace-nowrap"
                   title="Centrer à 10.5 cm"
                 >
                   ⊙ 10.5
@@ -518,23 +539,23 @@ export default function MasquagePDF() {
               <input
                 type="range"
                 min="0"
-                max="595"
+                max={getMaxWidth()}
                 value={maskWidth}
                 onChange={(e) => handleWidthChange(Number(e.target.value))}
                 className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
               />
               <div className="flex justify-between text-xs mt-2">
                 <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>0 cm</span>
-                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>21 cm</span>
+                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>{Math.round(getMaxWidth() / 28.35 * 10) / 10} cm</span>
               </div>
             </div>
 
             {/* Bouton de téléchargement sous la largeur si preview activée */}
-            {previewMode && (
+            {previewMode && processedPdfBlob && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <button
                   onClick={handleDownload}
-                  className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-700 transition shadow-lg text-sm sm:text-base"
+                  className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl font-semibold hover:from-orange-600 hover:to-red-600 transition shadow-lg text-sm sm:text-base"
                 >
                   📥 Télécharger le PDF masqué
                 </button>
@@ -568,7 +589,7 @@ export default function MasquagePDF() {
                   </>
                 ) : (
                   <>
-                    <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-4 sm:p-6 rounded-xl sm:rounded-2xl mb-3 sm:mb-4">
+                    <div className="bg-gradient-to-br from-orange-500 to-red-500 p-4 sm:p-6 rounded-xl sm:rounded-2xl mb-3 sm:mb-4">
                       <svg width="48" height="48" className="sm:w-16 sm:h-16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="17 8 12 3 7 8"></polyline>
@@ -587,13 +608,20 @@ export default function MasquagePDF() {
             </div>
 
             <button
-              onClick={() => directoryInputRef.current?.click()}
-              className={`w-full ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-lg p-4 transition-all duration-300 border-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-center gap-3`}
+              onClick={() => !previewMode && directoryInputRef.current?.click()}
+              disabled={previewMode}
+              className={`w-full rounded-xl shadow-lg p-4 transition-all duration-300 border-2 flex items-center justify-center gap-3 ${
+                previewMode 
+                  ? 'bg-gray-200 border-gray-300 cursor-not-allowed opacity-50' 
+                  : darkMode 
+                    ? 'bg-gray-800 hover:bg-gray-700 border-gray-700' 
+                    : 'bg-white hover:bg-gray-50 border-gray-200'
+              }`}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-purple-400' : 'text-purple-600'}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={previewMode ? 'text-gray-400' : darkMode ? 'text-orange-400' : 'text-orange-600'}>
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
               </svg>
-              <span className={`font-semibold text-sm sm:text-base ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+              <span className={`font-semibold text-sm sm:text-base ${previewMode ? 'text-gray-400' : darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                 Sélectionner un dossier
               </span>
             </button>
@@ -690,7 +718,7 @@ export default function MasquagePDF() {
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">3</span>
-              <span>Activez la prévisualisation dans la section "Zones à masquer" pour voir un aperçu avant téléchargement</span>
+              <span>Activez la prévisualisation dans l'en-tête pour voir un aperçu avant téléchargement</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">4</span>
