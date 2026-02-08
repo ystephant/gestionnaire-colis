@@ -14,6 +14,11 @@ export default function MasquagePDF() {
   const [previewImage, setPreviewImage] = useState(null);
   const [processedPdfBlob, setProcessedPdfBlob] = useState(null);
   const [currentFileName, setCurrentFileName] = useState('');
+  const [editingHeight, setEditingHeight] = useState(false);
+  const [editingWidth, setEditingWidth] = useState(false);
+  const [tempHeightValue, setTempHeightValue] = useState('');
+  const [tempWidthValue, setTempWidthValue] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
 
@@ -42,6 +47,8 @@ export default function MasquagePDF() {
     if (files.length > 0) {
       await processPDF(files[0]);
     }
+    // Réinitialiser l'input pour permettre la sélection du même fichier
+    e.target.value = '';
   };
 
   const handleDirectorySelect = async (e) => {
@@ -56,26 +63,102 @@ export default function MasquagePDF() {
     for (const file of pdfFiles) {
       await processPDF(file, true);
     }
+    // Réinitialiser l'input
+    e.target.value = '';
+  };
+
+  // Vérifier si deux zones se croisent
+  const checkZonesOverlap = (width, height) => {
+    const hasTopZones = selectedZones.includes('top-left') && selectedZones.includes('top-right');
+    const hasBottomZones = selectedZones.includes('bottom-left') && selectedZones.includes('bottom-right');
+    const hasLeftZones = selectedZones.includes('top-left') && selectedZones.includes('bottom-left');
+    const hasRightZones = selectedZones.includes('top-right') && selectedZones.includes('bottom-right');
+    
+    // Vérification horizontale (largeur > 10.5 cm = 297.64 points)
+    if ((hasTopZones || hasBottomZones) && width > 297.64) {
+      return 'Les zones horizontales se croisent ! La largeur ne peut pas dépasser 10.5 cm avec deux zones sur la même ligne.';
+    }
+    
+    // Vérification verticale (hauteur > 14.85 cm = 420.87 points)
+    if ((hasLeftZones || hasRightZones) && height > 420.87) {
+      return 'Les zones verticales se croisent ! La hauteur ne peut pas dépasser 14.85 cm avec deux zones sur la même colonne.';
+    }
+    
+    return null;
   };
 
   const toggleZone = (zone) => {
     setSelectedZones(prev => {
-      if (prev.includes(zone)) {
-        return prev.filter(z => z !== zone);
-      } else {
-        return [...prev, zone];
-      }
+      const newZones = prev.includes(zone) 
+        ? prev.filter(z => z !== zone)
+        : [...prev, zone];
+      
+      // Vérifier après le changement de zones
+      const error = checkZonesOverlap(maskWidth, maskHeight);
+      setErrorMessage(error || '');
+      
+      return newZones;
     });
+  };
+
+  const handleWidthChange = (newWidth) => {
+    const error = checkZonesOverlap(newWidth, maskHeight);
+    if (error) {
+      setErrorMessage(error);
+      return;
+    }
+    setErrorMessage('');
+    setMaskWidth(newWidth);
+  };
+
+  const handleHeightChange = (newHeight) => {
+    const error = checkZonesOverlap(maskWidth, newHeight);
+    if (error) {
+      setErrorMessage(error);
+      return;
+    }
+    setErrorMessage('');
+    setMaskHeight(newHeight);
   };
 
   // Fonction pour recentrer la hauteur (14,85 cm = 420.87 points)
   const centerHeight = () => {
-    setMaskHeight(420.87);
+    handleHeightChange(420.87);
   };
 
   // Fonction pour recentrer la largeur (10,5 cm = 297.64 points)
   const centerWidth = () => {
-    setMaskWidth(297.64);
+    handleWidthChange(297.64);
+  };
+
+  // Gestion de l'édition manuelle de la hauteur
+  const startEditingHeight = () => {
+    setEditingHeight(true);
+    setTempHeightValue(Math.round(maskHeight / 28.35 * 10) / 10);
+  };
+
+  const confirmHeightEdit = () => {
+    const newCm = parseFloat(tempHeightValue);
+    if (!isNaN(newCm) && newCm >= 0 && newCm <= 29.7) {
+      const newPoints = newCm * 28.35;
+      handleHeightChange(newPoints);
+    }
+    setEditingHeight(false);
+  };
+
+  // Gestion de l'édition manuelle de la largeur
+  const startEditingWidth = () => {
+    setEditingWidth(true);
+    setTempWidthValue(Math.round(maskWidth / 28.35 * 10) / 10);
+  };
+
+  const confirmWidthEdit = () => {
+    const newCm = parseFloat(tempWidthValue);
+    if (!isNaN(newCm) && newCm >= 0 && newCm <= 21) {
+      const newPoints = newCm * 28.35;
+      handleWidthChange(newPoints);
+    }
+    setEditingWidth(false);
   };
 
   const generatePreview = async (pdfDoc) => {
@@ -207,87 +290,108 @@ export default function MasquagePDF() {
   };
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-indigo-900' : 'bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50'} transition-colors duration-300`}>
-      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-7xl">
-        <div className="text-center mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4 sm:mb-6">
-            <button
-              onClick={() => router.push('/')}
-              className={`${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200' : 'bg-white hover:bg-gray-50 text-gray-700'} px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl shadow-lg transition-all duration-300 flex items-center gap-2 text-sm sm:text-base w-full sm:w-auto justify-center sm:justify-start`}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7"/>
-              </svg>
-              Retour
-            </button>
-
-            <button
-              onClick={toggleDarkMode}
-              className={`${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'} p-2 sm:p-3 rounded-lg sm:rounded-xl shadow-lg transition-all duration-300`}
-            >
-              {darkMode ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-yellow-400">
-                  <circle cx="12" cy="12" r="5"></circle>
-                  <line x1="12" y1="1" x2="12" y2="3"></line>
-                  <line x1="12" y1="21" x2="12" y2="23"></line>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                  <line x1="1" y1="12" x2="3" y2="12"></line>
-                  <line x1="21" y1="12" x2="23" y2="12"></line>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} transition-colors duration-300`}>
+      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-6xl">
+        {/* En-tête original */}
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <button
+                onClick={() => router.push('/')}
+                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition flex-shrink-0`}
+                title="Retour à l'accueil"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"></path>
                 </svg>
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-600">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </button>
+              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-3 rounded-lg sm:rounded-xl flex-shrink-0">
+                <svg width="24" height="24" className="sm:w-8 sm:h-8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
                 </svg>
-              )}
-            </button>
+              </div>
+              <div className="min-w-0 flex-1">
+                <h1 className={`text-lg sm:text-2xl md:text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} truncate`}>
+                  Masquage PDF
+                </h1>
+                <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} hidden sm:block`}>
+                  Masquez automatiquement vos étiquettes
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={previewMode}
+                  onChange={(e) => setPreviewMode(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className={`text-xs sm:text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} hidden sm:inline`}>
+                  Prévisualisation
+                </span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="sm:hidden">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </label>
+              <button
+                onClick={toggleDarkMode}
+                className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 flex-shrink-0 ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+              >
+                {darkMode ? (
+                  <svg width="18" height="18" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
-
-          <h1 className={`text-3xl sm:text-5xl font-extrabold mb-2 sm:mb-4 ${darkMode ? 'text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400' : 'text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600'}`}>
-            🎭 Masquage PDF
-          </h1>
-          <p className={`text-sm sm:text-lg ${darkMode ? 'text-gray-300' : 'text-gray-600'} max-w-2xl mx-auto px-4`}>
-            Masquez facilement des zones spécifiques de vos documents PDF
-          </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* Message d'erreur */}
+        {errorMessage && (
+          <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded-lg shadow-md">
+            <div className="flex items-center">
+              <svg className="w-6 h-6 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+              </svg>
+              <p className="font-semibold">{errorMessage}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
           <div className="space-y-4 sm:space-y-6">
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className={`text-base sm:text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  Zones à masquer
-                </h3>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <span className={`text-xs sm:text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Prévisualisation
-                  </span>
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={previewMode}
-                      onChange={(e) => setPreviewMode(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                  </div>
-                </label>
-              </div>
+              <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                Zones à masquer
+              </h3>
               
-              {/* Feuille A4 réduite de moitié */}
+              {/* Feuille A4 réduite de moitié avec couleur rouge */}
               <div className="relative bg-white rounded-lg shadow-inner mx-auto" 
                    style={{ 
-                     width: '148.5px',  // 297px / 2
-                     height: '210px'     // 420px / 2
+                     width: '148.5px',
+                     height: '210px'
                    }}>
                 {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((zone) => {
                   const isSelected = selectedZones.includes(zone);
                   
-                  // Calculer les positions en pixels réduits de moitié
-                  const heightPx = (maskHeight / 842) * 210;  // 420px / 2 = 210px
-                  const widthPx = (maskWidth / 595) * 148.5;   // 297px / 2 = 148.5px
+                  const heightPx = (maskHeight / 842) * 210;
+                  const widthPx = (maskWidth / 595) * 148.5;
                   
                   let positionStyles = {};
                   switch(zone) {
@@ -311,7 +415,7 @@ export default function MasquagePDF() {
                       onClick={() => toggleZone(zone)}
                       className={`absolute cursor-pointer transition-all duration-300 border-2 ${
                         isSelected 
-                          ? 'bg-indigo-500 bg-opacity-40 border-indigo-600 border-dashed' 
+                          ? 'bg-red-500 bg-opacity-40 border-red-600 border-dashed' 
                           : 'bg-gray-200 bg-opacity-20 border-gray-400 border-dashed hover:bg-gray-300 hover:bg-opacity-30'
                       }`}
                       style={positionStyles}
@@ -328,7 +432,28 @@ export default function MasquagePDF() {
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Hauteur de la zone : <span className="text-purple-600 dark:text-purple-400">{Math.round(maskHeight / 28.35 * 10) / 10} cm</span>
+                  Hauteur de la zone : 
+                  {editingHeight ? (
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="29.7"
+                      value={tempHeightValue}
+                      onChange={(e) => setTempHeightValue(e.target.value)}
+                      onBlur={confirmHeightEdit}
+                      onKeyPress={(e) => e.key === 'Enter' && confirmHeightEdit()}
+                      className="ml-2 w-20 px-2 py-1 border-2 border-red-500 rounded text-red-600 focus:outline-none focus:border-red-700"
+                      autoFocus
+                    />
+                  ) : (
+                    <span 
+                      className="text-red-600 dark:text-red-400 cursor-pointer hover:underline ml-2"
+                      onClick={startEditingHeight}
+                    >
+                      {Math.round(maskHeight / 28.35 * 10) / 10} cm
+                    </span>
+                  )}
                 </label>
                 <button
                   onClick={centerHeight}
@@ -343,7 +468,7 @@ export default function MasquagePDF() {
                 min="0"
                 max="842"
                 value={maskHeight}
-                onChange={(e) => setMaskHeight(Number(e.target.value))}
+                onChange={(e) => handleHeightChange(Number(e.target.value))}
                 className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
               />
               <div className="flex justify-between text-xs mt-2">
@@ -355,7 +480,28 @@ export default function MasquagePDF() {
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  Largeur de la zone : <span className="text-purple-600 dark:text-purple-400">{Math.round(maskWidth / 28.35 * 10) / 10} cm</span>
+                  Largeur de la zone : 
+                  {editingWidth ? (
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="21"
+                      value={tempWidthValue}
+                      onChange={(e) => setTempWidthValue(e.target.value)}
+                      onBlur={confirmWidthEdit}
+                      onKeyPress={(e) => e.key === 'Enter' && confirmWidthEdit()}
+                      className="ml-2 w-20 px-2 py-1 border-2 border-red-500 rounded text-red-600 focus:outline-none focus:border-red-700"
+                      autoFocus
+                    />
+                  ) : (
+                    <span 
+                      className="text-red-600 dark:text-red-400 cursor-pointer hover:underline ml-2"
+                      onClick={startEditingWidth}
+                    >
+                      {Math.round(maskWidth / 28.35 * 10) / 10} cm
+                    </span>
+                  )}
                 </label>
                 <button
                   onClick={centerWidth}
@@ -370,7 +516,7 @@ export default function MasquagePDF() {
                 min="0"
                 max="595"
                 value={maskWidth}
-                onChange={(e) => setMaskWidth(Number(e.target.value))}
+                onChange={(e) => handleWidthChange(Number(e.target.value))}
                 className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
               />
               <div className="flex justify-between text-xs mt-2">
@@ -458,7 +604,7 @@ export default function MasquagePDF() {
               className="hidden"
             />
 
-            {/* Aperçu réduit sans bandeau */}
+            {/* Aperçu réduit sans bandeau avec zones rouges */}
             {previewMode && previewImage && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <div className="relative bg-gray-100 rounded-lg overflow-hidden mx-auto" style={{ maxWidth: '300px' }}>
@@ -512,7 +658,7 @@ export default function MasquagePDF() {
                         return (
                           <div
                             key={zone}
-                            className="absolute bg-green-500 bg-opacity-30 border-2 border-green-500 border-dashed"
+                            className="absolute bg-red-500 bg-opacity-30 border-2 border-red-500 border-dashed"
                             style={overlayStyle}
                           />
                         );
@@ -536,11 +682,11 @@ export default function MasquagePDF() {
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">2</span>
-              <span>Ajustez la hauteur (0-29.7 cm) et la largeur (0-21 cm) des zones à masquer. Utilisez les boutons ⊙ pour recentrer automatiquement.</span>
+              <span>Ajustez la hauteur (0-29.7 cm) et la largeur (0-21 cm) des zones à masquer. Cliquez sur les valeurs pour les modifier manuellement. Utilisez les boutons ⊙ pour recentrer automatiquement.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">3</span>
-              <span>Activez la prévisualisation pour voir un aperçu avant téléchargement</span>
+              <span>Activez la prévisualisation dans l'en-tête pour voir un aperçu avant téléchargement</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">4</span>
