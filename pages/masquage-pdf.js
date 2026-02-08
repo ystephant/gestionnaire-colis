@@ -7,8 +7,8 @@ export default function MasquagePDF() {
   const { darkMode, toggleDarkMode } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [maskHeight, setMaskHeight] = useState(420.87);
-  const [maskWidth, setMaskWidth] = useState(297.5);
+  const [maskHeight, setMaskHeight] = useState(420.87); // 14.85 cm
+  const [maskWidth, setMaskWidth] = useState(297.64); // 10.5 cm exactement
   const [selectedZones, setSelectedZones] = useState(['top-left', 'top-right']);
   const [previewMode, setPreviewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
@@ -27,6 +27,17 @@ export default function MasquagePDF() {
   // Déclarer les fonctions de confirmation avant le useEffect
   const confirmHeightEditRef = useRef(null);
   const confirmWidthEditRef = useRef(null);
+
+  // Calculer les limites maximales - toujours les mêmes
+  const getMaxWidth = () => {
+    // Toujours 21 cm (595 points) quelle que soit la configuration
+    return 595;
+  };
+
+  const getMaxHeight = () => {
+    // Toujours 29.7 cm (842 points) quelle que soit la configuration
+    return 842;
+  };
 
   // Gestion de l'édition manuelle de la hauteur
   const startEditingHeight = () => {
@@ -157,17 +168,6 @@ export default function MasquagePDF() {
     setIsProcessingBatch(false);
     // Réinitialiser l'input
     e.target.value = '';
-  };
-
-  // Calculer les limites maximales - toujours les mêmes
-  const getMaxWidth = () => {
-    // Toujours 21 cm (595 points) quelle que soit la configuration
-    return 595;
-  };
-
-  const getMaxHeight = () => {
-    // Toujours 29.7 cm (842 points) quelle que soit la configuration
-    return 842;
   };
 
   const toggleZone = (zone) => {
@@ -649,12 +649,24 @@ export default function MasquagePDF() {
                 </h3>
                 <div className="relative bg-gray-100 rounded-lg overflow-hidden mx-auto w-full sm:max-w-xs">
                   <div className="relative w-full" style={{ paddingBottom: '141.4%' }}>
-                    <iframe
-                      src={`${previewImage}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                    {/* Utiliser object pour meilleure compatibilité mobile */}
+                    <object
+                      data={`${previewImage}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                      type="application/pdf"
                       className="absolute inset-0 w-full h-full rounded border-2 border-gray-300"
-                      title="Preview PDF"
                       style={{ pointerEvents: 'none' }}
-                    />
+                    >
+                      {/* Fallback pour mobiles qui ne supportent pas l'affichage PDF */}
+                      <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
+                        <div className="text-center p-4">
+                          <svg className="w-16 h-16 mx-auto mb-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd"/>
+                          </svg>
+                          <p className="text-sm text-gray-600">Aperçu PDF prêt</p>
+                          <p className="text-xs text-gray-500 mt-1">Le masquage sera appliqué</p>
+                        </div>
+                      </div>
+                    </object>
                     <div className="absolute inset-0 pointer-events-none z-10">
                       {selectedZones.map(zone => {
                         const heightPercent = (maskHeight / 842) * 100;
