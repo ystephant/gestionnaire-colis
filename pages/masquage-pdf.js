@@ -159,28 +159,14 @@ export default function MasquagePDF() {
     e.target.value = '';
   };
 
-  // Calculer les limites maximales en fonction des zones sélectionnées
+  // Calculer les limites maximales - toujours les mêmes
   const getMaxWidth = () => {
-    const hasTopZones = selectedZones.includes('top-left') && selectedZones.includes('top-right');
-    const hasBottomZones = selectedZones.includes('bottom-left') && selectedZones.includes('bottom-right');
-    
-    // Si deux zones sur la même ligne, limite à 10.5 cm (297.64 points)
-    if (hasTopZones || hasBottomZones) {
-      return 297.64;
-    }
-    // Sinon, limite normale de 21 cm (595 points)
+    // Toujours 21 cm (595 points) quelle que soit la configuration
     return 595;
   };
 
   const getMaxHeight = () => {
-    const hasLeftZones = selectedZones.includes('top-left') && selectedZones.includes('bottom-left');
-    const hasRightZones = selectedZones.includes('top-right') && selectedZones.includes('bottom-right');
-    
-    // Si deux zones sur la même colonne, limite à 14.85 cm (420.87 points)
-    if (hasLeftZones || hasRightZones) {
-      return 420.87;
-    }
-    // Sinon, limite normale de 29.7 cm (842 points)
+    // Toujours 29.7 cm (842 points) quelle que soit la configuration
     return 842;
   };
 
@@ -430,47 +416,48 @@ export default function MasquagePDF() {
                 </label>
               </div>
               
-              {/* Feuille A4 réduite de moitié avec couleur rouge */}
-              <div className="relative bg-white rounded-lg shadow-inner mx-auto" 
-                   style={{ 
-                     width: '148.5px',
-                     height: '210px'
-                   }}>
-                {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((zone) => {
-                  const isSelected = selectedZones.includes(zone);
-                  
-                  const heightPx = (maskHeight / 842) * 210;
-                  const widthPx = (maskWidth / 595) * 148.5;
-                  
-                  let positionStyles = {};
-                  switch(zone) {
-                    case 'top-left':
-                      positionStyles = { top: 0, left: 0, width: `${widthPx}px`, height: `${heightPx}px` };
-                      break;
-                    case 'top-right':
-                      positionStyles = { top: 0, right: 0, width: `${widthPx}px`, height: `${heightPx}px` };
-                      break;
-                    case 'bottom-left':
-                      positionStyles = { bottom: 0, left: 0, width: `${widthPx}px`, height: `${heightPx}px` };
-                      break;
-                    case 'bottom-right':
-                      positionStyles = { bottom: 0, right: 0, width: `${widthPx}px`, height: `${heightPx}px` };
-                      break;
-                  }
-                  
-                  return (
-                    <div
-                      key={zone}
-                      onClick={() => toggleZone(zone)}
-                      className={`absolute cursor-pointer transition-all duration-300 border-2 ${
-                        isSelected 
-                          ? 'bg-red-500 bg-opacity-40 border-red-600 border-dashed' 
-                          : 'bg-gray-200 bg-opacity-20 border-gray-400 border-dashed hover:bg-gray-300 hover:bg-opacity-30'
-                      }`}
-                      style={positionStyles}
-                    />
-                  );
-                })}
+              {/* Feuille A4 réduite de moitié avec couleur rouge - responsive */}
+              <div className="flex justify-center">
+                <div className="relative bg-white rounded-lg shadow-inner w-40 sm:w-[148.5px]" 
+                     style={{ 
+                       aspectRatio: '1 / 1.414'
+                     }}>
+                  {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((zone) => {
+                    const isSelected = selectedZones.includes(zone);
+                    
+                    const heightPercent = (maskHeight / 842) * 100;
+                    const widthPercent = (maskWidth / 595) * 100;
+                    
+                    let positionStyles = {};
+                    switch(zone) {
+                      case 'top-left':
+                        positionStyles = { top: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                        break;
+                      case 'top-right':
+                        positionStyles = { top: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                        break;
+                      case 'bottom-left':
+                        positionStyles = { bottom: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                        break;
+                      case 'bottom-right':
+                        positionStyles = { bottom: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
+                        break;
+                    }
+                    
+                    return (
+                      <div
+                        key={zone}
+                        onClick={() => toggleZone(zone)}
+                        className={`absolute cursor-pointer transition-all duration-300 border-2 ${
+                          isSelected 
+                            ? 'bg-red-500 bg-opacity-40 border-red-600 border-dashed' 
+                            : 'bg-gray-200 bg-opacity-20 border-gray-400 border-dashed hover:bg-gray-300 hover:bg-opacity-30'
+                        }`}
+                        style={positionStyles}
+                      />
+                    );
+                  })}
+                </div>
               </div>
               
               <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'} text-center mt-3 sm:mt-4`}>
@@ -657,12 +644,16 @@ export default function MasquagePDF() {
             {/* Aperçu réduit sans bandeau avec zones rouges */}
             {previewMode && previewImage && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
-                <div className="relative bg-gray-100 rounded-lg overflow-hidden mx-auto" style={{ maxWidth: '300px' }}>
+                <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  Aperçu
+                </h3>
+                <div className="relative bg-gray-100 rounded-lg overflow-hidden mx-auto w-full sm:max-w-xs">
                   <div className="relative w-full" style={{ paddingBottom: '141.4%' }}>
                     <iframe
-                      src={`${previewImage}#toolbar=0&navpanes=0&scrollbar=0`}
+                      src={`${previewImage}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
                       className="absolute inset-0 w-full h-full rounded border-2 border-gray-300"
                       title="Preview PDF"
+                      style={{ pointerEvents: 'none' }}
                     />
                     <div className="absolute inset-0 pointer-events-none z-10">
                       {selectedZones.map(zone => {
