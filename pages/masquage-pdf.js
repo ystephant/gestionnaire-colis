@@ -11,8 +11,8 @@ export default function MasquagePDF() {
   const [maskWidth, setMaskWidth] = useState(297.64); // 10.5 cm exactement
   const [selectedZones, setSelectedZones] = useState(['top-left', 'top-right']);
   const [previewMode, setPreviewMode] = useState(false);
-  const [previewImage, setPreviewImage] = useState(null);
-  const [originalPdfFile, setOriginalPdfFile] = useState(null); // NOUVEAU: stocker le fichier original
+  const [previewCanvas, setPreviewCanvas] = useState(null); // Canvas pour mobile
+  const [originalPdfFile, setOriginalPdfFile] = useState(null);
   const [currentFileName, setCurrentFileName] = useState('');
   const [editingHeight, setEditingHeight] = useState(false);
   const [editingWidth, setEditingWidth] = useState(false);
@@ -23,6 +23,7 @@ export default function MasquagePDF() {
   const directoryInputRef = useRef(null);
   const heightInputRef = useRef(null);
   const widthInputRef = useRef(null);
+  const canvasRef = useRef(null);
 
   // Déclarer les fonctions de confirmation avant le useEffect
   const confirmHeightEditRef = useRef(null);
@@ -30,12 +31,10 @@ export default function MasquagePDF() {
 
   // Calculer les limites maximales - toujours les mêmes
   const getMaxWidth = () => {
-    // Toujours 21 cm (595 points) quelle que soit la configuration
     return 595;
   };
 
   const getMaxHeight = () => {
-    // Toujours 29.7 cm (842 points) quelle que soit la configuration
     return 842;
   };
 
@@ -46,7 +45,6 @@ export default function MasquagePDF() {
   };
 
   const confirmHeightEdit = () => {
-    // Accepter à la fois virgule et point comme séparateur décimal
     const normalizedValue = tempHeightValue.replace(',', '.');
     const newCm = parseFloat(normalizedValue);
     const maxCm = Math.round(getMaxHeight() / 28.35 * 100) / 100;
@@ -58,7 +56,6 @@ export default function MasquagePDF() {
     setEditingHeight(false);
   };
 
-  // Stocker la fonction dans la ref
   confirmHeightEditRef.current = confirmHeightEdit;
 
   const handleHeightInputKeyPress = (e) => {
@@ -78,7 +75,6 @@ export default function MasquagePDF() {
   };
 
   const confirmWidthEdit = () => {
-    // Accepter à la fois virgule et point comme séparateur décimal
     const normalizedValue = tempWidthValue.replace(',', '.');
     const newCm = parseFloat(normalizedValue);
     const maxCm = Math.round(getMaxWidth() / 28.35 * 100) / 100;
@@ -90,7 +86,6 @@ export default function MasquagePDF() {
     setEditingWidth(false);
   };
 
-  // Stocker la fonction dans la ref
   confirmWidthEditRef.current = confirmWidthEdit;
 
   const handleWidthInputKeyPress = (e) => {
@@ -145,7 +140,6 @@ export default function MasquagePDF() {
     if (files.length > 0) {
       await processPDF(files[0]);
     }
-    // Réinitialiser l'input pour permettre la sélection du même fichier
     e.target.value = '';
   };
 
@@ -159,14 +153,13 @@ export default function MasquagePDF() {
     }
 
     setIsProcessingBatch(true);
-    setPreviewMode(false); // Désactiver la prévisualisation en mode batch
+    setPreviewMode(false);
 
     for (const file of pdfFiles) {
       await processPDF(file, true);
     }
     
     setIsProcessingBatch(false);
-    // Réinitialiser l'input
     e.target.value = '';
   };
 
@@ -192,18 +185,16 @@ export default function MasquagePDF() {
     setMaskHeight(constrainedHeight);
   };
 
-  // Fonction pour recentrer la hauteur (14,85 cm = 420.87 points)
   const centerHeight = () => {
     handleHeightChange(420.87);
   };
 
-  // Fonction pour recentrer la largeur (10,5 cm = 297.64 points)
   const centerWidth = () => {
     handleWidthChange(297.64);
   };
 
-  // NOUVELLE FONCTION: Générer une image de prévisualisation pour mobile
-  const generatePreview = async (pdfDoc) => {
+  // Fonction pour générer un canvas à partir du PDF (pour mobile)
+  const generatePreviewCanvas = async (pdfDoc) => {
     try {
       const { PDFDocument } = await import('pdf-lib');
       
@@ -214,11 +205,40 @@ export default function MasquagePDF() {
       
       const pdfBytes = await tempDoc.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
       
-      setPreviewImage(url);
+      // Charger pdf.js
+      const pdfjsLib = await import('pdfjs-dist/webpack');
+      
+      // Convertir le blob en ArrayBuffer
+      const arrayBuffer = await blob.arrayBuffer();
+      
+      // Charger le PDF avec pdf.js
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      
+      // Obtenir la première page
+      const page = await pdf.getPage(1);
+      
+      // Préparer le canvas
+      const viewport = page.getViewport({ scale: 1.5 }); // Scale pour meilleure qualité
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      // Rendre la page
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+      };
+      
+      await page.render(renderContext).promise;
+      
+      // Convertir le canvas en data URL et le stocker
+      setPreviewCanvas(canvas.toDataURL());
+      
     } catch (error) {
-      console.error('Erreur lors de la génération de la preview:', error);
+      console.error('Erreur lors de la génération du canvas:', error);
     }
   };
 
@@ -232,19 +252,18 @@ export default function MasquagePDF() {
     setCurrentFileName(file.name);
 
     try {
-      const { PDFDocument, rgb } = await import('pdf-lib');
+      const { PDFDocument } = await import('pdf-lib');
       
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       
-      // MODIFIÉ: Stocker le fichier original pour pouvoir le retraiter plus tard
+      // CORRECTION 1 : Si prévisualisation activée, stocker le fichier et générer l'aperçu
       if (previewMode && !autoDownload) {
         setOriginalPdfFile(file);
-        await generatePreview(pdfDoc);
-      }
-      
-      // Si on est en mode auto-download (batch), traiter et télécharger immédiatement
-      if (autoDownload) {
+        await generatePreviewCanvas(pdfDoc);
+      } 
+      // CORRECTION 2 : Si pas de prévisualisation OU mode batch, télécharger directement
+      else {
         const processedBlob = await applyMasking(pdfDoc);
         downloadPDF(processedBlob, file.name);
       }
@@ -257,7 +276,7 @@ export default function MasquagePDF() {
     }
   };
 
-  // NOUVELLE FONCTION: Appliquer le masquage avec les valeurs actuelles
+  // Fonction pour appliquer le masquage avec les valeurs actuelles
   const applyMasking = async (pdfDoc) => {
     const { rgb } = await import('pdf-lib');
     const pages = pdfDoc.getPages();
@@ -330,7 +349,7 @@ export default function MasquagePDF() {
     URL.revokeObjectURL(url);
   };
 
-  // MODIFIÉ: Retraiter le PDF avec les valeurs actuelles avant de télécharger
+  // Retraiter le PDF avec les valeurs actuelles avant de télécharger
   const handleDownload = async () => {
     if (!originalPdfFile) return;
     
@@ -340,13 +359,13 @@ export default function MasquagePDF() {
       const arrayBuffer = await originalPdfFile.arrayBuffer();
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       
-      // Appliquer le masquage avec les valeurs ACTUELLES de maskHeight et maskWidth
+      // Appliquer le masquage avec les valeurs ACTUELLES
       const processedBlob = await applyMasking(pdfDoc);
       downloadPDF(processedBlob, currentFileName);
       
       // Réinitialiser après téléchargement
       setOriginalPdfFile(null);
-      setPreviewImage(null);
+      setPreviewCanvas(null);
     } catch (error) {
       console.error('Erreur lors du téléchargement:', error);
       alert('Erreur lors de la création du PDF masqué.');
@@ -358,7 +377,7 @@ export default function MasquagePDF() {
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} transition-colors duration-300`}>
       <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-6xl">
-        {/* En-tête original */}
+        {/* En-tête */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
@@ -441,15 +460,12 @@ export default function MasquagePDF() {
                 </label>
               </div>
               
-              {/* Feuille A4 réduite de moitié avec couleur rouge - responsive */}
+              {/* Feuille A4 */}
               <div className="flex justify-center">
                 <div className="relative bg-white rounded-lg shadow-inner w-40 sm:w-[148.5px]" 
-                     style={{ 
-                       aspectRatio: '1 / 1.414'
-                     }}>
+                     style={{ aspectRatio: '1 / 1.414' }}>
                   {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((zone) => {
                     const isSelected = selectedZones.includes(zone);
-                    
                     const heightPercent = (maskHeight / 842) * 100;
                     const widthPercent = (maskWidth / 595) * 100;
                     
@@ -490,6 +506,7 @@ export default function MasquagePDF() {
               </p>
             </div>
 
+            {/* Hauteur */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
@@ -535,6 +552,7 @@ export default function MasquagePDF() {
               </div>
             </div>
 
+            {/* Largeur */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <label className={`block text-sm sm:text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
@@ -580,7 +598,7 @@ export default function MasquagePDF() {
               </div>
             </div>
 
-            {/* Bouton de téléchargement sous la largeur si preview activée */}
+            {/* Bouton de téléchargement */}
             {previewMode && originalPdfFile && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <button
@@ -595,6 +613,7 @@ export default function MasquagePDF() {
           </div>
 
           <div className="space-y-4 sm:space-y-6">
+            {/* Zone de dépôt */}
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -667,20 +686,19 @@ export default function MasquagePDF() {
               className="hidden"
             />
 
-            {/* Aperçu amélioré pour mobile et desktop */}
-            {previewMode && previewImage && (
+            {/* Aperçu avec Canvas */}
+            {previewMode && previewCanvas && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <h3 className={`text-base sm:text-lg font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   Aperçu
                 </h3>
                 <div className="relative bg-gray-100 rounded-lg overflow-hidden mx-auto w-full sm:max-w-xs">
                   <div className="relative w-full" style={{ paddingBottom: '141.4%' }}>
-                    {/* Iframe pour meilleure compatibilité mobile */}
-                    <iframe
-                      src={`${previewImage}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-                      className="absolute inset-0 w-full h-full rounded border-2 border-gray-300"
-                      style={{ pointerEvents: 'none' }}
-                      title="Aperçu PDF"
+                    {/* Image générée depuis le canvas */}
+                    <img
+                      src={previewCanvas}
+                      alt="Aperçu PDF"
+                      className="absolute inset-0 w-full h-full object-contain rounded border-2 border-gray-300"
                     />
                     {/* Overlays des zones masquées */}
                     <div className="absolute inset-0 pointer-events-none z-10">
@@ -691,36 +709,16 @@ export default function MasquagePDF() {
                         let overlayStyle = {};
                         switch(zone) {
                           case 'top-left':
-                            overlayStyle = { 
-                              top: 0, 
-                              left: 0, 
-                              width: `${widthPercent}%`, 
-                              height: `${heightPercent}%` 
-                            };
+                            overlayStyle = { top: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                           case 'top-right':
-                            overlayStyle = { 
-                              top: 0, 
-                              right: 0, 
-                              width: `${widthPercent}%`, 
-                              height: `${heightPercent}%` 
-                            };
+                            overlayStyle = { top: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                           case 'bottom-left':
-                            overlayStyle = { 
-                              bottom: 0, 
-                              left: 0, 
-                              width: `${widthPercent}%`, 
-                              height: `${heightPercent}%` 
-                            };
+                            overlayStyle = { bottom: 0, left: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                           case 'bottom-right':
-                            overlayStyle = { 
-                              bottom: 0, 
-                              right: 0, 
-                              width: `${widthPercent}%`, 
-                              height: `${heightPercent}%` 
-                            };
+                            overlayStyle = { bottom: 0, right: 0, width: `${widthPercent}%`, height: `${heightPercent}%` };
                             break;
                         }
                         
@@ -740,6 +738,7 @@ export default function MasquagePDF() {
           </div>
         </div>
 
+        {/* Instructions */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 mt-4 sm:mt-6 transition-colors duration-300`}>
           <h3 className={`text-base sm:text-lg font-bold mb-3 sm:mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
             📋 Comment ça marche ?
@@ -755,7 +754,7 @@ export default function MasquagePDF() {
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">3</span>
-              <span>Activez la prévisualisation dans l'en-tête pour voir un aperçu avant téléchargement</span>
+              <span>Activez la prévisualisation dans l'en-tête pour voir un aperçu avant téléchargement, ou laissez-la désactivée pour un téléchargement automatique</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">4</span>
