@@ -7,7 +7,7 @@ export default function MasquagePDF() {
   const { darkMode, toggleDarkMode } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [maskHeight, setMaskHeight] = useState(420);
+  const [maskHeight, setMaskHeight] = useState(420.87);
   const [maskWidth, setMaskWidth] = useState(297.5);
   const [selectedZones, setSelectedZones] = useState(['top-left', 'top-right']);
   const [previewMode, setPreviewMode] = useState(false);
@@ -75,11 +75,13 @@ export default function MasquagePDF() {
     const hasRightZones = selectedZones.includes('top-right') && selectedZones.includes('bottom-right');
     
     // Vérification horizontale (largeur > 10.5 cm = 297.64 points)
+    // On ne bloque que si deux zones sont effectivement sur la même ligne
     if ((hasTopZones || hasBottomZones) && width > 297.64) {
       return 'Les zones horizontales se croisent ! La largeur ne peut pas dépasser 10.5 cm avec deux zones sur la même ligne.';
     }
     
     // Vérification verticale (hauteur > 14.85 cm = 420.87 points)
+    // On ne bloque que si deux zones sont effectivement sur la même colonne
     if ((hasLeftZones || hasRightZones) && height > 420.87) {
       return 'Les zones verticales se croisent ! La hauteur ne peut pas dépasser 14.85 cm avec deux zones sur la même colonne.';
     }
@@ -134,7 +136,7 @@ export default function MasquagePDF() {
   // Gestion de l'édition manuelle de la hauteur
   const startEditingHeight = () => {
     setEditingHeight(true);
-    setTempHeightValue(Math.round(maskHeight / 28.35 * 10) / 10);
+    setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString());
   };
 
   const confirmHeightEdit = () => {
@@ -142,14 +144,26 @@ export default function MasquagePDF() {
     if (!isNaN(newCm) && newCm >= 0 && newCm <= 29.7) {
       const newPoints = newCm * 28.35;
       handleHeightChange(newPoints);
+    } else {
+      // Si la valeur n'est pas valide, on garde l'ancienne valeur
+      setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString());
     }
     setEditingHeight(false);
+  };
+
+  const handleHeightInputKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      confirmHeightEdit();
+    } else if (e.key === 'Escape') {
+      setEditingHeight(false);
+      setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString());
+    }
   };
 
   // Gestion de l'édition manuelle de la largeur
   const startEditingWidth = () => {
     setEditingWidth(true);
-    setTempWidthValue(Math.round(maskWidth / 28.35 * 10) / 10);
+    setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString());
   };
 
   const confirmWidthEdit = () => {
@@ -157,8 +171,20 @@ export default function MasquagePDF() {
     if (!isNaN(newCm) && newCm >= 0 && newCm <= 21) {
       const newPoints = newCm * 28.35;
       handleWidthChange(newPoints);
+    } else {
+      // Si la valeur n'est pas valide, on garde l'ancienne valeur
+      setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString());
     }
     setEditingWidth(false);
+  };
+
+  const handleWidthInputKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      confirmWidthEdit();
+    } else if (e.key === 'Escape') {
+      setEditingWidth(false);
+      setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString());
+    }
   };
 
   const generatePreview = async (pdfDoc) => {
@@ -436,13 +462,13 @@ export default function MasquagePDF() {
                   {editingHeight ? (
                     <input
                       type="number"
-                      step="0.1"
+                      step="0.01"
                       min="0"
                       max="29.7"
                       value={tempHeightValue}
                       onChange={(e) => setTempHeightValue(e.target.value)}
                       onBlur={confirmHeightEdit}
-                      onKeyPress={(e) => e.key === 'Enter' && confirmHeightEdit()}
+                      onKeyDown={handleHeightInputKeyPress}
                       className="ml-2 w-20 px-2 py-1 border-2 border-red-500 rounded text-red-600 focus:outline-none focus:border-red-700"
                       autoFocus
                     />
@@ -451,7 +477,7 @@ export default function MasquagePDF() {
                       className="text-red-600 dark:text-red-400 cursor-pointer hover:underline ml-2"
                       onClick={startEditingHeight}
                     >
-                      {Math.round(maskHeight / 28.35 * 10) / 10} cm
+                      {Math.round(maskHeight / 28.35 * 100) / 100} cm
                     </span>
                   )}
                 </label>
@@ -484,13 +510,13 @@ export default function MasquagePDF() {
                   {editingWidth ? (
                     <input
                       type="number"
-                      step="0.1"
+                      step="0.01"
                       min="0"
                       max="21"
                       value={tempWidthValue}
                       onChange={(e) => setTempWidthValue(e.target.value)}
                       onBlur={confirmWidthEdit}
-                      onKeyPress={(e) => e.key === 'Enter' && confirmWidthEdit()}
+                      onKeyDown={handleWidthInputKeyPress}
                       className="ml-2 w-20 px-2 py-1 border-2 border-red-500 rounded text-red-600 focus:outline-none focus:border-red-700"
                       autoFocus
                     />
@@ -499,7 +525,7 @@ export default function MasquagePDF() {
                       className="text-red-600 dark:text-red-400 cursor-pointer hover:underline ml-2"
                       onClick={startEditingWidth}
                     >
-                      {Math.round(maskWidth / 28.35 * 10) / 10} cm
+                      {Math.round(maskWidth / 28.35 * 100) / 100} cm
                     </span>
                   )}
                 </label>
