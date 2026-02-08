@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -21,6 +21,93 @@ export default function MasquagePDF() {
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
+  const heightInputRef = useRef(null);
+  const widthInputRef = useRef(null);
+
+  // Déclarer les fonctions de confirmation avant le useEffect
+  const confirmHeightEditRef = useRef(null);
+  const confirmWidthEditRef = useRef(null);
+
+  // Gestion de l'édition manuelle de la hauteur
+  const startEditingHeight = () => {
+    setEditingHeight(true);
+    setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString().replace('.', ','));
+  };
+
+  const confirmHeightEdit = () => {
+    // Accepter à la fois virgule et point comme séparateur décimal
+    const normalizedValue = tempHeightValue.replace(',', '.');
+    const newCm = parseFloat(normalizedValue);
+    const maxCm = Math.round(getMaxHeight() / 28.35 * 100) / 100;
+    
+    if (!isNaN(newCm) && newCm >= 0 && newCm <= maxCm) {
+      const newPoints = newCm * 28.35;
+      setMaskHeight(newPoints);
+    }
+    setEditingHeight(false);
+  };
+
+  // Stocker la fonction dans la ref
+  confirmHeightEditRef.current = confirmHeightEdit;
+
+  const handleHeightInputKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmHeightEdit();
+    } else if (e.key === 'Escape') {
+      setEditingHeight(false);
+      setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString().replace('.', ','));
+    }
+  };
+
+  // Gestion de l'édition manuelle de la largeur
+  const startEditingWidth = () => {
+    setEditingWidth(true);
+    setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString().replace('.', ','));
+  };
+
+  const confirmWidthEdit = () => {
+    // Accepter à la fois virgule et point comme séparateur décimal
+    const normalizedValue = tempWidthValue.replace(',', '.');
+    const newCm = parseFloat(normalizedValue);
+    const maxCm = Math.round(getMaxWidth() / 28.35 * 100) / 100;
+    
+    if (!isNaN(newCm) && newCm >= 0 && newCm <= maxCm) {
+      const newPoints = newCm * 28.35;
+      setMaskWidth(newPoints);
+    }
+    setEditingWidth(false);
+  };
+
+  // Stocker la fonction dans la ref
+  confirmWidthEditRef.current = confirmWidthEdit;
+
+  const handleWidthInputKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmWidthEdit();
+    } else if (e.key === 'Escape') {
+      setEditingWidth(false);
+      setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString().replace('.', ','));
+    }
+  };
+
+  // Gérer les clics extérieurs pour fermer les inputs d'édition
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (heightInputRef.current && !heightInputRef.current.contains(event.target) && editingHeight) {
+        confirmHeightEditRef.current();
+      }
+      if (widthInputRef.current && !widthInputRef.current.contains(event.target) && editingWidth) {
+        confirmWidthEditRef.current();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [editingHeight, editingWidth]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -103,15 +190,6 @@ export default function MasquagePDF() {
         ? prev.filter(z => z !== zone)
         : [...prev, zone];
       
-      // Ajuster automatiquement les dimensions si nécessaire après changement de zones
-      // Cela évite les chevauchements sans bloquer l'utilisateur
-      setTimeout(() => {
-        const maxW = getMaxWidth();
-        const maxH = getMaxHeight();
-        if (maskWidth > maxW) setMaskWidth(maxW);
-        if (maskHeight > maxH) setMaskHeight(maxH);
-      }, 0);
-      
       return newZones;
     });
   };
@@ -136,60 +214,6 @@ export default function MasquagePDF() {
   // Fonction pour recentrer la largeur (10,5 cm = 297.64 points)
   const centerWidth = () => {
     handleWidthChange(297.64);
-  };
-
-  // Gestion de l'édition manuelle de la hauteur
-  const startEditingHeight = () => {
-    setEditingHeight(true);
-    setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString());
-  };
-
-  const confirmHeightEdit = () => {
-    const newCm = parseFloat(tempHeightValue);
-    if (!isNaN(newCm) && newCm >= 0 && newCm <= 29.7) {
-      const newPoints = newCm * 28.35;
-      handleHeightChange(newPoints);
-    } else {
-      // Si la valeur n'est pas valide, on garde l'ancienne valeur
-      setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString());
-    }
-    setEditingHeight(false);
-  };
-
-  const handleHeightInputKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      confirmHeightEdit();
-    } else if (e.key === 'Escape') {
-      setEditingHeight(false);
-      setTempHeightValue((Math.round(maskHeight / 28.35 * 100) / 100).toString());
-    }
-  };
-
-  // Gestion de l'édition manuelle de la largeur
-  const startEditingWidth = () => {
-    setEditingWidth(true);
-    setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString());
-  };
-
-  const confirmWidthEdit = () => {
-    const newCm = parseFloat(tempWidthValue);
-    if (!isNaN(newCm) && newCm >= 0 && newCm <= 21) {
-      const newPoints = newCm * 28.35;
-      handleWidthChange(newPoints);
-    } else {
-      // Si la valeur n'est pas valide, on garde l'ancienne valeur
-      setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString());
-    }
-    setEditingWidth(false);
-  };
-
-  const handleWidthInputKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      confirmWidthEdit();
-    } else if (e.key === 'Escape') {
-      setEditingWidth(false);
-      setTempWidthValue((Math.round(maskWidth / 28.35 * 100) / 100).toString());
-    }
   };
 
   const generatePreview = async (pdfDoc) => {
@@ -460,13 +484,10 @@ export default function MasquagePDF() {
                   Hauteur de la zone : 
                   {editingHeight ? (
                     <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="29.7"
+                      ref={heightInputRef}
+                      type="text"
                       value={tempHeightValue}
                       onChange={(e) => setTempHeightValue(e.target.value)}
-                      onBlur={confirmHeightEdit}
                       onKeyDown={handleHeightInputKeyPress}
                       className="ml-2 w-20 px-2 py-1 border-2 border-red-500 rounded text-red-600 focus:outline-none focus:border-red-700"
                       autoFocus
@@ -476,7 +497,7 @@ export default function MasquagePDF() {
                       className="text-red-600 dark:text-red-400 cursor-pointer hover:underline ml-2"
                       onClick={startEditingHeight}
                     >
-                      {Math.round(maskHeight / 28.35 * 100) / 100} cm
+                      {(Math.round(maskHeight / 28.35 * 100) / 100).toString().replace('.', ',')} cm
                     </span>
                   )}
                 </label>
@@ -508,13 +529,10 @@ export default function MasquagePDF() {
                   Largeur de la zone : 
                   {editingWidth ? (
                     <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="21"
+                      ref={widthInputRef}
+                      type="text"
                       value={tempWidthValue}
                       onChange={(e) => setTempWidthValue(e.target.value)}
-                      onBlur={confirmWidthEdit}
                       onKeyDown={handleWidthInputKeyPress}
                       className="ml-2 w-20 px-2 py-1 border-2 border-red-500 rounded text-red-600 focus:outline-none focus:border-red-700"
                       autoFocus
@@ -524,7 +542,7 @@ export default function MasquagePDF() {
                       className="text-red-600 dark:text-red-400 cursor-pointer hover:underline ml-2"
                       onClick={startEditingWidth}
                     >
-                      {Math.round(maskWidth / 28.35 * 100) / 100} cm
+                      {(Math.round(maskWidth / 28.35 * 100) / 100).toString().replace('.', ',')} cm
                     </span>
                   )}
                 </label>
