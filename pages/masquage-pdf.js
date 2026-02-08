@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -18,9 +18,15 @@ export default function MasquagePDF() {
   const [editingWidth, setEditingWidth] = useState(false);
   const [tempHeightValue, setTempHeightValue] = useState('');
   const [tempWidthValue, setTempWidthValue] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
+
+  // Réinitialiser le blob traité quand les paramètres changent
+  useEffect(() => {
+    if (processedPdfBlob) {
+      setProcessedPdfBlob(null);
+    }
+  }, [maskHeight, maskWidth, selectedZones]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -67,59 +73,21 @@ export default function MasquagePDF() {
     e.target.value = '';
   };
 
-  // Vérifier si deux zones se croisent
-  const checkZonesOverlap = (width, height) => {
-    const hasTopZones = selectedZones.includes('top-left') && selectedZones.includes('top-right');
-    const hasBottomZones = selectedZones.includes('bottom-left') && selectedZones.includes('bottom-right');
-    const hasLeftZones = selectedZones.includes('top-left') && selectedZones.includes('bottom-left');
-    const hasRightZones = selectedZones.includes('top-right') && selectedZones.includes('bottom-right');
-    
-    // Vérification horizontale (largeur > 10.5 cm = 297.64 points)
-    // On ne bloque que si deux zones sont effectivement sur la même ligne
-    if ((hasTopZones || hasBottomZones) && width > 297.64) {
-      return 'Les zones horizontales se croisent ! La largeur ne peut pas dépasser 10.5 cm avec deux zones sur la même ligne.';
-    }
-    
-    // Vérification verticale (hauteur > 14.85 cm = 420.87 points)
-    // On ne bloque que si deux zones sont effectivement sur la même colonne
-    if ((hasLeftZones || hasRightZones) && height > 420.87) {
-      return 'Les zones verticales se croisent ! La hauteur ne peut pas dépasser 14.85 cm avec deux zones sur la même colonne.';
-    }
-    
-    return null;
-  };
-
   const toggleZone = (zone) => {
     setSelectedZones(prev => {
       const newZones = prev.includes(zone) 
         ? prev.filter(z => z !== zone)
         : [...prev, zone];
       
-      // Vérifier après le changement de zones
-      const error = checkZonesOverlap(maskWidth, maskHeight);
-      setErrorMessage(error || '');
-      
       return newZones;
     });
   };
 
   const handleWidthChange = (newWidth) => {
-    const error = checkZonesOverlap(newWidth, maskHeight);
-    if (error) {
-      setErrorMessage(error);
-      return;
-    }
-    setErrorMessage('');
     setMaskWidth(newWidth);
   };
 
   const handleHeightChange = (newHeight) => {
-    const error = checkZonesOverlap(maskWidth, newHeight);
-    if (error) {
-      setErrorMessage(error);
-      return;
-    }
-    setErrorMessage('');
     setMaskHeight(newHeight);
   };
 
@@ -307,11 +275,29 @@ export default function MasquagePDF() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    if (!currentFileName) {
+      alert('Veuillez d\'abord charger un fichier PDF');
+      return;
+    }
+
+    // Si le blob existe et que les paramètres n'ont pas changé, on télécharge directement
     if (processedPdfBlob) {
       downloadPDF(processedPdfBlob, currentFileName);
-      setProcessedPdfBlob(null);
-      setPreviewImage(null);
+      return;
+    }
+
+    // Sinon, on retraite le fichier avec les paramètres actuels
+    // On récupère le fichier depuis l'input
+    const fileInput = fileInputRef.current;
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+      await processPDF(fileInput.files[0], false);
+      // Après le traitement, le blob sera créé et on peut télécharger
+      setTimeout(() => {
+        if (processedPdfBlob) {
+          downloadPDF(processedPdfBlob, currentFileName);
+        }
+      }, 500);
     }
   };
 
@@ -347,21 +333,6 @@ export default function MasquagePDF() {
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={previewMode}
-                  onChange={(e) => setPreviewMode(e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
-                />
-                <span className={`text-xs sm:text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} hidden sm:inline`}>
-                  Prévisualisation
-                </span>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="sm:hidden">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </label>
               <button
                 onClick={toggleDarkMode}
                 className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 flex-shrink-0 ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
@@ -387,18 +358,6 @@ export default function MasquagePDF() {
             </div>
           </div>
         </div>
-
-        {/* Message d'erreur */}
-        {errorMessage && (
-          <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded-lg shadow-md">
-            <div className="flex items-center">
-              <svg className="w-6 h-6 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
-              </svg>
-              <p className="font-semibold">{errorMessage}</p>
-            </div>
-          </div>
-        )}
 
         <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
           <div className="space-y-4 sm:space-y-6">
@@ -453,6 +412,25 @@ export default function MasquagePDF() {
               <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'} text-center mt-3 sm:mt-4`}>
                 Cliquez sur les coins pour sélectionner les zones à masquer
               </p>
+
+              {/* Bouton de prévisualisation déplacé ici */}
+              <div className="mt-4">
+                <label className="flex items-center gap-2 cursor-pointer justify-center">
+                  <input
+                    type="checkbox"
+                    checked={previewMode}
+                    onChange={(e) => setPreviewMode(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Activer la prévisualisation
+                  </span>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </label>
+              </div>
             </div>
 
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
@@ -552,7 +530,7 @@ export default function MasquagePDF() {
             </div>
 
             {/* Bouton de téléchargement sous la largeur si preview activée */}
-            {previewMode && processedPdfBlob && (
+            {previewMode && (
               <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <button
                   onClick={handleDownload}
@@ -712,7 +690,7 @@ export default function MasquagePDF() {
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">3</span>
-              <span>Activez la prévisualisation dans l'en-tête pour voir un aperçu avant téléchargement</span>
+              <span>Activez la prévisualisation dans la section "Zones à masquer" pour voir un aperçu avant téléchargement</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0 mt-0.5">4</span>
