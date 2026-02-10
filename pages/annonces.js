@@ -24,7 +24,8 @@ export default function GenerateurAnnonces() {
   const [rayures, setRayures] = useState('Bon état');
   const [aspectSecondaire, setAspectSecondaire] = useState(false);
   const [rayures2, setRayures2] = useState('Bon état');
-  const [lot, setLot] = useState('Non');
+  const [extension, setExtension] = useState(false);
+  const [lot, setLot] = useState(false);
   const [vintedInfo, setVintedInfo] = useState(true);
   const [noHand, setNoHand] = useState(false);
   const [preferShipping, setPreferShipping] = useState(false);
@@ -57,7 +58,7 @@ export default function GenerateurAnnonces() {
 
   useEffect(() => {
     genererDescription();
-  }, [nomJeu, prefixSociete, etatMateriel, blister, complet, reglesFr, rayures, aspectSecondaire, rayures2, lot, vintedInfo, noHand, preferShipping, elementsManquants]);
+  }, [nomJeu, prefixSociete, etatMateriel, blister, complet, reglesFr, rayures, aspectSecondaire, rayures2, extension, lot, vintedInfo, noHand, preferShipping, elementsManquants]);
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
@@ -138,13 +139,17 @@ export default function GenerateurAnnonces() {
       }
     }
 
+    if (extension) {
+      desc += '\n🚩 Attention, il s\'agit d\'une extension. Je ne vends pas le jeu de base qui est nécessaire pour jouer.';
+    }
+
+    if (lot) {
+      desc += '\n🚩 Pas de vente au détail, vente du lot uniquement.';
+    }
+
     if (vintedInfo) {
       desc += '\n🚩 Pas d\'envoi par Vinted GO.';
       desc += '\n✨ Toutes les infos concernant mes ventes (prix, envois, offres…) sont déjà précisées sur mon profil.\nUn coup d\'œil rapide devrait répondre à la plupart de vos questions 😉.';
-    }
-
-    if (lot === 'Oui') {
-      desc += '\nVendu en lot uniquement.';
     }
 
     if (noHand) {
@@ -265,6 +270,24 @@ export default function GenerateurAnnonces() {
                     className="w-4 h-4 text-emerald-600"
                   />
                   <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Ajouter un aspect extérieur secondaire</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={extension}
+                    onChange={(e) => setExtension(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600"
+                  />
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Extension</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={lot}
+                    onChange={(e) => setLot(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600"
+                  />
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Lot</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -461,25 +484,6 @@ export default function GenerateurAnnonces() {
                   </select>
                 </div>
               )}
-
-              {/* Vendu en lot */}
-              <div>
-                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
-                  Vendu en lot :
-                </label>
-                <select
-                  value={lot}
-                  onChange={(e) => setLot(e.target.value)}
-                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
-                    darkMode 
-                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
-                      : 'bg-white border-gray-200 text-gray-900'
-                  }`}
-                >
-                  <option value="Non">Non</option>
-                  <option value="Oui">Oui</option>
-                </select>
-              </div>
             </div>
           </div>
 
