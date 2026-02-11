@@ -62,13 +62,36 @@ export default function SAVJeux() {
     if (!savedUsername) return;
     
     try {
-      const { data, error } = await supabase
-        .from('games')
-        .select('id, name')
-        .order('name');
+      // Récupérer tous les jeux depuis les transactions (achats + ventes)
+      const { data: buys, error: buyError } = await supabase
+        .from('transactions')
+        .select('game_name')
+        .eq('user_id', savedUsername)
+        .not('game_name', 'is', null);
 
-      if (error) throw error;
-      setGameSuggestions(data || []);
+      const { data: sells, error: sellError } = await supabase
+        .from('transactions')
+        .select('game_name')
+        .eq('user_id', savedUsername)
+        .not('game_name', 'is', null);
+
+      if (buyError) console.error('Erreur buys:', buyError);
+      if (sellError) console.error('Erreur sells:', sellError);
+
+      // Combiner et dédupliquer les noms de jeux
+      const allTransactions = [...(buys || []), ...(sells || [])];
+      const uniqueNames = [...new Set(allTransactions
+        .map(t => t.game_name)
+        .filter(name => name && name.trim() !== '')
+      )].sort();
+      
+      // Transformer en format compatible avec l'autocomplétion
+      const gamesFormatted = uniqueNames.map((name, index) => ({
+        id: index + 1,
+        name: name
+      }));
+      
+      setGameSuggestions(gamesFormatted);
     } catch (error) {
       console.error('Erreur de chargement des jeux:', error);
     }
@@ -137,7 +160,6 @@ export default function SAVJeux() {
         .from('game_sav')
         .insert([{
           user_id: savedUsername,
-          game_id: selectedGame.id,
           game_name: selectedGame.name,
           editor: editor.trim(),
           sav_url: savUrl.trim()
