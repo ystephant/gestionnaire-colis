@@ -40,52 +40,6 @@ export default function LockerParcelApp() {
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [oneSignalReady, setOneSignalReady] = useState(false);
 
-  
-  // Wake Lock pour empêcher la mise en veille
-  const wakeLockRef = useRef(null);
-
-  // ========================================
-  // WAKE LOCK - EMPÊCHER LA MISE EN VEILLE
-  // ========================================
-  useEffect(() => {
-    let wakeLock = null;
-
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-          wakeLockRef.current = wakeLock;
-          console.log('🔓 Wake Lock activé - L\'écran ne se mettra pas en veille');
-
-          wakeLock.addEventListener('release', () => {
-            console.log('🔒 Wake Lock désactivé');
-          });
-        } else {
-          console.log('⚠️ Wake Lock API non supportée sur cet appareil');
-        }
-      } catch (err) {
-        console.error('❌ Erreur Wake Lock:', err);
-      }
-    };
-
-    // Réactiver le Wake Lock quand la page redevient visible
-    const handleVisibilityChange = () => {
-      if (wakeLock !== null && document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-
-    requestWakeLock();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      if (wakeLock !== null) {
-        wakeLock.release();
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
   // ⚠️ GARDEZ TOUS VOS useEffect EXACTEMENT COMME ILS SONT
   useEffect(() => {
     checkAuth();
