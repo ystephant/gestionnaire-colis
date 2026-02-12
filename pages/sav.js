@@ -8,6 +8,32 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// Fonction pour normaliser les chaînes (supprimer les accents)
+const normalizeString = (str) => {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+};
+
+// Couleurs par éditeur
+const editorColors = {
+  'asmodee': 'from-blue-500 to-blue-700',
+  'iello': 'from-yellow-400 to-yellow-600',
+  'gigamic': 'from-purple-500 to-purple-700',
+  'blackrock games': 'from-gray-700 to-gray-900',
+  'matagot': 'from-orange-500 to-orange-700',
+  'origames': 'from-green-500 to-green-700',
+  'cocktail games': 'from-pink-500 to-pink-700',
+  'ravensburger': 'from-indigo-500 to-indigo-700',
+  'default': 'from-cyan-500 to-blue-600'
+};
+
+const getEditorColor = (editor) => {
+  const normalizedEditor = normalizeString(editor);
+  return editorColors[normalizedEditor] || editorColors['default'];
+};
+
 export default function SAVJeux() {
   const router = useRouter();
   const { darkMode } = useTheme();
@@ -20,15 +46,27 @@ export default function SAVJeux() {
   const [editor, setEditor] = useState('');
   const [savUrl, setSavUrl] = useState('');
   const [showGameSuggestions, setShowGameSuggestions] = useState(false);
+  const [showEditorSuggestions, setShowEditorSuggestions] = useState(false);
   const [gameSuggestions, setGameSuggestions] = useState([]);
+  const [editorSuggestions, setEditorSuggestions] = useState([]);
 
   // États pour l'affichage
   const [savGames, setSavGames] = useState([]);
   const [filteredGames, setFilteredGames] = useState([]);
   const [searchFilter, setSearchFilter] = useState('');
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [editorFilter, setEditorFilter] = useState('');
+  const [gameFilter, setGameFilter] = useState('');
   const [availableEditors, setAvailableEditors] = useState([]);
+  const [availableGames, setAvailableGames] = useState([]);
   const [saveMessage, setSaveMessage] = useState('');
+
+  // États pour l'édition
+  const [editingGame, setEditingGame] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editEditor, setEditEditor] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [showEditEditorSuggestions, setShowEditEditorSuggestions] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -43,7 +81,32 @@ export default function SAVJeux() {
 
   useEffect(() => {
     applyFilters();
-  }, [savGames, searchFilter, editorFilter]);
+  }, [savGames, searchFilter, editorFilter, gameFilter]);
+
+  // Auto-remplir l'URL si l'éditeur existe déjà
+  useEffect(() => {
+    if (editor.trim()) {
+      const existingSav = savGames.find(
+        game => normalizeString(game.editor) === normalizeString(editor.trim())
+      );
+      if (existingSav && existingSav.sav_url) {
+        setSavUrl(existingSav.sav_url);
+      }
+    }
+  }, [editor, savGames]);
+
+  // Auto-remplir l'URL en mode édition
+  useEffect(() => {
+    if (editEditor.trim() && editingGame) {
+      const existingSav = savGames.find(
+        game => game.id !== editingGame.id && 
+        normalizeString(game.editor) === normalizeString(editEditor.trim())
+      );
+      if (existingSav && existingSav.sav_url) {
+        setEditUrl(existingSav.sav_url);
+      }
+    }
+  }, [editEditor, savGames, editingGame]);
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
@@ -114,6 +177,22 @@ export default function SAVJeux() {
       // Extraire les éditeurs uniques
       const editors = [...new Set(data.map(g => g.editor).filter(Boolean))].sort();
       setAvailableEditors(editors);
+
+      // Extraire les éditeurs uniques avec leurs URLs pour l'autocomplétion
+      const editorsWithUrls = data.reduce((acc, game) => {
+        if (!acc.find(e => normalizeString(e.editor) === normalizeString(game.editor))) {
+          acc.push({
+            editor: game.editor,
+            url: game.sav_url
+          });
+        }
+        return acc;
+      }, []);
+      setEditorSuggestions(editorsWithUrls);
+
+      // Extraire les noms de jeux uniques pour le filtre
+      const games = [...new Set(data.map(g => g.game_name).filter(Boolean))].sort();
+      setAvailableGames(games);
     } catch (error) {
       console.error('Erreur de chargement des SAV:', error);
     }
@@ -122,16 +201,22 @@ export default function SAVJeux() {
   const applyFilters = () => {
     let filtered = [...savGames];
 
-    // Filtre par recherche
+    // Filtre par recherche (insensible aux accents)
     if (searchFilter.trim()) {
+      const normalizedSearch = normalizeString(searchFilter);
       filtered = filtered.filter(game => 
-        game.game_name.toLowerCase().includes(searchFilter.toLowerCase())
+        normalizeString(game.game_name).includes(normalizedSearch)
       );
     }
 
     // Filtre par éditeur
     if (editorFilter) {
       filtered = filtered.filter(game => game.editor === editorFilter);
+    }
+
+    // Filtre par jeu spécifique
+    if (gameFilter) {
+      filtered = filtered.filter(game => game.game_name === gameFilter);
     }
 
     setFilteredGames(filtered);
@@ -142,10 +227,32 @@ export default function SAVJeux() {
     setShowGameSuggestions(value.length > 0);
   };
 
+  const handleEditorInput = (value) => {
+    setEditor(value);
+    setShowEditorSuggestions(value.length > 0);
+  };
+
+  const handleEditEditorInput = (value) => {
+    setEditEditor(value);
+    setShowEditEditorSuggestions(value.length > 0);
+  };
+
   const selectGame = (game) => {
     setSelectedGame(game);
     setSearchGameInput(game.name);
     setShowGameSuggestions(false);
+  };
+
+  const selectEditor = (editorData) => {
+    setEditor(editorData.editor);
+    setSavUrl(editorData.url);
+    setShowEditorSuggestions(false);
+  };
+
+  const selectEditEditor = (editorData) => {
+    setEditEditor(editorData.editor);
+    setEditUrl(editorData.url);
+    setShowEditEditorSuggestions(false);
   };
 
   const handleSave = async () => {
@@ -184,7 +291,48 @@ export default function SAVJeux() {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleEdit = (game, e) => {
+    e.stopPropagation();
+    setEditingGame(game);
+    setEditEditor(game.editor);
+    setEditUrl(game.sav_url);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editEditor.trim() || !editUrl.trim()) {
+      alert('Veuillez remplir tous les champs');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('game_sav')
+        .update({
+          editor: editEditor.trim(),
+          sav_url: editUrl.trim()
+        })
+        .eq('id', editingGame.id);
+
+      if (error) throw error;
+
+      setSaveMessage('✅ SAV modifié avec succès !');
+      setTimeout(() => setSaveMessage(''), 3000);
+
+      setShowEditModal(false);
+      setEditingGame(null);
+      setEditEditor('');
+      setEditUrl('');
+
+      loadSavGames();
+    } catch (error) {
+      console.error('Erreur lors de la modification:', error);
+      alert('Erreur lors de la modification du SAV');
+    }
+  };
+
+  const handleDelete = async (id, e) => {
+    e.stopPropagation();
     if (!confirm('Voulez-vous vraiment supprimer ce SAV ?')) return;
 
     try {
@@ -203,11 +351,33 @@ export default function SAVJeux() {
     }
   };
 
+  const handleCardClick = (url) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   const filteredGameSuggestions = searchGameInput.length > 0
     ? gameSuggestions.filter(game => 
-        game.name.toLowerCase().includes(searchGameInput.toLowerCase())
+        normalizeString(game.name).includes(normalizeString(searchGameInput))
       )
     : [];
+
+  const filteredSearchSuggestions = searchFilter.length > 0
+    ? availableGames.filter(game => 
+        normalizeString(game).includes(normalizeString(searchFilter))
+      )
+    : [];
+
+  const filteredEditorSuggestions = editor.length > 0
+    ? editorSuggestions.filter(ed => 
+        normalizeString(ed.editor).includes(normalizeString(editor))
+      )
+    : editorSuggestions;
+
+  const filteredEditEditorSuggestions = editEditor.length > 0
+    ? editorSuggestions.filter(ed => 
+        normalizeString(ed.editor).includes(normalizeString(editEditor))
+      )
+    : editorSuggestions;
 
   if (loading) {
     return (
@@ -290,15 +460,16 @@ export default function SAVJeux() {
                 )}
               </div>
 
-              {/* Éditeur */}
-              <div>
+              {/* Éditeur avec autocomplétion */}
+              <div className="relative">
                 <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Éditeur :
                 </label>
                 <input
                   type="text"
                   value={editor}
-                  onChange={(e) => setEditor(e.target.value)}
+                  onChange={(e) => handleEditorInput(e.target.value)}
+                  onFocus={() => setShowEditorSuggestions(true)}
                   placeholder="Ex: Iello, Asmodee, Gigamic..."
                   className={`w-full px-4 py-3 border-2 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors duration-300 ${
                     darkMode 
@@ -306,6 +477,26 @@ export default function SAVJeux() {
                       : 'bg-white border-gray-200 text-gray-900'
                   }`}
                 />
+
+                {/* Suggestions d'éditeurs */}
+                {showEditorSuggestions && filteredEditorSuggestions.length > 0 && (
+                  <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                    darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                  }`}>
+                    {filteredEditorSuggestions.map((ed, index) => (
+                      <button
+                        key={index}
+                        onClick={() => selectEditor(ed)}
+                        className={`w-full text-left px-4 py-2 hover:bg-cyan-500 hover:text-white transition ${
+                          darkMode ? 'text-gray-200' : 'text-gray-800'
+                        }`}
+                      >
+                        <div className="font-semibold">{ed.editor}</div>
+                        <div className="text-xs opacity-70">{ed.url}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* URL SAV */}
@@ -353,15 +544,19 @@ export default function SAVJeux() {
             </h2>
 
             <div className="space-y-4">
-              {/* Recherche par nom */}
-              <div>
+              {/* Recherche par nom avec autocomplétion */}
+              <div className="relative">
                 <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
                   Rechercher un jeu :
                 </label>
                 <input
                   type="text"
                   value={searchFilter}
-                  onChange={(e) => setSearchFilter(e.target.value)}
+                  onChange={(e) => {
+                    setSearchFilter(e.target.value);
+                    setShowSearchSuggestions(e.target.value.length > 0);
+                  }}
+                  onFocus={() => setShowSearchSuggestions(searchFilter.length > 0)}
                   placeholder="Nom du jeu..."
                   className={`w-full px-4 py-3 border-2 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors duration-300 ${
                     darkMode 
@@ -369,6 +564,49 @@ export default function SAVJeux() {
                       : 'bg-white border-gray-200 text-gray-900'
                   }`}
                 />
+
+                {/* Suggestions de recherche */}
+                {showSearchSuggestions && filteredSearchSuggestions.length > 0 && (
+                  <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                    darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                  }`}>
+                    {filteredSearchSuggestions.map((game, index) => (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          setSearchFilter(game);
+                          setShowSearchSuggestions(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 hover:bg-cyan-500 hover:text-white transition ${
+                          darkMode ? 'text-gray-200' : 'text-gray-800'
+                        }`}
+                      >
+                        {game}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Filtre par jeu (liste déroulante) */}
+              <div>
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+                  Sélectionner un jeu :
+                </label>
+                <select
+                  value={gameFilter}
+                  onChange={(e) => setGameFilter(e.target.value)}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                >
+                  <option value="">Tous les jeux</option>
+                  {availableGames.map((game, index) => (
+                    <option key={index} value={game}>{game}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Filtre par éditeur */}
@@ -397,6 +635,7 @@ export default function SAVJeux() {
                 onClick={() => {
                   setSearchFilter('');
                   setEditorFilter('');
+                  setGameFilter('');
                 }}
                 className={`w-full py-2 rounded-lg font-medium transition ${
                   darkMode 
@@ -436,38 +675,41 @@ export default function SAVJeux() {
               {filteredGames.map((game) => (
                 <div
                   key={game.id}
-                  className={`p-4 rounded-xl border-2 transition-all duration-300 hover:shadow-lg ${
-                    darkMode 
-                      ? 'bg-gray-700 border-gray-600 hover:border-cyan-500' 
-                      : 'bg-white border-gray-200 hover:border-cyan-500'
-                  }`}
+                  onClick={() => handleCardClick(game.sav_url)}
+                  className={`relative p-6 rounded-xl bg-gradient-to-br ${getEditorColor(game.editor)} text-white shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer transform hover:scale-105`}
                 >
-                  <h3 className={`font-bold text-lg mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                    🎲 {game.game_name}
-                  </h3>
-                  <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    <strong>Éditeur :</strong> {game.editor}
-                  </p>
-                  
-                  <div className="flex gap-2">
-                    <a
-                      href={game.sav_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 bg-cyan-600 text-white text-center py-2 rounded-lg font-medium hover:bg-cyan-700 transition text-sm"
-                    >
-                      🔗 Ouvrir SAV
-                    </a>
+                  {/* Boutons en haut à droite */}
+                  <div className="absolute top-3 right-3 flex gap-2">
                     <button
-                      onClick={() => handleDelete(game.id)}
-                      className={`px-3 py-2 rounded-lg transition ${
-                        darkMode 
-                          ? 'bg-red-900 text-red-200 hover:bg-red-800' 
-                          : 'bg-red-100 text-red-600 hover:bg-red-200'
-                      }`}
+                      onClick={(e) => handleEdit(game, e)}
+                      className="p-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition backdrop-blur-sm"
+                      title="Modifier"
                     >
-                      🗑️
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                      </svg>
                     </button>
+                    <button
+                      onClick={(e) => handleDelete(game.id, e)}
+                      className="p-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition backdrop-blur-sm"
+                      title="Supprimer"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Nom du jeu au centre */}
+                  <div className="text-center mt-4">
+                    <h3 className="text-2xl font-bold mb-2">
+                      {game.game_name}
+                    </h3>
+                    <p className="text-sm opacity-90">
+                      {game.editor}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -475,6 +717,102 @@ export default function SAVJeux() {
           )}
         </div>
       </div>
+
+      {/* Modal d'édition */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6 w-full max-w-md`}>
+            <h3 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
+              ✏️ Modifier le SAV
+            </h3>
+            <p className={`text-lg font-semibold ${darkMode ? 'text-cyan-400' : 'text-cyan-600'} mb-6`}>
+              {editingGame?.game_name}
+            </p>
+
+            <div className="space-y-4">
+              {/* Éditeur avec autocomplétion */}
+              <div className="relative">
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+                  Éditeur :
+                </label>
+                <input
+                  type="text"
+                  value={editEditor}
+                  onChange={(e) => handleEditEditorInput(e.target.value)}
+                  onFocus={() => setShowEditEditorSuggestions(true)}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                />
+
+                {/* Suggestions d'éditeurs en mode édition */}
+                {showEditEditorSuggestions && filteredEditEditorSuggestions.length > 0 && (
+                  <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                    darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                  }`}>
+                    {filteredEditEditorSuggestions.map((ed, index) => (
+                      <button
+                        key={index}
+                        onClick={() => selectEditEditor(ed)}
+                        className={`w-full text-left px-4 py-2 hover:bg-cyan-500 hover:text-white transition ${
+                          darkMode ? 'text-gray-200' : 'text-gray-800'
+                        }`}
+                      >
+                        <div className="font-semibold">{ed.editor}</div>
+                        <div className="text-xs opacity-70">{ed.url}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* URL SAV */}
+              <div>
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+                  URL du SAV :
+                </label>
+                <input
+                  type="url"
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                />
+              </div>
+
+              {/* Boutons */}
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingGame(null);
+                    setEditEditor('');
+                    setEditUrl('');
+                  }}
+                  className={`flex-1 py-3 rounded-xl font-semibold transition ${
+                    darkMode 
+                      ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  className="flex-1 bg-cyan-600 text-white py-3 rounded-xl font-semibold hover:bg-cyan-700 transition"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
