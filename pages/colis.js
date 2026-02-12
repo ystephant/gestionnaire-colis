@@ -84,17 +84,6 @@ const disableWakeLock = async () => {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  // ================================================
-// MODIFICATIONS POUR pages/colis.js
-// ================================================
-
-// ✅ ÉTAPE 1 : AJOUTER CET IMPORT en haut du fichier (ligne 5)
-// ================================================
-import { initOneSignal } from '../lib/onesignal';
-
-
-// ✅ ÉTAPE 2 : REMPLACER le useEffect (lignes 86-101)
-// ================================================
 
 useEffect(() => {
   if (isLoggedIn && username) {
