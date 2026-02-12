@@ -39,7 +39,38 @@ export default function LockerParcelApp() {
   const [customLocation, setCustomLocation] = useState('');
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [oneSignalReady, setOneSignalReady] = useState(false);
+  const [wakeLock, setWakeLock] = useState(null);
 
+  const enableWakeLock = async () => {
+  try {
+    if ('wakeLock' in navigator) {
+      const lock = await navigator.wakeLock.request('screen');
+      setWakeLock(lock);
+      console.log('✅ Wake Lock activé - l\'écran ne se mettra pas en veille');
+      
+      lock.addEventListener('release', () => {
+        console.log('⚠️ Wake Lock libéré');
+        setWakeLock(null);
+      });
+      
+      return lock;
+    } else {
+      console.log('⚠️ Wake Lock non supporté sur cet appareil');
+    }
+  } catch (err) {
+    console.error('❌ Erreur Wake Lock:', err);
+  }
+};
+
+const disableWakeLock = async () => {
+  if (wakeLock) {
+    await wakeLock.release();
+    setWakeLock(null);
+    console.log('Wake Lock désactivé');
+  }
+};
+
+  
   // ⚠️ GARDEZ TOUS VOS useEffect EXACTEMENT COMME ILS SONT
   useEffect(() => {
     checkAuth();
@@ -59,6 +90,7 @@ export default function LockerParcelApp() {
         console.log('✅ OneSignal prêt');
       }
       loadParcels();
+      enableWakeLock();
       if (isOnline) { 
   setupRealtimeSubscription();
   // requestNotificationPermission supprimé - OneSignal gère les permissions
@@ -69,11 +101,23 @@ export default function LockerParcelApp() {
   }, [isLoggedIn, isOnline, username]);
 
   useEffect(() => { 
-    return () => { 
-      if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel); 
-    }; 
-  }, []);
+  return () => { 
+    if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel);
+    disableWakeLock(); // Libérer le Wake Lock à la fermeture
+  }; 
+}, []);
 
+  useEffect(() => {
+  const handleVisibilityChange = async () => {
+    if (document.visibilityState === 'visible' && isLoggedIn && !wakeLock) {
+      await enableWakeLock();
+    }
+  };
+  
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+}, [isLoggedIn, wakeLock]);
+  
   // ⚠️ GARDEZ TOUTES VOS FONCTIONS EXACTEMENT COMME ELLES SONT
   // checkAuth, loadParcels, setupRealtimeSubscription, showNotification, etc.
   // COPIEZ-COLLEZ TOUTES VOS FONCTIONS ICI SANS MODIFICATION
