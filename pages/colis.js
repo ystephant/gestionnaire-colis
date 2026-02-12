@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
-import NotificationPermission from '../components/NotificationPermission'; // ✅ AJOUTER CETTE LIGNE
+import NotificationPermission from '../components/NotificationPermission';
 import { initOneSignal } from '../lib/onesignal';
 
 const supabase = createClient(
@@ -84,42 +84,26 @@ const disableWakeLock = async () => {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-
-useEffect(() => {
-  if (isLoggedIn && username) {
-    // Initialiser OneSignal via le package NPM (pas de CDN)
-    const setupOneSignal = async () => {
-      try {
-        const ready = await initOneSignal(username);
-        setOneSignalReady(ready);
-        console.log('✅ OneSignal initialisé via NPM:', ready);
-      } catch (error) {
-        console.error('⚠️ Erreur OneSignal:', error);
-        setOneSignalReady(false);
-      }
-    };
-    
-    setupOneSignal();
-    loadParcels();
-    enableWakeLock();
-    if (isOnline) { 
-      setupRealtimeSubscription();
-    }
-    trackCollectedToday();
-    loadOfflineQueue();
-  }
-}, [isLoggedIn, isOnline, username]);
-
-
-// ================================================
-// C'EST TOUT ! Les autres parties du fichier restent identiques.
-// ================================================
+  useEffect(() => {
+    if (isLoggedIn && username) {
+      // Initialiser OneSignal via le package NPM (pas de CDN)
+      const setupOneSignal = async () => {
+        try {
+          const ready = await initOneSignal(username);
+          setOneSignalReady(ready);
+          console.log('✅ OneSignal initialisé via NPM:', ready);
+        } catch (error) {
+          console.error('⚠️ Erreur OneSignal:', error);
+          setOneSignalReady(false);
+        }
+      };
+      
+      setupOneSignal();
       loadParcels();
       enableWakeLock();
       if (isOnline) { 
-  setupRealtimeSubscription();
-  // requestNotificationPermission supprimé - OneSignal gère les permissions
-}
+        setupRealtimeSubscription();
+      }
       trackCollectedToday();
       loadOfflineQueue();
     }
