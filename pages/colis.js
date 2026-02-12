@@ -19,7 +19,7 @@ const LOCKER_LOGOS = {
 
 export default function LockerParcelApp() {
   const router = useRouter();
-  const { darkMode, toggleDarkMode } = useTheme(); // ⭐ AJOUT MODE SOMBRE
+  const { darkMode, toggleDarkMode } = useTheme();
   
   const [parcels, setParcels] = useState([]);
   const [codeInput, setCodeInput] = useState('');
@@ -71,8 +71,6 @@ const disableWakeLock = async () => {
   }
 };
 
-  
-  // ⚠️ GARDEZ TOUS VOS useEffect EXACTEMENT COMME ILS SONT
   useEffect(() => {
     checkAuth();
     const handleOnline = () => { setIsOnline(true); setSyncStatus('🟢 En ligne'); syncOfflineChanges(); };
@@ -84,30 +82,31 @@ const disableWakeLock = async () => {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  useEffect(() => {
-    if (isLoggedIn && username) {
-      // Initialiser OneSignal via le package NPM (pas de CDN)
-      const setupOneSignal = async () => {
-        try {
-          const ready = await initOneSignal(username);
-          setOneSignalReady(ready);
-          console.log('✅ OneSignal initialisé via NPM:', ready);
-        } catch (error) {
-          console.error('⚠️ Erreur OneSignal:', error);
-          setOneSignalReady(false);
-        }
-      };
-      
-      setupOneSignal();
-      loadParcels();
-      enableWakeLock();
-      if (isOnline) { 
-        setupRealtimeSubscription();
+
+useEffect(() => {
+  if (isLoggedIn && username) {
+    // Initialiser OneSignal via le package NPM (pas de CDN)
+    const setupOneSignal = async () => {
+      try {
+        const ready = await initOneSignal(username);
+        setOneSignalReady(ready);
+        console.log('✅ OneSignal initialisé via NPM:', ready);
+      } catch (error) {
+        console.error('⚠️ Erreur OneSignal:', error);
+        setOneSignalReady(false);
       }
-      trackCollectedToday();
-      loadOfflineQueue();
+    };
+    
+    setupOneSignal();
+    loadParcels();
+    enableWakeLock();
+    if (isOnline) { 
+      setupRealtimeSubscription();
     }
-  }, [isLoggedIn, isOnline, username]);
+    trackCollectedToday();
+    loadOfflineQueue();
+  }
+}, [isLoggedIn, isOnline, username]);
 
   useEffect(() => { 
   return () => { 
@@ -126,10 +125,6 @@ const disableWakeLock = async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange);
   return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
 }, [isLoggedIn, wakeLock]);
-  
-  // ⚠️ GARDEZ TOUTES VOS FONCTIONS EXACTEMENT COMME ELLES SONT
-  // checkAuth, loadParcels, setupRealtimeSubscription, showNotification, etc.
-  // COPIEZ-COLLEZ TOUTES VOS FONCTIONS ICI SANS MODIFICATION
   
   const checkAuth = async () => {
     // Délai minimum de 800ms pour voir l'écran de chargement
