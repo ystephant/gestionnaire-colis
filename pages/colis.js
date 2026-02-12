@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
 import NotificationPermission from '../components/NotificationPermission'; // ✅ AJOUTER CETTE LIGNE
+import { initOneSignal } from '../lib/onesignal';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -83,12 +84,47 @@ const disableWakeLock = async () => {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  useEffect(() => {
-    if (isLoggedIn && username) {
-      if (typeof window !== 'undefined' && window.OneSignal) {
-        setOneSignalReady(true);
-        console.log('✅ OneSignal prêt');
+  // ================================================
+// MODIFICATIONS POUR pages/colis.js
+// ================================================
+
+// ✅ ÉTAPE 1 : AJOUTER CET IMPORT en haut du fichier (ligne 5)
+// ================================================
+import { initOneSignal } from '../lib/onesignal';
+
+
+// ✅ ÉTAPE 2 : REMPLACER le useEffect (lignes 86-101)
+// ================================================
+
+useEffect(() => {
+  if (isLoggedIn && username) {
+    // Initialiser OneSignal via le package NPM (pas de CDN)
+    const setupOneSignal = async () => {
+      try {
+        const ready = await initOneSignal(username);
+        setOneSignalReady(ready);
+        console.log('✅ OneSignal initialisé via NPM:', ready);
+      } catch (error) {
+        console.error('⚠️ Erreur OneSignal:', error);
+        setOneSignalReady(false);
       }
+    };
+    
+    setupOneSignal();
+    loadParcels();
+    enableWakeLock();
+    if (isOnline) { 
+      setupRealtimeSubscription();
+    }
+    trackCollectedToday();
+    loadOfflineQueue();
+  }
+}, [isLoggedIn, isOnline, username]);
+
+
+// ================================================
+// C'EST TOUT ! Les autres parties du fichier restent identiques.
+// ================================================
       loadParcels();
       enableWakeLock();
       if (isOnline) { 
