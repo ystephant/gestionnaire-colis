@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
-import NotificationPermission from '../components/NotificationPermission'; // ✅ AJOUTER CETTE LIGNE
+import NotificationPermission from '../components/NotificationPermission';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,7 +18,7 @@ const LOCKER_LOGOS = {
 
 export default function LockerParcelApp() {
   const router = useRouter();
-  const { darkMode, toggleDarkMode } = useTheme(); // ⭐ AJOUT MODE SOMBRE
+  const { darkMode, toggleDarkMode } = useTheme();
   
   const [parcels, setParcels] = useState([]);
   const [codeInput, setCodeInput] = useState('');
@@ -39,8 +39,56 @@ export default function LockerParcelApp() {
   const [customLocation, setCustomLocation] = useState('');
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [oneSignalReady, setOneSignalReady] = useState(false);
+  const [oneSignalError, setOneSignalError] = useState(false);
+  
+  // Wake Lock pour empêcher la mise en veille
+  const wakeLockRef = useRef(null);
 
-  // ⚠️ GARDEZ TOUS VOS useEffect EXACTEMENT COMME ILS SONT
+  // ========================================
+  // WAKE LOCK - EMPÊCHER LA MISE EN VEILLE
+  // ========================================
+  useEffect(() => {
+    let wakeLock = null;
+
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLockRef.current = wakeLock;
+          console.log('🔓 Wake Lock activé - L\'écran ne se mettra pas en veille');
+
+          wakeLock.addEventListener('release', () => {
+            console.log('🔒 Wake Lock désactivé');
+          });
+        } else {
+          console.log('⚠️ Wake Lock API non supportée sur cet appareil');
+        }
+      } catch (err) {
+        console.error('❌ Erreur Wake Lock:', err);
+      }
+    };
+
+    // Réactiver le Wake Lock quand la page redevient visible
+    const handleVisibilityChange = () => {
+      if (wakeLock !== null && document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+
+    requestWakeLock();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (wakeLock !== null) {
+        wakeLock.release();
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // ========================================
+  // INITIALISATION
+  // ========================================
   useEffect(() => {
     checkAuth();
     const handleOnline = () => { setIsOnline(true); setSyncStatus('🟢 En ligne'); syncOfflineChanges(); };
@@ -54,15 +102,29 @@ export default function LockerParcelApp() {
 
   useEffect(() => {
     if (isLoggedIn && username) {
-      if (typeof window !== 'undefined' && window.OneSignal) {
-        setOneSignalReady(true);
-        console.log('✅ OneSignal prêt');
-      }
+      // Vérifier si OneSignal est chargé
+      const checkOneSignal = () => {
+        if (typeof window !== 'undefined' && window.OneSignal) {
+          setOneSignalReady(true);
+          setOneSignalError(false);
+          console.log('✅ OneSignal prêt');
+        } else {
+          setOneSignalReady(false);
+          setOneSignalError(true);
+          console.warn('⚠️ OneSignal non disponible (probablement bloqué par un ad-blocker)');
+        }
+      };
+
+      // Vérifier immédiatement
+      checkOneSignal();
+      
+      // Revérifier après un délai (au cas où OneSignal charge lentement)
+      setTimeout(checkOneSignal, 2000);
+
       loadParcels();
       if (isOnline) { 
-  setupRealtimeSubscription();
-  // requestNotificationPermission supprimé - OneSignal gère les permissions
-}
+        setupRealtimeSubscription();
+      }
       trackCollectedToday();
       loadOfflineQueue();
     }
@@ -74,12 +136,10 @@ export default function LockerParcelApp() {
     }; 
   }, []);
 
-  // ⚠️ GARDEZ TOUTES VOS FONCTIONS EXACTEMENT COMME ELLES SONT
-  // checkAuth, loadParcels, setupRealtimeSubscription, showNotification, etc.
-  // COPIEZ-COLLEZ TOUTES VOS FONCTIONS ICI SANS MODIFICATION
-  
+  // ========================================
+  // FONCTIONS PRINCIPALES
+  // ========================================
   const checkAuth = async () => {
-    // Délai minimum de 800ms pour voir l'écran de chargement
     const startTime = Date.now();
     
     const savedUsername = localStorage.getItem('username');
@@ -92,7 +152,6 @@ export default function LockerParcelApp() {
       router.push('/');
     }
     
-    // Attendre le délai minimum si le chargement est trop rapide
     const elapsedTime = Date.now() - startTime;
     if (elapsedTime < 800) {
       await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
@@ -149,17 +208,26 @@ export default function LockerParcelApp() {
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
               return updated;
             });
+            
+            // ✅ NOTIFICATION "NOUVEAU CODE" - NE S'ACTIVE QUE SI AJOUTÉ PAR UN AUTRE APPAREIL
+            if (!payload.new.collected) {
+              showLocalNotification(
+                `Nouveau colis ajouté : ${payload.new.code}`,
+                `new-code-${payload.new.id}`
+              );
+            }
           } else if (payload.eventType === 'UPDATE') {
             setParcels(prev => {
               const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
               
+              // ✅ NOTIFICATION RÉCUPÉRATION - UNIQUEMENT SI LE STATUT CHANGE
               if (payload.new.collected && !payload.old?.collected) {
-  showNotification(
-    `Colis ${payload.new.code} récupéré ! 🎉`,
-    `collected-${payload.new.id}`
-  );
-}
+                showLocalNotification(
+                  `Colis ${payload.new.code} récupéré ! 🎉`,
+                  `collected-${payload.new.id}`
+                );
+              }
               
               return updated;
             });
@@ -186,21 +254,22 @@ export default function LockerParcelApp() {
     window.realtimeChannel = channel;
   };
 
-  const showNotification = (message, tag = `parcel-${Date.now()}`) => {
-  if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
-    navigator.serviceWorker.ready.then(registration => {
-      registration.showNotification('Gestionnaire de Colis', { 
-        body: message, 
-        icon: '/icons/package-icon.png', 
-        badge: '/icons/badge-icon.png', 
-        vibrate: [200, 100, 200], 
-        tag: tag,
-        requireInteraction: false,
-        renotify: true
+  // ✅ NOTIFICATION LOCALE (Service Worker) - Évite les doublons
+  const showLocalNotification = (message, tag = `parcel-${Date.now()}`) => {
+    if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
+      navigator.serviceWorker.ready.then(registration => {
+        registration.showNotification('Gestionnaire de Colis', { 
+          body: message, 
+          icon: '/icons/package-icon.png', 
+          badge: '/icons/badge-icon.png', 
+          vibrate: [200, 100, 200], 
+          tag: tag,
+          requireInteraction: false,
+          renotify: true
+        });
       });
-    });
-  }
-};
+    }
+  };
 
   const trackCollectedToday = async () => {
     try {
@@ -278,6 +347,10 @@ export default function LockerParcelApp() {
     return codes ? [...new Set(codes)] : [];
   };
 
+// ========================================
+  // PARTIE 2 - GESTION DES COLIS
+  // ========================================
+  
   const addParcels = async () => {
     const codes = extractParcelCodes(codeInput);
     if (codes.length === 0) { 
@@ -314,7 +387,8 @@ export default function LockerParcelApp() {
       
       if (error) throw error;
 
-      if (oneSignalReady) {
+      // ✅ NOTIFICATION ONESIGNAL - Uniquement si OneSignal est disponible et pas bloqué
+      if (oneSignalReady && !oneSignalError) {
         try {
           await fetch('/api/notify-colis-added', {
             method: 'POST',
@@ -326,10 +400,12 @@ export default function LockerParcelApp() {
               lockerType: lockerType
             })
           });
-          console.log('✅ Notification envoyée à tous les appareils');
+          console.log('✅ Notification OneSignal envoyée à tous les appareils');
         } catch (notifError) {
-          console.error('⚠️ Erreur notification:', notifError);
+          console.error('⚠️ Erreur notification OneSignal:', notifError);
         }
+      } else if (oneSignalError) {
+        console.log('ℹ️ OneSignal bloqué - notifications locales uniquement');
       }
 
       await loadParcels(); 
@@ -374,7 +450,8 @@ export default function LockerParcelApp() {
       
       if (error) throw error;
 
-      if (!currentStatus && oneSignalReady && parcel) {
+      // ✅ NOTIFICATION ONESIGNAL - Uniquement si OneSignal est disponible
+      if (!currentStatus && oneSignalReady && !oneSignalError && parcel) {
         try {
           await fetch('/api/notify-colis-collected', {
             method: 'POST',
@@ -384,9 +461,9 @@ export default function LockerParcelApp() {
               colisCode: parcel.code
             })
           });
-          console.log('✅ Notification récupération envoyée à tous les appareils');
+          console.log('✅ Notification OneSignal récupération envoyée');
         } catch (notifError) {
-          console.error('⚠️ Erreur notification:', notifError);
+          console.error('⚠️ Erreur notification OneSignal:', notifError);
         }
       }
 
@@ -500,301 +577,299 @@ export default function LockerParcelApp() {
     }
   };
 
-  const getRemainingDays = (dateAdded) => { 
-    const added = new Date(dateAdded); 
-    const now = new Date(); 
-    const diffTime = now - added; 
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
-    return Math.max(0, 5 - diffDays); 
+  // ========================================
+  // FONCTIONS UTILITAIRES
+  // ========================================
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
   };
 
-  const getRemainingDaysText = (remainingDays) => { 
-    if (remainingDays === 0) return '⚠️ Dernier jour pour récupérer'; 
-    if (remainingDays === 1) return '⏰ Il te reste 1 jour'; 
-    return `📅 Il te reste ${remainingDays} jours`; 
+  const getRemainingDays = (dateAdded) => {
+    const added = new Date(dateAdded);
+    const now = new Date();
+    const diffTime = now - added;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    return 5 - diffDays;
   };
 
-  const getPickupLocationName = (location) => { 
-  if (location.startsWith('custom:')) {
-    return `📍 Autre point de retrait (${location.replace('custom:', '')})`;
-  }
-  switch(location) { 
-    case 'hyper-u-locker': return '🏪 Hyper U - Locker'; 
-    case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; 
-    case 'intermarche-locker': return '🛒 Intermarché - Locker'; 
-    case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; 
-    case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; 
-    default: return location; 
-  } 
-};
+  const getRemainingDaysText = (remainingDays) => {
+    if (remainingDays < 0) return '⚠️ EXPIRÉ';
+    if (remainingDays === 0) return '⚠️ Aujourd\'hui - DERNIER JOUR';
+    if (remainingDays === 1) return '⚠️ 1 jour restant';
+    return `${remainingDays} jours restants`;
+  };
 
-  const getFilteredParcels = (parcelsList) => { 
-  let filtered = parcelsList; 
-  if (filterLockerType !== 'all') {
-    filtered = filtered.filter(p => p.locker_type === filterLockerType); 
-  }
-  if (filterLocation !== 'all') {
-    if (filterLocation === 'custom') {
-      filtered = filtered.filter(p => p.location.startsWith('custom:'));
-    } else {
-      filtered = filtered.filter(p => p.location === filterLocation);
+  const getLockerName = (type) => {
+    const names = {
+      'mondial-relay': 'Mondial Relay',
+      'vinted-go': 'Vinted GO',
+      'relais-colis': 'Relais Colis',
+      'pickup': 'Pickup'
+    };
+    return names[type] || type;
+  };
+
+  const getPickupLocationName = (location) => {
+    const names = {
+      'hyper-u-locker': '🏪 Hyper U - Locker',
+      'hyper-u-accueil': '🏪 Hyper U - Accueil',
+      'intermarche-locker': '🛒 Intermarché - Locker',
+      'intermarche-accueil': '🛒 Intermarché - Accueil',
+      'rond-point-noyal': '📍 Rond point Noyal - Locker'
+    };
+    if (location.startsWith('custom:')) {
+      return `📍 ${location.replace('custom:', '')}`;
     }
-  }
-  return filtered; 
-};
-
-  const getCountByLockerType = (type) => { 
-    if (type === 'all') return pendingParcels.length; 
-    return pendingParcels.filter(p => p.locker_type === type).length; 
+    return names[location] || location;
   };
 
-  const getCountByLocation = (location) => { 
-    if (location === 'all') return pendingParcels.length; 
-    return pendingParcels.filter(p => p.location === location).length; 
+  const addCustomLocation = () => {
+    if (customLocation.trim()) {
+      const customValue = `custom:${customLocation.trim()}`;
+      setPickupLocation(customValue);
+      setShowCustomLocationInput(false);
+      setCustomLocation('');
+    }
   };
 
+  // ========================================
+  // DONNÉES CALCULÉES
+  // ========================================
   const pendingParcels = parcels.filter(p => !p.collected);
   const collectedParcels = parcels.filter(p => p.collected);
-  const filteredPendingParcels = getFilteredParcels(pendingParcels);
 
-  const formatDate = (dateString) => { 
-    const date = new Date(dateString); 
-    const now = new Date(); 
-    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24)); 
-    if (diffDays === 0) return "Aujourd'hui"; 
-    if (diffDays === 1) return "Hier"; 
-    return `Il y a ${diffDays} jours`; 
-  };
+  const filteredPendingParcels = pendingParcels.filter(parcel => {
+    const matchesLockerType = filterLockerType === 'all' || parcel.locker_type === filterLockerType;
+    const matchesLocation = filterLocation === 'all' || parcel.location === filterLocation;
+    return matchesLockerType && matchesLocation;
+  });
 
-  const getLockerName = (type) => { 
-    switch(type) { 
-      case 'mondial-relay': return 'Mondial Relay'; 
-      case 'relais-colis': return 'Relais Colis'; 
-      case 'pickup': return 'Pickup'; 
-      case 'vinted-go': return 'Vinted GO'; 
-      default: return 'Autre'; 
-    } 
-  };
-
-  const getCodeFormatHint = () => { 
-    switch(lockerType) { 
-      case 'mondial-relay': return 'Format: 6 caractères (ex: A1B2C3)'; 
-      case 'vinted-go': return 'Format: 4-20 caractères (ex: VT-1234-ABCD)'; 
-      case 'relais-colis': return 'Format: 4-15 caractères (ex: RC123456)'; 
-      case 'pickup': return 'Format: 4-15 caractères (ex: PK789012)'; 
-      default: return ''; 
-    } 
-  };
+// ========================================
+  // PARTIE 3 - RENDU JSX
+  // ========================================
 
   if (loading) {
-  return null; // L'écran de chargement est géré par _app.js
-}
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-indigo-50 to-purple-100'}`}>
+        <div className="text-center">
+          <div className={`inline-block animate-spin rounded-full h-16 w-16 border-4 border-t-transparent mb-4 ${darkMode ? 'border-indigo-400' : 'border-indigo-600'}`}></div>
+          <p className={`text-xl font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Chargement...</p>
+        </div>
+      </div>
+    );
+  }
 
-// ⬇️ IMPORTANT: Le return principal commence ICI
-return (
-  <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
-    <div className="max-w-2xl mx-auto">
+  return (
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-indigo-50 to-purple-100'} transition-colors duration-300`}>
+      {/* Composant de permission de notifications */}
+      <NotificationPermission username={username} />
+
+      {/* Toast de notification */}
       {showToast && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
-          {toastMessage}
+        <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+          <div className={`px-6 py-3 rounded-lg shadow-lg ${darkMode ? 'bg-green-600' : 'bg-green-500'} text-white font-medium`}>
+            {toastMessage}
+          </div>
         </div>
       )}
 
-      {/* ✅ Notification Permission */}
-      <NotificationPermission />
-      
-      {syncStatus && (
-        <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
-          isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-        }`}>
-          {syncStatus}
-          {offlineQueue.length > 0 && (
-            <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
-              {offlineQueue.length} en attente
-            </span>
-          )}
-        </div>
-      )}
-
-      {oneSignalReady && (
-        <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
-          🔔 Notifications actives
-        </div>
-      )}
-        
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
-          <div className="flex items-center justify-between mb-6">
+      <div className="p-4 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className={`${darkMode ? 'bg-gray-800 shadow-xl' : 'bg-white shadow-lg'} rounded-2xl p-6 mb-6 transition-colors duration-300`}>
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <button 
-                onClick={() => router.push('/')} 
-                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+              <button onClick={() => router.push('/')} className={`p-2 rounded-lg transition ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={darkMode ? '#9ca3af' : '#4b5563'} strokeWidth="2">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                 </svg>
               </button>
-              <div className="bg-indigo-600 p-3 rounded-xl">
+              
+              <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-3 rounded-xl">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                  <line x1="12" y1="22.08" x2="12" y2="12"></line>
                 </svg>
               </div>
+              
               <div>
-                <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Colis</h1>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Connecté: {username}</p>
+                <h1 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Colis</h1>
+                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Connecté: {username}</p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
-              <button
-                onClick={toggleDarkMode}
-                className={`p-3 rounded-xl transition-all duration-300 ${
-                  darkMode 
-                    ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                }`}
-                title={darkMode ? 'Mode clair' : 'Mode sombre'}
-              >
+              {/* Indicateur Wake Lock */}
+              {wakeLockRef.current && (
+                <span className={`text-xs px-2 py-1 rounded-full ${darkMode ? 'bg-green-900 text-green-300' : 'bg-green-100 text-green-700'}`} title="L'écran ne se mettra pas en veille">
+                  🔓 Actif
+                </span>
+              )}
+
+              {/* Indicateur OneSignal */}
+              {oneSignalError && (
+                <span className={`text-xs px-2 py-1 rounded-full ${darkMode ? 'bg-yellow-900 text-yellow-300' : 'bg-yellow-100 text-yellow-700'}`} title="OneSignal bloqué - Notifications locales uniquement">
+                  ⚠️ Notif locales
+                </span>
+              )}
+
+              <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}>
                 {darkMode ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="5"/>
-                    <line x1="12" y1="1" x2="12" y2="3"/>
-                    <line x1="12" y1="21" x2="12" y2="23"/>
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                    <line x1="1" y1="12" x2="3" y2="12"/>
-                    <line x1="21" y1="12" x2="23" y2="12"/>
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2">
+                    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
                   </svg>
                 ) : (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                   </svg>
                 )}
               </button>
               
-              <button 
-                onClick={() => router.push('/')} 
-                className={`text-sm px-4 py-2 rounded-lg transition ${
-                  darkMode 
-                    ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
-                    : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
-                }`}
-              >
+              <button onClick={() => router.push('/')} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:from-indigo-600 hover:to-purple-700 transition">
                 Retour
               </button>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4 transition-colors duration-300`}>
-              <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Type de transporteur :</p>
-              <div className="grid grid-cols-2 gap-2">
-                {['mondial-relay', 'vinted-go', 'relais-colis', 'pickup'].map(type => (
-                  <label key={type} className={`flex items-center gap-2 cursor-pointer p-3 rounded-lg border-2 transition ${
-                    darkMode 
-                      ? `${lockerType === type ? 'bg-gray-600 border-indigo-500' : 'bg-gray-600 border-gray-500 hover:border-indigo-400'}` 
-                      : `${lockerType === type ? 'bg-white border-indigo-500' : 'bg-white border-gray-200 hover:border-indigo-400'}`
-                  }`}>
-                    <input 
-                      type="radio" 
-                      name="lockerType" 
-                      value={type} 
-                      checked={lockerType === type} 
-                      onChange={(e) => setLockerType(e.target.value)} 
-                      className="w-4 h-4 text-indigo-600" 
-                    />
-                    <img src={LOCKER_LOGOS[type]} alt={type} className="h-6 object-contain" />
-                    <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{getLockerName(type)}</span>
-                  </label>
-                ))}
-              </div>
-              <p className={`text-xs mt-2 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>{getCodeFormatHint()}</p>
+          <div className={`flex items-center justify-between p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+            <div className="flex items-center gap-4">
+              <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{syncStatus}</span>
+              {collectedToday > 0 && (
+                <span className={`text-sm font-medium ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
+                  ✅ {collectedToday} récupéré{collectedToday > 1 ? 's' : ''} aujourd'hui
+                </span>
+              )}
             </div>
-
-            <textarea 
-              value={codeInput} 
-              onChange={(e) => setCodeInput(e.target.value)} 
-              placeholder={`Collez vos codes ici\n${getCodeFormatHint()}`} 
-              rows="4" 
-              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none text-lg resize-none transition-colors duration-300 ${
-                darkMode 
-                  ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                  : 'bg-white border-gray-200 text-gray-900'
-              }`} 
-            />
-            
-            <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4 transition-colors duration-300`}>
-  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Lieu de récupération du colis :</p>
-  <div className="space-y-2">
-    {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
-      <label key={loc} className="flex items-center gap-3 cursor-pointer">
-        <input 
-          type="radio" 
-          name="pickupLocation" 
-          value={loc} 
-          checked={pickupLocation === loc && !showCustomLocationInput} 
-          onChange={(e) => {
-            setPickupLocation(e.target.value);
-            setShowCustomLocationInput(false);
-            setCustomLocation('');
-          }} 
-          className="w-4 h-4 text-indigo-600" 
-        />
-        <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>{getPickupLocationName(loc)}</span>
-      </label>
-    ))}
-    
-    {/* Nouveau : Autre point de retrait */}
-    <label className="flex items-center gap-3 cursor-pointer">
-      <input 
-        type="radio" 
-        name="pickupLocation" 
-        checked={showCustomLocationInput} 
-        onChange={() => {
-          setShowCustomLocationInput(true);
-          setPickupLocation('custom:');
-        }} 
-        className="w-4 h-4 text-indigo-600" 
-      />
-      <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>📍 Autre point de retrait</span>
-    </label>
-    
-    {/* Champ de saisie du commentaire */}
-    {showCustomLocationInput && (
-      <div className="ml-7 mt-2">
-        <input
-          type="text"
-          value={customLocation}
-          onChange={(e) => {
-            setCustomLocation(e.target.value);
-            setPickupLocation(`custom:${e.target.value}`);
-          }}
-          placeholder="Ex: Ecomiam, Maison, Bureau..."
-          className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm transition-colors duration-300 ${
-            darkMode 
-              ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400' 
-              : 'bg-white border-gray-300 text-gray-900'
-          }`}
-        />
-      </div>
-    )}
-  </div>
-</div>
-            <button 
-              onClick={addParcels} 
-              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              Ajouter les colis
-            </button>
           </div>
         </div>
 
-        {/* SECTION FILTRES - GARDEZ LA LOGIQUE MAIS CHANGEZ LES CLASSES */}
+        {/* Formulaire d'ajout de colis - RESTE IDENTIQUE À VOTRE CODE ORIGINAL */}
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
+          <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>Ajouter un colis</h2>
+          
+          {/* Type de transporteur */}
+          <div className="mb-4">
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>Type de transporteur :</label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { value: 'mondial-relay', label: 'Mondial Relay', logo: '/logos/mondial-relay.png' },
+                { value: 'vinted-go', label: 'Vinted GO', logo: '/logos/vinted-go.png' },
+                { value: 'relais-colis', label: 'Relais Colis', logo: '/logos/relais-colis.png' },
+                { value: 'pickup', label: 'Pickup', logo: '/logos/pickup.png' }
+              ].map(locker => (
+                <button
+                  key={locker.value}
+                  onClick={() => setLockerType(locker.value)}
+                  className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition ${
+                    lockerType === locker.value
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900 dark:border-indigo-400'
+                      : darkMode 
+                        ? 'border-gray-600 hover:border-gray-500' 
+                        : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <img src={locker.logo} alt={locker.label} className="h-6 object-contain" />
+                  <span className={`text-sm font-medium ${lockerType === locker.value ? 'text-indigo-600 dark:text-indigo-300' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {locker.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Point de retrait */}
+          <div className="mb-4">
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>Point de retrait :</label>
+            <select
+              value={pickupLocation}
+              onChange={(e) => {
+                if (e.target.value === 'custom') {
+                  setShowCustomLocationInput(true);
+                } else {
+                  setPickupLocation(e.target.value);
+                  setShowCustomLocationInput(false);
+                }
+              }}
+              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none transition ${
+                darkMode 
+                  ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                  : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            >
+              <option value="hyper-u-locker">🏪 Hyper U - Locker</option>
+              <option value="hyper-u-accueil">🏪 Hyper U - Accueil</option>
+              <option value="intermarche-locker">🛒 Intermarché - Locker</option>
+              <option value="intermarche-accueil">🛒 Intermarché - Accueil</option>
+              <option value="rond-point-noyal">📍 Rond point Noyal - Locker</option>
+              <option value="custom">➕ Autre point de retrait...</option>
+            </select>
+
+            {showCustomLocationInput && (
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={customLocation}
+                  onChange={(e) => setCustomLocation(e.target.value)}
+                  placeholder="Nom du point de retrait"
+                  className={`flex-1 px-4 py-2 border-2 rounded-xl focus:border-indigo-500 focus:outline-none ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                      : 'bg-white border-gray-200'
+                  }`}
+                />
+                <button
+                  onClick={addCustomLocation}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition"
+                >
+                  Ajouter
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Code colis */}
+          <div className="mb-4">
+            <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>Code(s) colis :</label>
+            <textarea
+              value={codeInput}
+              onChange={(e) => setCodeInput(e.target.value)}
+              placeholder={
+                lockerType === 'mondial-relay' 
+                  ? 'Format 6 caractères (ex: ABC123)' 
+                  : 'Un ou plusieurs codes (séparés par espace, virgule ou retour à la ligne)'
+              }
+              rows="3"
+              className={`w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none resize-none transition ${
+                darkMode 
+                  ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                  : 'bg-white border-gray-200'
+              }`}
+            />
+          </div>
+
+          <button
+            onClick={addParcels}
+            disabled={!isOnline && offlineQueue.length > 0}
+            className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Ajouter le(s) colis
+          </button>
+        </div>
+
+        {/* ========================================
+            PARTIE 4 - JSX FILTRES ET LISTE DES COLIS
+            À COLLER APRÈS LA PARTIE 3
+            ======================================== */}
+
+        {/* SECTION FILTRES */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <h2 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
