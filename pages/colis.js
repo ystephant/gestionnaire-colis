@@ -114,14 +114,6 @@ useEffect(() => {
   }; 
 }, []);
 
-  useEffect(() => {
-  const handleVisibilityChange = async () => {
-    if (document.visibilityState === 'visible' && isLoggedIn && !wakeLock) {
-      await enableWakeLock();
-    }
-  };
-
-  // ✅ NOUVEAU : Recharger les données quand la page reprend le focus
 useEffect(() => {
   const handleFocus = () => {
     // Quand la page reprend le focus, recharger les données
@@ -146,10 +138,6 @@ useEffect(() => {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
   };
 }, [isLoggedIn, username]);
-  
-  document.addEventListener('visibilitychange', handleVisibilityChange);
-  return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-}, [isLoggedIn, wakeLock]);
   
   const checkAuth = async () => {
     // Délai minimum de 800ms pour voir l'écran de chargement
