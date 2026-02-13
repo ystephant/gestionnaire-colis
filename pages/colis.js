@@ -107,6 +107,72 @@ useEffect(() => {
   }
 }, [isLoggedIn, isOnline, username]);
 
+// ✅ NOUVEAU : Configuration OneSignal pour l'utilisateur connecté
+useEffect(() => {
+  if (isLoggedIn && username) {
+    console.log('👤 Utilisateur connecté:', username);
+    console.log('🔔 Initialisation OneSignal pour cet utilisateur...');
+    
+    // Fonction pour initialiser OneSignal avec retry
+    const initOneSignalUser = async (retryCount = 0) => {
+      const maxRetries = 5;
+      
+      // Vérifier que OneSignal est chargé
+      if (typeof window === 'undefined' || !window.OneSignal) {
+        if (retryCount < maxRetries) {
+          console.log(`⏳ OneSignal pas encore chargé, retry ${retryCount + 1}/${maxRetries}...`);
+          setTimeout(() => initOneSignalUser(retryCount + 1), 500);
+        } else {
+          console.error('❌ OneSignal non disponible après plusieurs tentatives');
+        }
+        return;
+      }
+      
+      try {
+        console.log('🔐 Appel OneSignal.login() pour:', username);
+        
+        // ✅ CRITIQUE : Associer le username à OneSignal
+        await window.OneSignal.login(username);
+        console.log('✅ OneSignal.login() réussi !');
+        
+        // Vérifier le statut
+        const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
+        console.log('📱 Push notifications activées:', isPushEnabled);
+        
+        if (isPushEnabled) {
+          const subscriptionId = window.OneSignal.User.PushSubscription.id;
+          console.log('🆔 Subscription ID:', subscriptionId);
+          
+          // Marquer OneSignal comme prêt
+          setOneSignalReady(true);
+          console.log('✅ OneSignal prêt pour les notifications');
+        } else {
+          console.log('⚠️ Notifications non activées - l\'utilisateur peut les activer via le composant NotificationPermission');
+        }
+        
+        // Écouter les notifications entrantes
+        window.OneSignal.Notifications.addEventListener('click', (event) => {
+          console.log('🔔 Notification cliquée:', event);
+          // Recharger les données quand une notification est cliquée
+          loadParcels();
+        });
+        
+      } catch (error) {
+        console.error('❌ Erreur OneSignal.login():', error);
+        
+        // Retry si erreur
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retry dans 2 secondes... (${retryCount + 1}/${maxRetries})`);
+          setTimeout(() => initOneSignalUser(retryCount + 1), 2000);
+        }
+      }
+    };
+    
+    // Lancer l'initialisation
+    initOneSignalUser();
+  }
+}, [isLoggedIn, username]);
+
   useEffect(() => { 
   return () => { 
     if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel);
@@ -394,9 +460,17 @@ const checkAuth = async () => {
       
       if (error) throw error;
 
-      if (oneSignalReady) {
+      // ✅ ENVOI DE NOTIFICATION avec logs détaillés
+      console.log('📤 Tentative envoi notification...');
+      console.log('🔍 oneSignalReady:', oneSignalReady);
+      console.log('🔍 window.OneSignal:', !!window.OneSignal);
+      
+      if (oneSignalReady && window.OneSignal) {
         try {
-          await fetch('/api/notify-colis-added', {
+          console.log('📦 Envoi pour userId:', username);
+          console.log('📦 Codes:', codes);
+          
+          const notifResponse = await fetch('/api/notify-colis-added', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -406,10 +480,30 @@ const checkAuth = async () => {
               lockerType: lockerType
             })
           });
-          console.log('✅ Notification envoyée à tous les appareils');
+          
+          const notifResult = await notifResponse.json();
+          
+          console.log('📨 Résultat notification (status ' + notifResponse.status + '):', notifResult);
+          
+          if (notifResponse.ok) {
+            if (notifResult.recipients > 0) {
+              console.log('✅ Notification envoyée à', notifResult.recipients, 'appareil(s)');
+            } else {
+              console.warn('⚠️ Notification envoyée mais 0 destinataires');
+              console.warn('💡 Vérifiez que OneSignal.login() a bien été appelé');
+            }
+          } else {
+            console.error('❌ Erreur API notification:', notifResult);
+          }
+          
         } catch (notifError) {
           console.error('⚠️ Erreur notification:', notifError);
+          // Ne pas bloquer l'ajout du colis si la notification échoue
         }
+      } else {
+        console.warn('⚠️ OneSignal pas prêt, notification non envoyée');
+        console.log('   oneSignalReady:', oneSignalReady);
+        console.log('   window.OneSignal:', !!window.OneSignal);
       }
 
       await loadParcels(); 
@@ -418,7 +512,7 @@ const checkAuth = async () => {
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     } catch (error) { 
-      console.error('Erreur d\'ajout:', error); 
+      console.error('❌ Erreur d\'ajout:', error); 
       alert('Erreur lors de l\'ajout des colis'); 
     }
   };
@@ -701,6 +795,67 @@ return (
           🔔 Notifications actives
         </div>
       )}
+
+      {/* 🧪 BOUTON DE TEST ONESIGNAL - RETIREZ APRÈS DEBUG */}
+      {isLoggedIn && process.env.NODE_ENV === 'development' && (
+        <button
+          onClick={async () => {
+            console.log('=== 🧪 TEST ONESIGNAL ===');
+            console.log('👤 Username:', username);
+            console.log('✅ OneSignal ready?', oneSignalReady);
+            console.log('🪟 window.OneSignal exists?', !!window.OneSignal);
+            
+            if (!window.OneSignal) {
+              alert('❌ OneSignal pas chargé');
+              return;
+            }
+            
+            try {
+              const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
+              const permission = await window.OneSignal.Notifications.permission;
+              const subscriptionId = window.OneSignal.User.PushSubscription.id || 'Non disponible';
+              
+              console.log('📊 État OneSignal:');
+              console.log('  - Push enabled:', isPushEnabled);
+              console.log('  - Permission:', permission);
+              console.log('  - Subscription ID:', subscriptionId);
+              
+              console.log('📤 Test envoi notification...');
+              
+              const response = await fetch('/api/notify-colis-added', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId: username,
+                  colisCodes: ['TEST_' + Date.now()],
+                  location: 'hyper-u-locker',
+                  lockerType: 'mondial-relay'
+                })
+              });
+              
+              const result = await response.json();
+              console.log('📨 Résultat API:', result);
+              
+              if (response.ok) {
+                if (result.recipients > 0) {
+                  alert('✅ Test réussi ! Vous devriez recevoir une notification.\n\nRecipients: ' + result.recipients);
+                } else {
+                  alert('⚠️ API OK mais 0 destinataires.\n\nVérifiez que OneSignal.login() a bien été appelé.\n\nSubscription ID: ' + subscriptionId);
+                }
+              } else {
+                alert('❌ Erreur API:\n' + JSON.stringify(result, null, 2));
+              }
+              
+            } catch (error) {
+              console.error('❌ Erreur test:', error);
+              alert('❌ Erreur: ' + error.message);
+            }
+          }}
+          className="fixed bottom-4 right-4 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-purple-700 transition z-50 text-sm"
+        >
+          🧪 Test OneSignal
+        </button>
+      )}
         
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between mb-6">
@@ -850,8 +1005,8 @@ return (
             setCustomLocation(e.target.value);
             setPickupLocation(`custom:${e.target.value}`);
           }}
-          placeholder="Ex: Ecomiam, Maison, Bureau..."
-          className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm transition-colors duration-300 ${
+          placeholder="Ex: Pharmacie centrale, Boulangerie du coin..."
+          className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm ${
             darkMode 
               ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400' 
               : 'bg-white border-gray-300 text-gray-900'
@@ -861,162 +1016,90 @@ return (
     )}
   </div>
 </div>
+
             <button 
               onClick={addParcels} 
-              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+              disabled={!codeInput.trim()} 
+              className={`w-full py-4 rounded-xl font-semibold text-white text-lg transition shadow-lg ${
+                !codeInput.trim() 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 transform hover:scale-105'
+              }`}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              Ajouter les colis
+              Ajouter {extractParcelCodes(codeInput).length > 0 ? `(${extractParcelCodes(codeInput).length})` : ''}
             </button>
           </div>
         </div>
 
-        {/* SECTION FILTRES - GARDEZ LA LOGIQUE MAIS CHANGEZ LES CLASSES */}
+        {/* Stats */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
-          <h2 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-            </svg>
-            Filtrer mes colis
-          </h2>
-          
-          {(() => {
-            const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
-            if (usedLockerTypes.length > 1) {
-              return (
-                <div className="mb-4">
-                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'} mb-2`}>Par transporteur :</p>
-                  <div className="flex flex-wrap gap-2">
-                    <button 
-                      onClick={() => setFilterLockerType('all')} 
-                      className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                        filterLockerType === 'all' 
-                          ? 'bg-indigo-600 text-white' 
-                          : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      <span>📦 Tous</span>
-                      <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('all')}</span>
-                    </button>
-                    {usedLockerTypes.includes('mondial-relay') && (
-                      <button 
-                        onClick={() => setFilterLockerType('mondial-relay')} 
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'mondial-relay' ? 'bg-blue-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>🌐 Mondial Relay</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('mondial-relay')}</span>
-                      </button>
-                    )}
-                    {usedLockerTypes.includes('vinted-go') && (
-                      <button 
-                        onClick={() => setFilterLockerType('vinted-go')} 
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'vinted-go' ? 'bg-teal-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>👕 Vinted GO</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('vinted-go')}</span>
-                      </button>
-                    )}
-                    {usedLockerTypes.includes('relais-colis') && (
-                      <button 
-                        onClick={() => setFilterLockerType('relais-colis')} 
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'relais-colis' ? 'bg-green-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>📮 Relais Colis</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('relais-colis')}</span>
-                      </button>
-                    )}
-                    {usedLockerTypes.includes('pickup') && (
-                      <button 
-                        onClick={() => setFilterLockerType('pickup')} 
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLockerType === 'pickup' ? 'bg-orange-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>🎁 Pickup</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLockerType('pickup')}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
-
-          {(() => {
-            const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
-            if (usedLocations.length > 1) {
-              return (
-                <div>
-                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'} mb-2`}>Par lieu :</p>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setFilterLocation('all')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'all' ? 'bg-indigo-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                      <span>📦 Tous les lieux</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('all')}</span>
-                    </button>
-                    {usedLocations.includes('hyper-u-locker') && (<button onClick={() => setFilterLocation('hyper-u-locker')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'hyper-u-locker' ? 'bg-purple-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🏪 Hyper U Locker</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('hyper-u-locker')}</span></button>)}
-                    {usedLocations.includes('hyper-u-accueil') && (<button onClick={() => setFilterLocation('hyper-u-accueil')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'hyper-u-accueil' ? 'bg-purple-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🏪 Hyper U Accueil</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('hyper-u-accueil')}</span></button>)}
-                    {usedLocations.includes('intermarche-locker') && (<button onClick={() => setFilterLocation('intermarche-locker')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-locker' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Locker</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-locker')}</span></button>)}
-                    {usedLocations.includes('intermarche-accueil') && (<button onClick={() => setFilterLocation('intermarche-accueil')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'intermarche-accueil' ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>🛒 Intermarché Accueil</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('intermarche-accueil')}</span></button>)}
-                    {usedLocations.includes('rond-point-noyal') && (<button onClick={() => setFilterLocation('rond-point-noyal')} className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${filterLocation === 'rond-point-noyal' ? 'bg-yellow-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><span>📍 Rond point Noyal</span><span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">{getCountByLocation('rond-point-noyal')}</span></button>)}
-                    {usedLocations.some(loc => loc.startsWith('custom:')) && (
-                      <button 
-                        onClick={() => setFilterLocation('custom')} 
-                        className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                          filterLocation === 'custom' ? 'bg-gray-600 text-white' : darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span>📍 Autres lieux</span>
-                        <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                          {pendingParcels.filter(p => p.location.startsWith('custom:')).length}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
-
-          {(filterLockerType !== 'all' || filterLocation !== 'all') && (
-            <div className={`mt-4 flex items-center justify-between rounded-lg p-3 border-2 ${darkMode ? 'bg-blue-900 border-blue-700' : 'bg-blue-50 border-blue-200'}`}>
-              <p className={`text-sm font-medium ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>🔍 Affichage de {filteredPendingParcels.length} colis sur {pendingParcels.length}</p>
-              <button onClick={() => {setFilterLockerType('all'); setFilterLocation('all');}} className={`text-sm font-semibold underline ${darkMode ? 'text-blue-300 hover:text-blue-100' : 'text-blue-600 hover:text-blue-800'}`}>Réinitialiser</button>
+          <div className="grid grid-cols-2 gap-4">
+            <div className={`${darkMode ? 'bg-indigo-900 border-indigo-700' : 'bg-indigo-50 border-indigo-200'} border-2 rounded-xl p-4 transition-colors duration-300`}>
+              <div className={`text-3xl font-bold ${darkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>{pendingParcels.length}</div>
+              <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Colis en attente</div>
             </div>
-          )}
-
-          {(() => {
-            const usedLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
-            const usedLocations = [...new Set(pendingParcels.map(p => p.location))];
-            if (usedLockerTypes.length <= 1 && usedLocations.length <= 1) {
-              return (<div className="text-center py-4"><p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>✨ Aucun filtre nécessaire - Tous vos colis sont au même endroit !</p></div>);
-            }
-            return null;
-          })()}
+            <div className={`${darkMode ? 'bg-green-900 border-green-700' : 'bg-green-50 border-green-200'} border-2 rounded-xl p-4 transition-colors duration-300`}>
+              <div className={`text-3xl font-bold ${darkMode ? 'text-green-300' : 'text-green-600'}`}>{collectedToday}</div>
+              <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Récupérés aujourd'hui</div>
+            </div>
+          </div>
         </div>
 
-        {/* Colis en attente */}
+        {/* Filtres */}
+        {pendingParcels.length > 0 && (
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
+            <h2 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>Filtres</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Par transporteur:</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setFilterLockerType('all')} className={`px-3 py-1 rounded-lg text-sm transition ${filterLockerType === 'all' ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                    Tous ({pendingParcels.length})
+                  </button>
+                  {['mondial-relay', 'vinted-go', 'relais-colis', 'pickup'].map(type => (
+                    <button key={type} onClick={() => setFilterLockerType(type)} className={`px-3 py-1 rounded-lg text-sm transition ${filterLockerType === type ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                      {getLockerName(type)} ({getCountByLockerType(type)})
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Par lieu:</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setFilterLocation('all')} className={`px-3 py-1 rounded-lg text-sm transition ${filterLocation === 'all' ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                    Tous ({pendingParcels.length})
+                  </button>
+                  {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
+                    <button key={loc} onClick={() => setFilterLocation(loc)} className={`px-3 py-1 rounded-lg text-sm transition ${filterLocation === loc ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                      {getPickupLocationName(loc).replace(/^.{2}\s/, '')} ({getCountByLocation(loc)})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Liste des colis */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
-          <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4 flex items-center gap-2`}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-            </svg>
-            À récupérer ({filteredPendingParcels.length})
+          <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
+            En attente de récupération ({filteredPendingParcels.length})
           </h2>
           
           {filteredPendingParcels.length === 0 ? (
-            <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              {pendingParcels.length === 0 ? 'Aucun colis en attente' : 'Aucun colis ne correspond aux filtres'}
-            </p>
+            <div className="text-center py-12">
+              <div className="bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                </svg>
+              </div>
+              <p className={`text-lg ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Aucun colis en attente</p>
+              <p className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-2`}>
+                {pendingParcels.length > 0 ? 'Essayez de changer les filtres' : 'Ajoutez vos premiers colis'}
+              </p>
+            </div>
           ) : (
             <div className="space-y-3">
               {filteredPendingParcels.map(parcel => {
@@ -1026,42 +1109,24 @@ return (
                 return (
                   <div
                     key={parcel.id}
-                    onClick={(e) => {
-                      if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'OPTION') {
-                        toggleCollected(parcel.id, parcel.collected);
-                      }
-                    }}
-                    className={`border-2 rounded-xl p-4 transition cursor-pointer ${
-                      isUrgent 
-                        ? darkMode 
-                          ? 'border-yellow-600 bg-yellow-900 bg-opacity-30 hover:border-yellow-500' 
-                          : 'border-yellow-300 bg-yellow-50 hover:border-yellow-400'
-                        : darkMode 
-                          ? 'border-gray-600 hover:border-indigo-400 bg-gray-700' 
-                          : 'border-gray-200 hover:border-indigo-300 bg-white'
+                    className={`border-2 rounded-xl p-4 transition ${
+                      darkMode 
+                        ? `${isUrgent ? 'border-red-600 bg-red-900 bg-opacity-20' : 'border-gray-600 bg-gray-700'}` 
+                        : `${isUrgent ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'}`
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleCollected(parcel.id, parcel.collected);
-                        }}
-                        className={`mt-1 w-6 h-6 border-2 rounded-lg flex items-center justify-center flex-shrink-0 transition ${
+                        onClick={() => toggleCollected(parcel.id, parcel.collected)}
+                        className={`mt-1 w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${
                           darkMode 
-                            ? 'border-gray-500 hover:border-indigo-400' 
-                            : 'border-gray-300 hover:border-indigo-500'
+                            ? 'border-gray-500 hover:border-green-500 hover:bg-green-900' 
+                            : 'border-gray-300 hover:border-green-500 hover:bg-green-50'
                         }`}
-                      >
-                        {parcel.collected && (
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="3">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                          </svg>
-                        )}
-                      </button>
+                      />
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <div className="flex items-center gap-2 mb-1">
                           <img src={LOCKER_LOGOS[parcel.locker_type]} alt="" className="h-5 object-contain" />
                           <select
                             value={parcel.locker_type}
@@ -1069,11 +1134,13 @@ return (
                               e.stopPropagation();
                               changeLockerType(parcel.id, e.target.value);
                             }}
-                            className={`text-sm bg-transparent border-none focus:outline-none cursor-pointer font-medium ${
-                              darkMode ? 'text-gray-200' : 'text-gray-800'
+                            className={`text-sm bg-transparent border rounded px-2 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer transition-colors duration-300 ${
+                              darkMode 
+                                ? 'border-gray-600 text-gray-300' 
+                                : 'border-gray-200 text-gray-600'
                             }`}
                             style={{
-                              color: darkMode ? '#e5e7eb' : '#1f2937'
+                              color: darkMode ? '#d1d5db' : '#4b5563'
                             }}
                             onClick={(e) => e.stopPropagation()}
                           >
