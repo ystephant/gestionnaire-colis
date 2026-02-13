@@ -5,10 +5,6 @@ export default function Document() {
     <Html lang="fr">
       <Head>
         <link rel="manifest" href="/manifest.json" />
-        <script 
-          src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" 
-          defer
-        />
       </Head>
       <body>
         <Main />
