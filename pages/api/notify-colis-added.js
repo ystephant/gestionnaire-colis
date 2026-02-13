@@ -8,11 +8,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { userId, colisCodes, location, lockerType } = req.body;
+    const { userId, colisCode } = req.body;
 
-    console.log('📥 Requête reçue:', { userId, colisCodes, location, lockerType });
+    console.log('📥 Requête récupération:', { userId, colisCode });
 
-    if (!userId || !colisCodes || !Array.isArray(colisCodes) || colisCodes.length === 0) {
+    if (!userId || !colisCode) {
       console.error('❌ Données manquantes');
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -25,19 +25,15 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
-    const locationNames = {
-      'hyper-u-locker': 'Hyper U - Locker',
-      'hyper-u-accueil': 'Hyper U - Accueil',
-      'intermarche-locker': 'Intermarché - Locker',
-      'intermarche-accueil': 'Intermarché - Accueil',
-      'rond-point-noyal': 'Rond point Noyal - Locker'
-    };
+    const message = `✅ Le colis ${colisCode} a été récupéré !`;
 
-    const message = colisCodes.length > 1
-      ? `📦 ${colisCodes.length} nouveaux colis ajoutés à ${locationNames[location] || location}`
-      : `📦 Nouveau colis ${colisCodes[0]} ajouté à ${locationNames[location] || location}`;
+    // ✅ Détecter l'URL du site automatiquement
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
+                    'https://lepetitmeeple.vercel.app');
 
-    console.log('📤 Envoi notification OneSignal...');
+    console.log('📤 Envoi notification récupération...');
+    console.log('🔗 Deep link URL:', `${siteUrl}/colis`);
 
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
@@ -51,15 +47,16 @@ export default async function handler(req, res) {
           external_id: [userId]
         },
         target_channel: 'push',
-        headings: { en: 'Nouveaux colis !' },
+        headings: { en: 'Colis récupéré 🎉' },
         contents: { en: message },
         data: {
-          type: 'colis_added',
+          type: 'colis_collected',
           userId: userId,
-          codes: colisCodes,
-          timestamp: Date.now() // ✅ Timestamp unique
+          code: colisCode,
+          timestamp: Date.now(),
+          url: `${siteUrl}/colis` // ✅ URL dans les données
         },
-        url: 'https://gestionnaire-colis.vercel.app/colis'
+        url: `${siteUrl}/colis` // ✅ Deep link - ouvre la page au clic
       })
     });
 
