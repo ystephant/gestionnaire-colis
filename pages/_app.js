@@ -71,6 +71,24 @@ export default function MyApp({ Component, pageProps }) {
               console.log('✅ Utilisateur enregistré dans OneSignal:', username);
               
               // Vérifier si l'utilisateur a déjà donné la permission
+              const hasPermission = localStorage.getItem(`onesignal_permission_${username}`);
+              
+              if (!hasPermission) {
+                // Première fois : vérifier l'état actuel
+                const isPushEnabled = await OneSignal.User.PushSubscription.optedIn;
+                
+                if (!isPushEnabled) {
+                  // Demander la permission
+                  await OneSignal.Notifications.requestPermission();
+                  console.log('🔔 Permission demandée');
+                }
+                
+                // Sauvegarder qu'on a demandé
+                localStorage.setItem(`onesignal_permission_${username}`, 'asked');
+              } else {
+                console.log('✅ Permission déjà gérée pour cet utilisateur');
+              }
+              
               const isPushEnabled = await OneSignal.User.PushSubscription.optedIn;
               console.log('📱 Push enabled:', isPushEnabled);
             } catch (error) {
