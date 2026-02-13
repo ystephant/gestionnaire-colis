@@ -34,76 +34,77 @@ export default function MyApp({ Component, pageProps }) {
     checkAuth();
   }, [router.pathname]);
 
+  // ✅ INITIALISATION ONESIGNAL - VERSION CORRIGÉE
   useEffect(() => {
-    // Initialiser OneSignal avec gestion d'erreurs améliorée
     if (typeof window !== 'undefined') {
+      console.log('🔔 Initialisation OneSignal...');
+      
+      // Vérifier que l'App ID est bien défini
+      const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+      
+      if (!appId) {
+        console.error('❌ NEXT_PUBLIC_ONESIGNAL_APP_ID non définie dans les variables d\'environnement');
+        return;
+      }
+      
+      console.log('📌 OneSignal App ID:', appId.substring(0, 8) + '...');
+      
+      // Charger le SDK OneSignal
       const script = document.createElement('script');
       script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
       script.defer = true;
       script.onerror = () => {
-        console.warn('⚠️ OneSignal SDK bloqué par un bloqueur de publicités');
+        console.warn('⚠️ OneSignal SDK bloqué (bloqueur de pubs ou erreur réseau)');
       };
       
+      document.head.appendChild(script);
+      
+      // Initialiser OneSignal
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       
       window.OneSignalDeferred.push(async function(OneSignal) {
         try {
           await OneSignal.init({
-            appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || "24c0cb48-bcea-4953-934c-8d41632f3f16",
+            appId: appId,
             serviceWorkerParam: { scope: '/' },
             serviceWorkerPath: 'OneSignalSDKWorker.js',
             allowLocalhostAsSecureOrigin: true,
-            autoRegister: true,  // ✅ CHANGÉ : true pour auto-inscription
+            
+            // ✅ IMPORTANT : On laisse l'utilisateur gérer les permissions manuellement
+            autoRegister: false,  // Ne pas auto-inscrire
             autoResubscribe: true,
+            
             notifyButton: {
-              enable: false,
+              enable: false, // On gère notre propre UI
             },
           });
           
           console.log('✅ OneSignal initialisé avec succès');
+          
+          // Rendre OneSignal accessible globalement
           window.OneSignal = OneSignal;
           
-          // 🔑 ENREGISTRER L'UTILISATEUR AVEC SON USERNAME
-          const username = localStorage.getItem('username');
-          if (username && router.pathname !== '/') {
-            try {
-              await OneSignal.login(username);
-              console.log('✅ Utilisateur enregistré dans OneSignal:', username);
-              
-              // Vérifier si on a déjà demandé la permission
-              const hasAsked = localStorage.getItem(`onesignal_permission_${username}`);
-              
-              if (!hasAsked) {
-                // Première fois : demander la permission
-                console.log('🔔 Demande de permission notifications...');
-                await OneSignal.Notifications.requestPermission();
-                
-                // Sauvegarder qu'on a demandé
-                localStorage.setItem(`onesignal_permission_${username}`, 'asked');
-                console.log('✅ Permission demandée et sauvegardée');
-              } else {
-                console.log('✅ Permission déjà gérée pour cet utilisateur');
-              }
-              
-              const isPushEnabled = await OneSignal.User.PushSubscription.optedIn;
-              console.log('📱 Push enabled:', isPushEnabled);
-              
-              if (isPushEnabled) {
-                const subId = OneSignal.User.PushSubscription.id;
-                console.log('📱 Subscription ID:', subId);
-              }
-            } catch (error) {
-              console.error('❌ Erreur lors de l\'enregistrement:', error);
-            }
-          }
+          // ✅ NOUVEAU : Écouter les changements de permission
+          OneSignal.Notifications.addEventListener('permissionChange', function(isGranted) {
+            console.log('🔔 Permission notifications changée:', isGranted ? 'Accordée ✅' : 'Refusée ❌');
+          });
+          
+          // Écouter les changements de subscription
+          OneSignal.User.PushSubscription.addEventListener('change', function(subscription) {
+            console.log('📱 Subscription changée:', subscription);
+          });
+          
+          // ❌ NE PAS faire OneSignal.login() ici !
+          // Le login sera fait dans colis.js quand on est sûr que l'utilisateur est connecté
+          
         } catch (error) {
-          console.error('❌ Erreur OneSignal:', error.message);
+          console.error('❌ Erreur initialisation OneSignal:', error.message);
         }
       });
     }
-  }, []); // ✅ CHANGÉ : [] au lieu de [router.pathname] pour éviter réinitialisation
+  }, []); // ✅ Dépendances vides = s'exécute une seule fois au montage
 
-  // 🎮 ÉCRAN DE CHARGEMENT UNIQUE
+  // 🎮 ÉCRAN DE CHARGEMENT
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center">
