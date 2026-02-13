@@ -3,7 +3,6 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
 import NotificationPermission from '../components/NotificationPermission';
-import { initOneSignal } from '../lib/onesignal';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -85,19 +84,19 @@ const disableWakeLock = async () => {
 
 useEffect(() => {
   if (isLoggedIn && username) {
-    // Initialiser OneSignal via le package NPM (pas de CDN)
-    const setupOneSignal = async () => {
-      try {
-        const ready = await initOneSignal(username);
-        setOneSignalReady(ready);
-        console.log('✅ OneSignal initialisé via NPM:', ready);
-      } catch (error) {
-        console.error('⚠️ Erreur OneSignal:', error);
-        setOneSignalReady(false);
+    // OneSignal est déjà initialisé dans _app.js
+    // On vérifie juste qu'il est prêt
+    const checkOneSignal = () => {
+      if (typeof window !== 'undefined' && window.OneSignal) {
+        setOneSignalReady(true);
+        console.log('✅ OneSignal prêt pour les notifications');
+      } else {
+        // Attendre que OneSignal soit chargé
+        setTimeout(checkOneSignal, 500);
       }
     };
     
-    setupOneSignal();
+    checkOneSignal();
     loadParcels();
     enableWakeLock();
     if (isOnline) { 
