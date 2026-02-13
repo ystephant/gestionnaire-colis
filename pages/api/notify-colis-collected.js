@@ -56,7 +56,9 @@ export default async function handler(req, res) {
           timestamp: Date.now(),
           url: `${siteUrl}/colis` // ✅ URL dans les données
         },
-        url: `${siteUrl}/colis` // ✅ Deep link - ouvre la page au clic
+        url: `${siteUrl}/colis`, // ✅ Deep link - ouvre la page au clic
+        web_url: `${siteUrl}/colis`, // ✅ Pour web
+        app_url: `${siteUrl}/colis` // ✅ Pour app mobile
       })
     });
 
