@@ -114,6 +114,7 @@ useEffect(() => {
   }; 
 }, []);
 
+// ✅ NOUVEAU : Recharger les données quand la page reprend le focus
 useEffect(() => {
   const handleFocus = () => {
     // Quand la page reprend le focus, recharger les données
@@ -139,7 +140,7 @@ useEffect(() => {
   };
 }, [isLoggedIn, username]);
   
-  const checkAuth = async () => {
+const checkAuth = async () => {
     // Délai minimum de 800ms pour voir l'écran de chargement
     const startTime = Date.now();
     
@@ -235,32 +236,32 @@ useEffect(() => {
         }
       )
       .subscribe((status) => {
-  console.log('📡 État canal Realtime:', status);
-  
-  if (status === 'SUBSCRIBED') { 
-    console.log('✅ Temps réel activé'); 
-    setSyncStatus('🟢 Synchronisé en temps réel'); 
-  } else if (status === 'CHANNEL_ERROR') { 
-    console.error('❌ Erreur canal Realtime'); 
-    setSyncStatus('⚠️ Erreur de synchronisation'); 
-  } else if (status === 'CLOSED') {
-    console.warn('⚠️ Canal fermé - reconnexion dans 3s...');
-    setSyncStatus('⚠️ Reconnexion...');
-    
-    // Nettoyer l'ancien canal
-    if (window.realtimeChannel) {
-      supabase.removeChannel(window.realtimeChannel);
-    }
-    
-    // Reconnecter après 3 secondes
-    setTimeout(() => {
-      if (isLoggedIn && username) {
-        console.log('🔄 Reconnexion au canal Realtime...');
-        setupRealtimeSubscription();
-      }
-    }, 3000);
-  }
-});
+        console.log('📡 État canal Realtime:', status);
+        
+        if (status === 'SUBSCRIBED') { 
+          console.log('✅ Temps réel activé'); 
+          setSyncStatus('🟢 Synchronisé en temps réel'); 
+        } else if (status === 'CHANNEL_ERROR') { 
+          console.error('❌ Erreur canal Realtime'); 
+          setSyncStatus('⚠️ Erreur de synchronisation'); 
+        } else if (status === 'CLOSED') {
+          console.warn('⚠️ Canal fermé - reconnexion dans 3s...');
+          setSyncStatus('⚠️ Reconnexion...');
+          
+          // Nettoyer l'ancien canal
+          if (window.realtimeChannel) {
+            supabase.removeChannel(window.realtimeChannel);
+          }
+          
+          // Reconnecter après 3 secondes
+          setTimeout(() => {
+            if (isLoggedIn && username) {
+              console.log('🔄 Reconnexion au canal Realtime...');
+              setupRealtimeSubscription();
+            }
+          }, 3000);
+        }
+      });
     
     window.realtimeChannel = channel;
   };
