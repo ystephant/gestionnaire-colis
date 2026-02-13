@@ -8,11 +8,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { userId, colisCode } = req.body;
+    const { userId, colisCodes, location, lockerType } = req.body;
 
-    console.log('📥 Requête récupération:', { userId, colisCode });
+    console.log('📥 Requête reçue:', { userId, colisCodes, location, lockerType });
 
-    if (!userId || !colisCode) {
+    if (!userId || !colisCodes || !Array.isArray(colisCodes) || colisCodes.length === 0) {
       console.error('❌ Données manquantes');
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -25,14 +25,24 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
-    const message = `✅ Le colis ${colisCode} a été récupéré !`;
+    const locationNames = {
+      'hyper-u-locker': 'Hyper U - Locker',
+      'hyper-u-accueil': 'Hyper U - Accueil',
+      'intermarche-locker': 'Intermarché - Locker',
+      'intermarche-accueil': 'Intermarché - Accueil',
+      'rond-point-noyal': 'Rond point Noyal - Locker'
+    };
+
+    const message = colisCodes.length > 1
+      ? `📦 ${colisCodes.length} nouveaux colis ajoutés à ${locationNames[location] || location}`
+      : `📦 Nouveau colis ${colisCodes[0]} ajouté à ${locationNames[location] || location}`;
 
     // ✅ Détecter l'URL du site automatiquement
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
                     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
                     'https://lepetitmeeple.vercel.app');
 
-    console.log('📤 Envoi notification récupération...');
+    console.log('📤 Envoi notification OneSignal...');
     console.log('🔗 Deep link URL:', `${siteUrl}/colis`);
 
     const response = await fetch('https://api.onesignal.com/notifications', {
@@ -47,16 +57,18 @@ export default async function handler(req, res) {
           external_id: [userId]
         },
         target_channel: 'push',
-        headings: { en: 'Colis récupéré 🎉' },
+        headings: { en: 'Nouveaux colis !' },
         contents: { en: message },
         data: {
-          type: 'colis_collected',
+          type: 'colis_added',
           userId: userId,
-          code: colisCode,
+          codes: colisCodes,
           timestamp: Date.now(),
           url: `${siteUrl}/colis` // ✅ URL dans les données
         },
-        url: `${siteUrl}/colis` // ✅ Deep link - ouvre la page au clic
+        url: `${siteUrl}/colis`, // ✅ Deep link - ouvre la page au clic
+        web_url: `${siteUrl}/colis`, // ✅ Pour web
+        app_url: `${siteUrl}/colis` // ✅ Pour app mobile
       })
     });
 
