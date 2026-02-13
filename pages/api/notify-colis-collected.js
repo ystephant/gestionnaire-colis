@@ -27,7 +27,13 @@ export default async function handler(req, res) {
 
     const message = `✅ Le colis ${colisCode} a été récupéré !`;
 
+    // ✅ Détecter l'URL du site automatiquement
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
+                    'https://lepetitmeeple.vercel.app');
+
     console.log('📤 Envoi notification récupération...');
+    console.log('🔗 Deep link URL:', `${siteUrl}/colis`);
 
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
@@ -47,9 +53,10 @@ export default async function handler(req, res) {
           type: 'colis_collected',
           userId: userId,
           code: colisCode,
-          timestamp: Date.now() // ✅ Timestamp unique
+          timestamp: Date.now(),
+          url: `${siteUrl}/colis` // ✅ URL dans les données
         },
-        url: 'https://gestionnaire-colis.vercel.app/colis'
+        url: `${siteUrl}/colis` // ✅ Deep link - ouvre la page au clic
       })
     });
 
