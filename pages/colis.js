@@ -1040,12 +1040,15 @@ return (
                             className={`text-sm bg-transparent border-none focus:outline-none cursor-pointer font-medium ${
                               darkMode ? 'text-gray-200' : 'text-gray-800'
                             }`}
+                            style={{
+                              color: darkMode ? '#e5e7eb' : '#1f2937'
+                            }}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <option value="mondial-relay">Mondial Relay</option>
-                            <option value="vinted-go">Vinted GO</option>
-                            <option value="relais-colis">Relais Colis</option>
-                            <option value="pickup">Pickup</option>
+                            <option value="mondial-relay" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>Mondial Relay</option>
+                            <option value="vinted-go" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>Vinted GO</option>
+                            <option value="relais-colis" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>Relais Colis</option>
+                            <option value="pickup" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>Pickup</option>
                           </select>
                         </div>
                         
@@ -1067,15 +1070,18 @@ return (
                                 ? 'border-gray-600 text-gray-300' 
                                 : 'border-gray-200 text-gray-600'
                             }`}
+                            style={{
+                              color: darkMode ? '#d1d5db' : '#4b5563'
+                            }}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <option value="hyper-u-locker">🏪 Hyper U - Locker</option>
-                            <option value="hyper-u-accueil">🏪 Hyper U - Accueil</option>
-                            <option value="intermarche-locker">🛒 Intermarché - Locker</option>
-                            <option value="intermarche-accueil">🛒 Intermarché - Accueil</option>
-                            <option value="rond-point-noyal">📍 Rond point Noyal - Locker</option>
+                            <option value="hyper-u-locker" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>🏪 Hyper U - Locker</option>
+                            <option value="hyper-u-accueil" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>🏪 Hyper U - Accueil</option>
+                            <option value="intermarche-locker" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>🛒 Intermarché - Locker</option>
+                            <option value="intermarche-accueil" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>🛒 Intermarché - Accueil</option>
+                            <option value="rond-point-noyal" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>📍 Rond point Noyal - Locker</option>
                             {parcel.location.startsWith('custom:') && (
-                              <option value={parcel.location}>
+                              <option value={parcel.location} style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>
                               📍 Autre point de retrait ({parcel.location.replace('custom:', '')})
                               </option>
                             )}
