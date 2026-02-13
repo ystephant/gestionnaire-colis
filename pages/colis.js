@@ -120,6 +120,32 @@ useEffect(() => {
       await enableWakeLock();
     }
   };
+
+  // ✅ NOUVEAU : Recharger les données quand la page reprend le focus
+useEffect(() => {
+  const handleFocus = () => {
+    // Quand la page reprend le focus, recharger les données
+    if (isLoggedIn && username) {
+      console.log('🔄 Page active, rechargement des données...');
+      loadParcels();
+    }
+  };
+  
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible' && isLoggedIn && username) {
+      console.log('🔄 Page visible, rechargement des données...');
+      loadParcels();
+    }
+  };
+  
+  window.addEventListener('focus', handleFocus);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  
+  return () => {
+    window.removeEventListener('focus', handleFocus);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
+}, [isLoggedIn, username]);
   
   document.addEventListener('visibilitychange', handleVisibilityChange);
   return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
