@@ -53,7 +53,7 @@ export default function MyApp({ Component, pageProps }) {
             serviceWorkerParam: { scope: '/' },
             serviceWorkerPath: 'OneSignalSDKWorker.js',
             allowLocalhostAsSecureOrigin: true,
-            autoRegister: false,
+            autoRegister: true,  // ✅ CHANGÉ : true pour auto-inscription
             autoResubscribe: true,
             notifyButton: {
               enable: false,
@@ -70,27 +70,28 @@ export default function MyApp({ Component, pageProps }) {
               await OneSignal.login(username);
               console.log('✅ Utilisateur enregistré dans OneSignal:', username);
               
-              // Vérifier si l'utilisateur a déjà donné la permission
-              const hasPermission = localStorage.getItem(`onesignal_permission_${username}`);
+              // Vérifier si on a déjà demandé la permission
+              const hasAsked = localStorage.getItem(`onesignal_permission_${username}`);
               
-              if (!hasPermission) {
-                // Première fois : vérifier l'état actuel
-                const isPushEnabled = await OneSignal.User.PushSubscription.optedIn;
-                
-                if (!isPushEnabled) {
-                  // Demander la permission
-                  await OneSignal.Notifications.requestPermission();
-                  console.log('🔔 Permission demandée');
-                }
+              if (!hasAsked) {
+                // Première fois : demander la permission
+                console.log('🔔 Demande de permission notifications...');
+                await OneSignal.Notifications.requestPermission();
                 
                 // Sauvegarder qu'on a demandé
                 localStorage.setItem(`onesignal_permission_${username}`, 'asked');
+                console.log('✅ Permission demandée et sauvegardée');
               } else {
                 console.log('✅ Permission déjà gérée pour cet utilisateur');
               }
               
               const isPushEnabled = await OneSignal.User.PushSubscription.optedIn;
               console.log('📱 Push enabled:', isPushEnabled);
+              
+              if (isPushEnabled) {
+                const subId = OneSignal.User.PushSubscription.id;
+                console.log('📱 Subscription ID:', subId);
+              }
             } catch (error) {
               console.error('❌ Erreur lors de l\'enregistrement:', error);
             }
@@ -100,7 +101,7 @@ export default function MyApp({ Component, pageProps }) {
         }
       });
     }
-  }, [router.pathname]);
+  }, []); // ✅ CHANGÉ : [] au lieu de [router.pathname] pour éviter réinitialisation
 
   // 🎮 ÉCRAN DE CHARGEMENT UNIQUE
   if (loading) {
