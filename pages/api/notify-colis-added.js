@@ -37,7 +37,8 @@ export default async function handler(req, res) {
         details: 'ONESIGNAL_REST_API_KEY is not set'
       });
     }
-
+    console.log("📊 recipients:", data.recipients);
+    
     if (!appId) {
       console.error('❌ NEXT_PUBLIC_ONESIGNAL_APP_ID manquante');
       return res.status(500).json({ 
