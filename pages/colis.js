@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
@@ -39,6 +39,8 @@ export default function LockerParcelApp() {
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [oneSignalReady, setOneSignalReady] = useState(false);
   const [wakeLock, setWakeLock] = useState(null);
+  const isCleaningUp = useRef(false);
+  const channelRef = useRef(null);
 
   // ✅ Wake Lock - Empêche la mise en veille
   const enableWakeLock = async () => {
@@ -147,11 +149,18 @@ export default function LockerParcelApp() {
   }, [isLoggedIn, username]);
 
   useEffect(() => { 
-    return () => { 
-      if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel);
-      disableWakeLock();
-    }; 
-  }, []);
+  return () => {
+    isCleaningUp.current = true;
+    
+    if (channelRef.current) {
+      console.log('🧹 Nettoyage du canal Realtime...');
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
+    disableWakeLock();
+  }; 
+}, []);
 
   // ✅ Recharger les données quand la page reprend le focus
   useEffect(() => {
@@ -224,82 +233,97 @@ export default function LockerParcelApp() {
   };
 
   // ✅ Temps réel Supabase - Synchronisation automatique
-  const setupRealtimeSubscription = () => {
-    const channel = supabase
-      .channel(`parcels-${username}`)
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'parcels', 
-          filter: `user_id=eq.${username}` 
-        }, 
-        (payload) => {
-          console.log('🔄 Changement temps réel:', payload);
-          
-          if (payload.eventType === 'INSERT') {
-            setParcels(prev => {
-              const exists = prev.some(p => p.id === payload.new.id);
-              if (exists) { 
-                console.log('⚠️ Doublon évité:', payload.new.id); 
-                return prev; 
-              }
-              const updated = [payload.new, ...prev];
-              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-              return updated;
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            setParcels(prev => {
-              const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
-              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-              
-              if (payload.new.collected && !payload.old?.collected) {
-                showNotification(
-                  `Colis ${payload.new.code} récupéré ! 🎉`,
-                  `collected-${payload.new.id}`
-                );
-              }
-              
-              return updated;
-            });
-          } else if (payload.eventType === 'DELETE') {
-            console.log('🗑️ Suppression détectée:', payload.old.id);
-            setParcels(prev => {
-              const updated = prev.filter(p => p.id !== payload.old.id);
-              localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-              return updated;
-            });
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 État canal Realtime:', status);
+const setupRealtimeSubscription = () => {
+  // ✅ Nettoyer l'ancien canal si existant
+  if (channelRef.current) {
+    isCleaningUp.current = true;
+    supabase.removeChannel(channelRef.current);
+    channelRef.current = null;
+    isCleaningUp.current = false;
+  }
+  
+  const channel = supabase
+    .channel(`parcels-${username}`)
+    .on('postgres_changes', 
+      { 
+        event: '*', 
+        schema: 'public', 
+        table: 'parcels', 
+        filter: `user_id=eq.${username}` 
+      }, 
+      (payload) => {
+        console.log('🔄 Changement temps réel:', payload);
         
-        if (status === 'SUBSCRIBED') { 
-          console.log('✅ Temps réel activé'); 
-          setSyncStatus('🟢 Synchronisé en temps réel'); 
-        } else if (status === 'CHANNEL_ERROR') { 
-          console.error('❌ Erreur canal Realtime'); 
-          setSyncStatus('⚠️ Erreur de synchronisation'); 
-        } else if (status === 'CLOSED') {
-          console.warn('⚠️ Canal fermé - reconnexion dans 3s...');
-          setSyncStatus('⚠️ Reconnexion...');
-          
-          if (window.realtimeChannel) {
-            supabase.removeChannel(window.realtimeChannel);
-          }
-          
-          setTimeout(() => {
-            if (isLoggedIn && username) {
-              console.log('🔄 Reconnexion au canal Realtime...');
-              setupRealtimeSubscription();
+        if (payload.eventType === 'INSERT') {
+          setParcels(prev => {
+            const exists = prev.some(p => p.id === payload.new.id);
+            if (exists) { 
+              console.log('⚠️ Doublon évité:', payload.new.id); 
+              return prev; 
             }
-          }, 3000);
+            const updated = [payload.new, ...prev];
+            localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+            return updated;
+          });
+        } else if (payload.eventType === 'UPDATE') {
+          setParcels(prev => {
+            const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
+            localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+            
+            if (payload.new.collected && !payload.old?.collected) {
+              showNotification(
+                `Colis ${payload.new.code} récupéré ! 🎉`,
+                `collected-${payload.new.id}`
+              );
+            }
+            
+            return updated;
+          });
+        } else if (payload.eventType === 'DELETE') {
+          console.log('🗑️ Suppression détectée:', payload.old.id);
+          setParcels(prev => {
+            const updated = prev.filter(p => p.id !== payload.old.id);
+            localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+            return updated;
+          });
         }
-      });
-    
-    window.realtimeChannel = channel;
-  };
+      }
+    )
+    .subscribe((status) => {
+      console.log('📡 État canal Realtime:', status);
+      
+      if (status === 'SUBSCRIBED') { 
+        console.log('✅ Temps réel activé'); 
+        setSyncStatus('🟢 Synchronisé en temps réel'); 
+      } else if (status === 'CHANNEL_ERROR') { 
+        console.error('❌ Erreur canal Realtime'); 
+        setSyncStatus('⚠️ Erreur de synchronisation'); 
+      } else if (status === 'CLOSED') {
+        // ✅ CORRECTION : Ne pas nettoyer si on est déjà en train de nettoyer
+        if (isCleaningUp.current) {
+          console.log('🧹 Nettoyage en cours, skip reconnexion');
+          return;
+        }
+        
+        console.warn('⚠️ Canal fermé - reconnexion dans 3s...');
+        setSyncStatus('⚠️ Reconnexion...');
+        
+        // ✅ Ne pas appeler removeChannel ici - il sera nettoyé automatiquement
+        channelRef.current = null;
+        
+        // ✅ Reconnexion après un délai
+        setTimeout(() => {
+          if (isLoggedIn && username && !isCleaningUp.current) {
+            console.log('🔄 Reconnexion au canal Realtime...');
+            setupRealtimeSubscription();
+          }
+        }, 3000);
+      }
+    });
+  
+  // ✅ Stocker dans le ref au lieu de window
+  channelRef.current = channel;
+};
 
   const showNotification = (message, tag = `parcel-${Date.now()}`) => {
     if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
