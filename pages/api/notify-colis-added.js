@@ -37,6 +37,17 @@ export default async function handler(req, res) {
         details: 'ONESIGNAL_REST_API_KEY is not set'
       });
     }
+
+    const response = await fetch('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+const data = await response.json();  // <-- ici
     console.log("📊 recipients:", data.recipients);
     
     if (!appId) {
