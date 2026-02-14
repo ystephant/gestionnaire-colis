@@ -592,6 +592,8 @@ export default function LockerParcelApp() {
     if (!confirm('Supprimer tous les colis récupérés ?')) return;
     
     const collectedIds = collectedParcels.map(p => p.id);
+    console.log('🗑️ Suppression de', collectedIds.length, 'colis récupérés');
+    console.log('🔍 IDs:', collectedIds);
 
     if (!isOnline) { 
       setParcels(parcels.filter(p => !p.collected)); 
@@ -606,12 +608,19 @@ export default function LockerParcelApp() {
         .in('id', collectedIds);
       
       if (error) throw error;
-      setParcels(parcels.filter(parcel => !parcel.collected));
+      
+      console.log('✅ Suppression réussie dans Supabase');
+      
+      // ✅ CORRECTION : Recharger les données depuis Supabase pour s'assurer de la synchronisation
+      await loadParcels();
+      
       setToastMessage(`✅ ${collectedIds.length} colis supprimés`); 
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
+      
+      console.log('✅ Données rechargées, synchronisation terminée');
     } catch (error) { 
-      console.error('Erreur de suppression:', error); 
+      console.error('❌ Erreur de suppression:', error); 
       alert('Erreur lors de la suppression'); 
     }
   };
