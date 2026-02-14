@@ -1,4 +1,5 @@
 // pages/api/notify-colis-added.js
+import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
   // ✅ CORS pour production
@@ -15,13 +16,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { userId, colisCodes, location, lockerType } = req.body;
+    const { userId, colisCodes, location } = req.body;
 
-    console.log('📥 Requête reçue:', { userId, colisCodes, location, lockerType });
+    console.log('📥 Requête ajout de colis reçue:', { userId, colisCodes, location });
 
     // ✅ Validation des données
-    if (!userId || !colisCodes || !Array.isArray(colisCodes) || colisCodes.length === 0) {
-      console.error('❌ Données manquantes:', { userId, colisCodes });
+    if (!userId || !Array.isArray(colisCodes) || colisCodes.length === 0) {
+      console.error('❌ Données manquantes:', { userId: !!userId, colisCodes: !!colisCodes });
       return res.status(400).json({ 
         error: 'Missing required fields',
         details: { userId: !!userId, colisCodes: !!colisCodes }
@@ -68,15 +69,15 @@ export default async function handler(req, res) {
                     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
                     'https://lepetitmeeple.vercel.app');
 
-    console.log('📤 Envoi notification OneSignal...');
+    console.log('📤 Envoi notification ajout...');
     console.log('🔗 Deep link URL:', `${siteUrl}/colis`);
     console.log('👤 User ID (external_id):', userId);
+    console.log('📦 Colis ajoutés:', colisCodes);
 
     // ✅ Payload OneSignal
     const payload = {
       app_id: appId,
-      include_aliases: [String(userId)], // format correct pour OneSignal
-      target_channel: 'push',
+      include_external_user_ids: [String(userId)], // multi-appareils support
       headings: { en: 'Nouveaux colis !' },
       contents: { en: message },
       data: {
@@ -93,52 +94,46 @@ export default async function handler(req, res) {
 
     console.log('📦 Payload OneSignal:', JSON.stringify(payload, null, 2));
 
-    // ✅ Envoi à OneSignal
-    const response = await fetch('https://api.onesignal.com/notifications', {
+    const response = await fetch('https://onesignal.com/api/v1/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Basic ${apiKey}`
       },
       body: JSON.stringify(payload)
     });
 
-    const responseData = await response.json(); // renommer data en responseData
-    console.log('📨 Réponse OneSignal (status ' + response.status + '):', JSON.stringify(responseData, null, 2));
+    const data = await response.json();
+    console.log('📨 Réponse OneSignal (status ' + response.status + '):', JSON.stringify(data, null, 2));
 
     if (!response.ok) {
-      console.error('❌ Erreur OneSignal:', responseData);
-      if (responseData.errors) {
-        console.error('🔍 Détails erreurs:', responseData.errors);
+      console.error('❌ Erreur OneSignal:', data);
+      if (data.errors) {
+        console.error('🔍 Détails erreurs:', data.errors);
       }
-
       return res.status(response.status).json({ 
         error: 'Erreur OneSignal',
         status: response.status,
-        details: responseData,
-        payload: payload
+        details: data,
+        payload
       });
     }
 
-    // Vérifier si des notifications ont été envoyées
-    if (responseData.recipients === 0) {
+    if (data.recipients === 0) {
       console.warn('⚠️ Aucun destinataire trouvé pour userId:', userId);
+      console.warn('💡 Assurez-vous que l\'utilisateur a bien initialisé OneSignal avec setExternalUserId()');
       return res.status(200).json({ 
         success: true,
         warning: 'No recipients found',
-        data: responseData,
+        data,
         hint: 'Make sure the user has called OneSignal.login() with this userId'
       });
     }
 
     console.log('✅ Notification envoyée avec succès');
-    console.log('📊 Recipients:', responseData.recipients);
+    console.log('📊 Recipients:', data.recipients);
 
-    return res.status(200).json({ 
-      success: true,
-      recipients: responseData.recipients,
-      data: responseData
-    });
+    return res.status(200).json({ success: true, recipients: data.recipients, data });
 
   } catch (error) {
     console.error('❌ Erreur serveur:', error);
