@@ -74,8 +74,9 @@ export default async function handler(req, res) {
     const payload = {
       app_id: appId,
       include_aliases: {
-        username: [userId]  // 'username' au lieu de 'external_id'
+        external_id: [userId.toString()]
       },
+
       target_channel: 'push',
       headings: { en: 'Nouveaux colis !' },
       contents: { en: message },
@@ -86,9 +87,7 @@ export default async function handler(req, res) {
         timestamp: Date.now(),
         url: `${siteUrl}/colis`
       },
-      url: `${siteUrl}/colis`,
-      web_url: `${siteUrl}/colis`,
-      app_url: `${siteUrl}/colis`
+      url: `${siteUrl}/colis`
     };
 
     console.log('📦 Payload OneSignal:', JSON.stringify(payload, null, 2));
