@@ -94,59 +94,109 @@ export default function LockerParcelApp() {
     }
   }, [isLoggedIn, isOnline, username]);
 
-  // ✅ Configuration OneSignal pour l'utilisateur connecté
-  useEffect(() => {
-    if (isLoggedIn && username) {
-      console.log('👤 Utilisateur connecté:', username);
-      console.log('🔔 Initialisation OneSignal pour cet utilisateur...');
+
+// 🔥 CONFIGURATION ONESIGNAL CORRIGÉE - MULTI-APPAREILS
+useEffect(() => {
+  if (isLoggedIn && username) {
+    console.log('👤 Utilisateur connecté:', username);
+    console.log('🔔 Configuration OneSignal pour multi-appareils...');
+    
+    const setupOneSignalUser = async (retryCount = 0) => {
+      const maxRetries = 5;
       
-      const initOneSignalUser = async (retryCount = 0) => {
-        const maxRetries = 5;
+      // Attendre que OneSignal soit chargé
+      if (typeof window === 'undefined' || !window.OneSignal) {
+        if (retryCount < maxRetries) {
+          console.log(`⏳ OneSignal pas encore chargé, retry ${retryCount + 1}/${maxRetries}...`);
+          setTimeout(() => setupOneSignalUser(retryCount + 1), 500);
+        } else {
+          console.error('❌ OneSignal non disponible après plusieurs tentatives');
+        }
+        return;
+      }
+      
+      try {
+        // 🔥 ÉTAPE 1 : LOGIN avec l'username
+        // C'est la clé pour lier TOUS les appareils du même utilisateur
+        console.log('🔐 Appel OneSignal.login() pour:', username);
+        await window.OneSignal.login(username);
+        console.log('✅ OneSignal.login() réussi !');
+        console.log('📱 Cet appareil est maintenant lié au compte:', username);
         
-        if (typeof window === 'undefined' || !window.OneSignal) {
-          if (retryCount < maxRetries) {
-            console.log(`⏳ OneSignal pas encore chargé, retry ${retryCount + 1}/${maxRetries}...`);
-            setTimeout(() => initOneSignalUser(retryCount + 1), 500);
-          } else {
-            console.error('❌ OneSignal non disponible après plusieurs tentatives');
-          }
-          return;
+        // 🔥 ÉTAPE 2 : Ajouter un alias pour compatibilité (optionnel mais recommandé)
+        await window.OneSignal.User.addAlias('username', username);
+        console.log('✅ Alias "username" ajouté:', username);
+        
+        // Vérifier l'état des notifications
+        const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
+        console.log('📱 Push notifications activées:', isPushEnabled);
+        
+        if (isPushEnabled) {
+          const subscriptionId = window.OneSignal.User.PushSubscription.id;
+          const subscriptionToken = window.OneSignal.User.PushSubscription.token;
+          console.log('🆔 Subscription ID:', subscriptionId);
+          console.log('🔑 Token:', subscriptionToken ? subscriptionToken.substring(0, 20) + '...' : 'N/A');
+          setOneSignalReady(true);
+          console.log('✅ OneSignal prêt pour recevoir des notifications');
+          
+          // Afficher un message de confirmation à l'utilisateur
+          showToastMessage('✅ Notifications activées pour ' + username);
+        } else {
+          console.log('⚠️ Notifications non activées - l\'utilisateur doit donner sa permission');
+          console.log('💡 Utilisez le composant NotificationPermission pour demander la permission');
         }
         
-        try {
-          console.log('🔐 Appel OneSignal.login() pour:', username);
-          await window.OneSignal.User.addAlias('username', username);
-          console.log('✅ OneSignal.login() réussi !');
-          
-          const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
-          console.log('📱 Push notifications activées:', isPushEnabled);
-          
-          if (isPushEnabled) {
-            const subscriptionId = window.OneSignal.User.PushSubscription.id;
-            console.log('🆔 Subscription ID:', subscriptionId);
+        // 🔥 ÉTAPE 3 : Écouter les clics sur les notifications
+        window.OneSignal.Notifications.addEventListener('click', (event) => {
+          console.log('🔔 Notification cliquée:', event);
+          console.log('🔄 Rechargement des colis...');
+          // Recharger les colis quand l'utilisateur clique sur une notification
+          loadParcels();
+        });
+        
+        // 🔥 ÉTAPE 4 : Écouter les changements de subscription
+        window.OneSignal.User.PushSubscription.addEventListener('change', (subscription) => {
+          console.log('📱 Subscription changée:', subscription);
+          if (subscription.current.optedIn) {
+            console.log('✅ Utilisateur abonné aux notifications');
             setOneSignalReady(true);
-            console.log('✅ OneSignal prêt pour les notifications');
+            showToastMessage('✅ Notifications activées');
           } else {
-            console.log('⚠️ Notifications non activées');
+            console.log('⚠️ Utilisateur désabonné des notifications');
+            setOneSignalReady(false);
+            showToastMessage('⚠️ Notifications désactivées');
           }
-          
-          window.OneSignal.Notifications.addEventListener('click', (event) => {
-            console.log('🔔 Notification cliquée:', event);
-            loadParcels();
-          });
-          
-        } catch (error) {
-          console.error('❌ Erreur OneSignal.login():', error);
-          if (retryCount < maxRetries) {
-            console.log(`🔄 Retry dans 2 secondes... (${retryCount + 1}/${maxRetries})`);
-            setTimeout(() => initOneSignalUser(retryCount + 1), 2000);
-          }
+        });
+        
+        // 🔥 ÉTAPE 5 : Afficher les informations de debug
+        console.log('');
+        console.log('═══════════════════════════════════════════');
+        console.log('✅ ONESIGNAL CONFIGURÉ AVEC SUCCÈS');
+        console.log('═══════════════════════════════════════════');
+        console.log('👤 Username:', username);
+        console.log('📱 Notifications:', isPushEnabled ? 'Activées ✅' : 'Désactivées ⚠️');
+        console.log('🌍 Multi-appareils: Tous les appareils connectés avec "' + username + '" recevront les notifications');
+        console.log('═══════════════════════════════════════════');
+        console.log('');
+        
+      } catch (error) {
+        console.error('❌ Erreur configuration OneSignal:', error.message);
+        console.error('🔍 Détails:', error);
+        
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retry dans 2 secondes... (${retryCount + 1}/${maxRetries})`);
+          setTimeout(() => setupOneSignalUser(retryCount + 1), 2000);
+        } else {
+          console.error('❌ Impossible de configurer OneSignal après', maxRetries, 'tentatives');
+          showToastMessage('⚠️ Erreur notifications - Vérifiez vos paramètres');
         }
-      };
-      
-      initOneSignalUser();
-    }
-  }, [isLoggedIn, username]);
+      }
+    };
+    
+    // Démarrer la configuration
+    setupOneSignalUser();
+  }
+}, [isLoggedIn, username]);
 
   useEffect(() => { 
   return () => {
