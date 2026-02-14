@@ -94,6 +94,10 @@ export default function LockerParcelApp() {
     }
   }, [isLoggedIn, isOnline, username]);
 
+// ========================================================================
+// CODE CORRIGÉ À REMPLACER DANS pages/colis.js (lignes 97-149 environ)
+// VERSION SANS showToastMessage (erreur corrigée)
+// ========================================================================
 
 // 🔥 CONFIGURATION ONESIGNAL CORRIGÉE - MULTI-APPAREILS
 useEffect(() => {
@@ -138,9 +142,6 @@ useEffect(() => {
           console.log('🔑 Token:', subscriptionToken ? subscriptionToken.substring(0, 20) + '...' : 'N/A');
           setOneSignalReady(true);
           console.log('✅ OneSignal prêt pour recevoir des notifications');
-          
-          // Afficher un message de confirmation à l'utilisateur
-          showToastMessage('✅ Notifications activées pour ' + username);
         } else {
           console.log('⚠️ Notifications non activées - l\'utilisateur doit donner sa permission');
           console.log('💡 Utilisez le composant NotificationPermission pour demander la permission');
@@ -160,11 +161,9 @@ useEffect(() => {
           if (subscription.current.optedIn) {
             console.log('✅ Utilisateur abonné aux notifications');
             setOneSignalReady(true);
-            showToastMessage('✅ Notifications activées');
           } else {
             console.log('⚠️ Utilisateur désabonné des notifications');
             setOneSignalReady(false);
-            showToastMessage('⚠️ Notifications désactivées');
           }
         });
         
@@ -188,7 +187,6 @@ useEffect(() => {
           setTimeout(() => setupOneSignalUser(retryCount + 1), 2000);
         } else {
           console.error('❌ Impossible de configurer OneSignal après', maxRetries, 'tentatives');
-          showToastMessage('⚠️ Erreur notifications - Vérifiez vos paramètres');
         }
       }
     };
@@ -197,6 +195,10 @@ useEffect(() => {
     setupOneSignalUser();
   }
 }, [isLoggedIn, username]);
+
+// ========================================================================
+// FIN DU CODE À REMPLACER
+// ========================================================================
 
   useEffect(() => { 
   return () => {
