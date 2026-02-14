@@ -75,7 +75,6 @@ export default async function handler(req, res) {
       app_id: appId,
       include_aliases: {
         username: [userId]  // 'username' au lieu de 'external_id'
-    }
       },
       target_channel: 'push',
       headings: { en: 'Nouveaux colis !' },
