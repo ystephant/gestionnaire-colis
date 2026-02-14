@@ -47,7 +47,7 @@ export default function MyApp({ Component, pageProps }) {
         return;
       }
       
-      console.log('📌 OneSignal App ID:', appId.substring(0, 8) + '...');
+      console.log('🔌 OneSignal App ID:', appId.substring(0, 8) + '...');
       
       // Charger le SDK OneSignal
       const script = document.createElement('script');
@@ -65,27 +65,21 @@ export default function MyApp({ Component, pageProps }) {
       window.OneSignalDeferred.push(async function(OneSignal) {
         try {
           await OneSignal.init({
-  appId: appId,
-  serviceWorkerParam: { scope: '/' },
-  serviceWorkerPath: 'OneSignalSDKWorker.js',
-  allowLocalhostAsSecureOrigin: true,
-  autoRegister: false,
-  autoResubscribe: true,
-  notifyButton: { enable: false },
-});
+            appId: appId,
+            serviceWorkerParam: { scope: '/' },
+            serviceWorkerPath: 'OneSignalSDKWorker.js',
+            allowLocalhostAsSecureOrigin: true,
+            autoRegister: false,
+            autoResubscribe: true,
+            notifyButton: { enable: false },
+          });
 
-const username = localStorage.getItem('username');
-
-if (username) {
-  await OneSignal.login(username);
-  console.log("✅ OneSignal login effectué avec:", username);
-}
-
+          console.log('✅ OneSignal initialisé avec succès');
           
           // Rendre OneSignal accessible globalement
           window.OneSignal = OneSignal;
           
-          // ✅ NOUVEAU : Écouter les changements de permission
+          // ✅ Écouter les changements de permission
           OneSignal.Notifications.addEventListener('permissionChange', function(isGranted) {
             console.log('🔔 Permission notifications changée:', isGranted ? 'Accordée ✅' : 'Refusée ❌');
           });
@@ -95,8 +89,9 @@ if (username) {
             console.log('📱 Subscription changée:', subscription);
           });
           
-          // ❌ NE PAS faire OneSignal.login() ici !
-          // Le login sera fait dans colis.js quand on est sûr que l'utilisateur est connecté
+          // ✅ NE PAS faire OneSignal.login() ici !
+          // Le login sera fait dans colis.js quand l'utilisateur est réellement connecté
+          console.log('⏳ OneSignal prêt - En attente du login utilisateur...');
           
         } catch (error) {
           console.error('❌ Erreur initialisation OneSignal:', error.message);
