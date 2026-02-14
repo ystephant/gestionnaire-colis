@@ -70,25 +70,30 @@ export default async function handler(req, res) {
     console.log('🔗 Deep link URL:', `${siteUrl}/colis`);
     console.log('👤 User ID (external_id):', userId);
 
+    if (!userId) {
+      console.error("❌ userId vide pour notification ajout");
+      return res.status(400).json({ error: "userId missing" });
+    }
     // ✅ Payload OneSignal avec meilleure structure
     const payload = {
-      app_id: appId,
-      include_aliases: {
-        external_id: [userId.toString()]
-      },
-
-      target_channel: 'push',
-      headings: { en: 'Nouveaux colis !' },
-      contents: { en: message },
-      data: {
-        type: 'colis_added',
-        userId: userId,
-        codes: colisCodes,
-        timestamp: Date.now(),
-        url: `${siteUrl}/colis`
-      },
-      url: `${siteUrl}/colis`
-    };
+  app_id: appId,
+  include_aliases: {
+    external_id: [String(userId)]
+  },
+  target_channel: 'push',
+  headings: { en: 'Nouveaux colis !' },
+  contents: { en: message },
+  data: {
+    type: 'colis_added',
+    userId,
+    codes: colisCodes,
+    timestamp: Date.now(),
+    url: `${siteUrl}/colis`
+  },
+  url: `${siteUrl}/colis`,
+  web_url: `${siteUrl}/colis`,
+  app_url: `${siteUrl}/colis`
+};
 
     console.log('📦 Payload OneSignal:', JSON.stringify(payload, null, 2));
 
