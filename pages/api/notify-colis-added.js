@@ -78,7 +78,7 @@ export default async function handler(req, res) {
     const payload = {
   app_id: appId,
     include_aliases: {
-    external_id: [userId.toString()]
+    external_id: [String(userId)]
   },
   target_channel: 'push',
   headings: { en: 'Nouveaux colis !' },
