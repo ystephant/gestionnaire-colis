@@ -65,21 +65,22 @@ export default function MyApp({ Component, pageProps }) {
       window.OneSignalDeferred.push(async function(OneSignal) {
         try {
           await OneSignal.init({
-            appId: appId,
-            serviceWorkerParam: { scope: '/' },
-            serviceWorkerPath: 'OneSignalSDKWorker.js',
-            allowLocalhostAsSecureOrigin: true,
-            
-            // ✅ IMPORTANT : On laisse l'utilisateur gérer les permissions manuellement
-            autoRegister: false,  // Ne pas auto-inscrire
-            autoResubscribe: true,
-            
-            notifyButton: {
-              enable: false, // On gère notre propre UI
-            },
-          });
-          
-          console.log('✅ OneSignal initialisé avec succès');
+  appId: appId,
+  serviceWorkerParam: { scope: '/' },
+  serviceWorkerPath: 'OneSignalSDKWorker.js',
+  allowLocalhostAsSecureOrigin: true,
+  autoRegister: false,
+  autoResubscribe: true,
+  notifyButton: { enable: false },
+});
+
+const username = localStorage.getItem('username');
+
+if (username) {
+  await OneSignal.login(username);
+  console.log("✅ OneSignal login effectué avec:", username);
+}
+
           
           // Rendre OneSignal accessible globalement
           window.OneSignal = OneSignal;
