@@ -1,5 +1,3 @@
-// pages/api/notify-colis-added.js
-import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
   // ✅ CORS pour production
