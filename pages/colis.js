@@ -28,7 +28,6 @@ export default function LockerParcelApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [collectedToday, setCollectedToday] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [syncStatus, setSyncStatus] = useState('');
@@ -41,34 +40,35 @@ export default function LockerParcelApp() {
   const [oneSignalReady, setOneSignalReady] = useState(false);
   const [wakeLock, setWakeLock] = useState(null);
 
+  // ✅ Wake Lock - Empêche la mise en veille
   const enableWakeLock = async () => {
-  try {
-    if ('wakeLock' in navigator) {
-      const lock = await navigator.wakeLock.request('screen');
-      setWakeLock(lock);
-      console.log('✅ Wake Lock activé - l\'écran ne se mettra pas en veille');
-      
-      lock.addEventListener('release', () => {
-        console.log('⚠️ Wake Lock libéré');
-        setWakeLock(null);
-      });
-      
-      return lock;
-    } else {
-      console.log('⚠️ Wake Lock non supporté sur cet appareil');
+    try {
+      if ('wakeLock' in navigator) {
+        const lock = await navigator.wakeLock.request('screen');
+        setWakeLock(lock);
+        console.log('✅ Wake Lock activé - l\'écran ne se mettra pas en veille');
+        
+        lock.addEventListener('release', () => {
+          console.log('⚠️ Wake Lock libéré');
+          setWakeLock(null);
+        });
+        
+        return lock;
+      } else {
+        console.log('⚠️ Wake Lock non supporté sur cet appareil');
+      }
+    } catch (err) {
+      console.error('❌ Erreur Wake Lock:', err);
     }
-  } catch (err) {
-    console.error('❌ Erreur Wake Lock:', err);
-  }
-};
+  };
 
-const disableWakeLock = async () => {
-  if (wakeLock) {
-    await wakeLock.release();
-    setWakeLock(null);
-    console.log('Wake Lock désactivé');
-  }
-};
+  const disableWakeLock = async () => {
+    if (wakeLock) {
+      await wakeLock.release();
+      setWakeLock(null);
+      console.log('Wake Lock désactivé');
+    }
+  };
 
   useEffect(() => {
     checkAuth();
@@ -81,133 +81,104 @@ const disableWakeLock = async () => {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-
-useEffect(() => {
-  if (isLoggedIn && username) {
-    // OneSignal est déjà initialisé dans _app.js
-    // On vérifie juste qu'il est prêt
-    const checkOneSignal = () => {
-      if (typeof window !== 'undefined' && window.OneSignal) {
-        setOneSignalReady(true);
-        console.log('✅ OneSignal prêt pour les notifications');
-      } else {
-        // Attendre que OneSignal soit chargé
-        setTimeout(checkOneSignal, 500);
+  useEffect(() => {
+    if (isLoggedIn && username) {
+      loadParcels();
+      enableWakeLock(); // ✅ Activer Wake Lock
+      if (isOnline) { 
+        setupRealtimeSubscription(); // ✅ Temps réel Supabase
       }
-    };
-    
-    checkOneSignal();
-    loadParcels();
-    enableWakeLock();
-    if (isOnline) { 
-      setupRealtimeSubscription();
+      loadOfflineQueue();
     }
-    trackCollectedToday();
-    loadOfflineQueue();
-  }
-}, [isLoggedIn, isOnline, username]);
+  }, [isLoggedIn, isOnline, username]);
 
-// ✅ NOUVEAU : Configuration OneSignal pour l'utilisateur connecté
-useEffect(() => {
-  if (isLoggedIn && username) {
-    console.log('👤 Utilisateur connecté:', username);
-    console.log('🔔 Initialisation OneSignal pour cet utilisateur...');
-    
-    // Fonction pour initialiser OneSignal avec retry
-    const initOneSignalUser = async (retryCount = 0) => {
-      const maxRetries = 5;
+  // ✅ Configuration OneSignal pour l'utilisateur connecté
+  useEffect(() => {
+    if (isLoggedIn && username) {
+      console.log('👤 Utilisateur connecté:', username);
+      console.log('🔔 Initialisation OneSignal pour cet utilisateur...');
       
-      // Vérifier que OneSignal est chargé
-      if (typeof window === 'undefined' || !window.OneSignal) {
-        if (retryCount < maxRetries) {
-          console.log(`⏳ OneSignal pas encore chargé, retry ${retryCount + 1}/${maxRetries}...`);
-          setTimeout(() => initOneSignalUser(retryCount + 1), 500);
-        } else {
-          console.error('❌ OneSignal non disponible après plusieurs tentatives');
+      const initOneSignalUser = async (retryCount = 0) => {
+        const maxRetries = 5;
+        
+        if (typeof window === 'undefined' || !window.OneSignal) {
+          if (retryCount < maxRetries) {
+            console.log(`⏳ OneSignal pas encore chargé, retry ${retryCount + 1}/${maxRetries}...`);
+            setTimeout(() => initOneSignalUser(retryCount + 1), 500);
+          } else {
+            console.error('❌ OneSignal non disponible après plusieurs tentatives');
+          }
+          return;
         }
-        return;
-      }
-      
-      try {
-        console.log('🔐 Appel OneSignal.login() pour:', username);
         
-        // ✅ CRITIQUE : Associer le username à OneSignal
-        await window.OneSignal.login(username);
-        console.log('✅ OneSignal.login() réussi !');
-        
-        // Vérifier le statut
-        const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
-        console.log('📱 Push notifications activées:', isPushEnabled);
-        
-        if (isPushEnabled) {
-          const subscriptionId = window.OneSignal.User.PushSubscription.id;
-          console.log('🆔 Subscription ID:', subscriptionId);
+        try {
+          console.log('🔐 Appel OneSignal.login() pour:', username);
+          await window.OneSignal.login(username);
+          console.log('✅ OneSignal.login() réussi !');
           
-          // Marquer OneSignal comme prêt
-          setOneSignalReady(true);
-          console.log('✅ OneSignal prêt pour les notifications');
-        } else {
-          console.log('⚠️ Notifications non activées - l\'utilisateur peut les activer via le composant NotificationPermission');
+          const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
+          console.log('📱 Push notifications activées:', isPushEnabled);
+          
+          if (isPushEnabled) {
+            const subscriptionId = window.OneSignal.User.PushSubscription.id;
+            console.log('🆔 Subscription ID:', subscriptionId);
+            setOneSignalReady(true);
+            console.log('✅ OneSignal prêt pour les notifications');
+          } else {
+            console.log('⚠️ Notifications non activées');
+          }
+          
+          window.OneSignal.Notifications.addEventListener('click', (event) => {
+            console.log('🔔 Notification cliquée:', event);
+            loadParcels();
+          });
+          
+        } catch (error) {
+          console.error('❌ Erreur OneSignal.login():', error);
+          if (retryCount < maxRetries) {
+            console.log(`🔄 Retry dans 2 secondes... (${retryCount + 1}/${maxRetries})`);
+            setTimeout(() => initOneSignalUser(retryCount + 1), 2000);
+          }
         }
-        
-        // Écouter les notifications entrantes
-        window.OneSignal.Notifications.addEventListener('click', (event) => {
-          console.log('🔔 Notification cliquée:', event);
-          // Recharger les données quand une notification est cliquée
-          loadParcels();
-        });
-        
-      } catch (error) {
-        console.error('❌ Erreur OneSignal.login():', error);
-        
-        // Retry si erreur
-        if (retryCount < maxRetries) {
-          console.log(`🔄 Retry dans 2 secondes... (${retryCount + 1}/${maxRetries})`);
-          setTimeout(() => initOneSignalUser(retryCount + 1), 2000);
-        }
-      }
-    };
-    
-    // Lancer l'initialisation
-    initOneSignalUser();
-  }
-}, [isLoggedIn, username]);
+      };
+      
+      initOneSignalUser();
+    }
+  }, [isLoggedIn, username]);
 
   useEffect(() => { 
-  return () => { 
-    if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel);
-    disableWakeLock(); // Libérer le Wake Lock à la fermeture
-  }; 
-}, []);
+    return () => { 
+      if (window.realtimeChannel) supabase.removeChannel(window.realtimeChannel);
+      disableWakeLock();
+    }; 
+  }, []);
 
-// ✅ NOUVEAU : Recharger les données quand la page reprend le focus
-useEffect(() => {
-  const handleFocus = () => {
-    // Quand la page reprend le focus, recharger les données
-    if (isLoggedIn && username) {
-      console.log('🔄 Page active, rechargement des données...');
-      loadParcels();
-    }
-  };
+  // ✅ Recharger les données quand la page reprend le focus
+  useEffect(() => {
+    const handleFocus = () => {
+      if (isLoggedIn && username) {
+        console.log('🔄 Page active, rechargement des données...');
+        loadParcels();
+      }
+    };
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isLoggedIn && username) {
+        console.log('🔄 Page visible, rechargement des données...');
+        loadParcels();
+      }
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isLoggedIn, username]);
   
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible' && isLoggedIn && username) {
-      console.log('🔄 Page visible, rechargement des données...');
-      loadParcels();
-    }
-  };
-  
-  window.addEventListener('focus', handleFocus);
-  document.addEventListener('visibilitychange', handleVisibilityChange);
-  
-  return () => {
-    window.removeEventListener('focus', handleFocus);
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-  };
-}, [isLoggedIn, username]);
-  
-const checkAuth = async () => {
-    // Délai minimum de 800ms pour voir l'écran de chargement
+  const checkAuth = async () => {
     const startTime = Date.now();
     
     const savedUsername = localStorage.getItem('username');
@@ -220,7 +191,6 @@ const checkAuth = async () => {
       router.push('/');
     }
     
-    // Attendre le délai minimum si le chargement est trop rapide
     const elapsedTime = Date.now() - startTime;
     if (elapsedTime < 800) {
       await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
@@ -253,6 +223,7 @@ const checkAuth = async () => {
     }
   };
 
+  // ✅ Temps réel Supabase - Synchronisation automatique
   const setupRealtimeSubscription = () => {
     const channel = supabase
       .channel(`parcels-${username}`)
@@ -283,11 +254,11 @@ const checkAuth = async () => {
               localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
               
               if (payload.new.collected && !payload.old?.collected) {
-  showNotification(
-    `Colis ${payload.new.code} récupéré ! 🎉`,
-    `collected-${payload.new.id}`
-  );
-}
+                showNotification(
+                  `Colis ${payload.new.code} récupéré ! 🎉`,
+                  `collected-${payload.new.id}`
+                );
+              }
               
               return updated;
             });
@@ -314,12 +285,10 @@ const checkAuth = async () => {
           console.warn('⚠️ Canal fermé - reconnexion dans 3s...');
           setSyncStatus('⚠️ Reconnexion...');
           
-          // Nettoyer l'ancien canal
           if (window.realtimeChannel) {
             supabase.removeChannel(window.realtimeChannel);
           }
           
-          // Reconnecter après 3 secondes
           setTimeout(() => {
             if (isLoggedIn && username) {
               console.log('🔄 Reconnexion au canal Realtime...');
@@ -333,36 +302,18 @@ const checkAuth = async () => {
   };
 
   const showNotification = (message, tag = `parcel-${Date.now()}`) => {
-  if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
-    navigator.serviceWorker.ready.then(registration => {
-      registration.showNotification('Gestionnaire de Colis', { 
-        body: message, 
-        icon: '/icons/package-icon.png', 
-        badge: '/icons/badge-icon.png', 
-        vibrate: [200, 100, 200], 
-        tag: tag,
-        requireInteraction: false,
-        renotify: true
+    if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
+      navigator.serviceWorker.ready.then(registration => {
+        registration.showNotification('Gestionnaire de Colis', { 
+          body: message, 
+          icon: '/icons/package-icon.png', 
+          badge: '/icons/badge-icon.png', 
+          vibrate: [200, 100, 200], 
+          tag: tag,
+          requireInteraction: false,
+          renotify: true
+        });
       });
-    });
-  }
-};
-
-  const trackCollectedToday = async () => {
-    try {
-      const today = new Date(); 
-      today.setHours(0, 0, 0, 0);
-      const { data, error } = await supabase
-        .from('parcels')
-        .select('*')
-        .eq('user_id', username)
-        .eq('collected', true)
-        .gte('date_added', today.toISOString());
-      
-      if (error) throw error;
-      setCollectedToday(data?.length || 0);
-    } catch (error) { 
-      console.error('Erreur tracking:', error); 
     }
   };
 
@@ -490,7 +441,6 @@ const checkAuth = async () => {
               console.log('✅ Notification envoyée à', notifResult.recipients, 'appareil(s)');
             } else {
               console.warn('⚠️ Notification envoyée mais 0 destinataires');
-              console.warn('💡 Vérifiez que OneSignal.login() a bien été appelé');
             }
           } else {
             console.error('❌ Erreur API notification:', notifResult);
@@ -498,12 +448,9 @@ const checkAuth = async () => {
           
         } catch (notifError) {
           console.error('⚠️ Erreur notification:', notifError);
-          // Ne pas bloquer l'ajout du colis si la notification échoue
         }
       } else {
         console.warn('⚠️ OneSignal pas prêt, notification non envoyée');
-        console.log('   oneSignalReady:', oneSignalReady);
-        console.log('   window.OneSignal:', !!window.OneSignal);
       }
 
       await loadParcels(); 
@@ -517,18 +464,13 @@ const checkAuth = async () => {
     }
   };
 
+  // ✅ Marquer un colis comme récupéré
   const toggleCollected = async (id, currentStatus) => {
     const parcel = parcels.find(p => p.id === id);
     const optimisticUpdate = parcels.map(p => 
       p.id === id ? { ...p, collected: !currentStatus } : p
     );
     setParcels(optimisticUpdate);
-
-    if (!currentStatus) {
-      setCollectedToday(prev => prev + 1);
-    } else {
-      setCollectedToday(prev => Math.max(0, prev - 1));
-    }
 
     if (!isOnline) { 
       addToOfflineQueue({ type: 'update', id, data: { collected: !currentStatus } }); 
@@ -558,7 +500,7 @@ const checkAuth = async () => {
               colisCode: parcel.code
             })
           });
-          console.log('✅ Notification récupération envoyée à tous les appareils');
+          console.log('✅ Notification récupération envoyée');
         } catch (notifError) {
           console.error('⚠️ Erreur notification:', notifError);
         }
@@ -689,33 +631,33 @@ const checkAuth = async () => {
   };
 
   const getPickupLocationName = (location) => { 
-  if (location.startsWith('custom:')) {
-    return `📍 Autre point de retrait (${location.replace('custom:', '')})`;
-  }
-  switch(location) { 
-    case 'hyper-u-locker': return '🏪 Hyper U - Locker'; 
-    case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; 
-    case 'intermarche-locker': return '🛒 Intermarché - Locker'; 
-    case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; 
-    case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; 
-    default: return location; 
-  } 
-};
+    if (location.startsWith('custom:')) {
+      return `📍 Autre point de retrait (${location.replace('custom:', '')})`;
+    }
+    switch(location) { 
+      case 'hyper-u-locker': return '🏪 Hyper U - Locker'; 
+      case 'hyper-u-accueil': return '🏪 Hyper U - Accueil'; 
+      case 'intermarche-locker': return '🛒 Intermarché - Locker'; 
+      case 'intermarche-accueil': return '🛒 Intermarché - Accueil'; 
+      case 'rond-point-noyal': return '📍 Rond point Noyal - Locker'; 
+      default: return location; 
+    } 
+  };
 
   const getFilteredParcels = (parcelsList) => { 
-  let filtered = parcelsList; 
-  if (filterLockerType !== 'all') {
-    filtered = filtered.filter(p => p.locker_type === filterLockerType); 
-  }
-  if (filterLocation !== 'all') {
-    if (filterLocation === 'custom') {
-      filtered = filtered.filter(p => p.location.startsWith('custom:'));
-    } else {
-      filtered = filtered.filter(p => p.location === filterLocation);
+    let filtered = parcelsList; 
+    if (filterLockerType !== 'all') {
+      filtered = filtered.filter(p => p.locker_type === filterLockerType); 
     }
-  }
-  return filtered; 
-};
+    if (filterLocation !== 'all') {
+      if (filterLocation === 'custom') {
+        filtered = filtered.filter(p => p.location.startsWith('custom:'));
+      } else {
+        filtered = filtered.filter(p => p.location === filterLocation);
+      }
+    }
+    return filtered; 
+  };
 
   const getCountByLockerType = (type) => { 
     if (type === 'all') return pendingParcels.length; 
@@ -760,102 +702,46 @@ const checkAuth = async () => {
     } 
   };
 
+  // ✅ Calculer le nombre unique de transporteurs et de lieux
+  const uniqueLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
+  const uniqueLocations = [...new Set(pendingParcels.map(p => p.location))];
+  
+  // ✅ Afficher les filtres uniquement s'il y a plus d'un transporteur OU plus d'un lieu
+  const shouldShowFilters = uniqueLockerTypes.length > 1 || uniqueLocations.length > 1;
+
   if (loading) {
-  return null; // L'écran de chargement est géré par _app.js
-}
+    return null;
+  }
 
-// ⬇️ IMPORTANT: Le return principal commence ICI
-return (
-  <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
-    <div className="max-w-2xl mx-auto">
-      {showToast && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
-          {toastMessage}
-        </div>
-      )}
+  return (
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} py-8 px-4 transition-colors duration-300`}>
+      <div className="max-w-2xl mx-auto">
+        {showToast && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+            {toastMessage}
+          </div>
+        )}
 
-      {/* ✅ Notification Permission */}
-      <NotificationPermission />
-      
-      {syncStatus && (
-        <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
-          isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-        }`}>
-          {syncStatus}
-          {offlineQueue.length > 0 && (
-            <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
-              {offlineQueue.length} en attente
-            </span>
-          )}
-        </div>
-      )}
+        <NotificationPermission />
+        
+        {syncStatus && (
+          <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+            isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+          }`}>
+            {syncStatus}
+            {offlineQueue.length > 0 && (
+              <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
+                {offlineQueue.length} en attente
+              </span>
+            )}
+          </div>
+        )}
 
-      {oneSignalReady && (
-        <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
-          🔔 Notifications actives
-        </div>
-      )}
-
-      {/* 🧪 BOUTON DE TEST ONESIGNAL - RETIREZ APRÈS DEBUG */}
-      {isLoggedIn && process.env.NODE_ENV === 'development' && (
-        <button
-          onClick={async () => {
-            console.log('=== 🧪 TEST ONESIGNAL ===');
-            console.log('👤 Username:', username);
-            console.log('✅ OneSignal ready?', oneSignalReady);
-            console.log('🪟 window.OneSignal exists?', !!window.OneSignal);
-            
-            if (!window.OneSignal) {
-              alert('❌ OneSignal pas chargé');
-              return;
-            }
-            
-            try {
-              const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
-              const permission = await window.OneSignal.Notifications.permission;
-              const subscriptionId = window.OneSignal.User.PushSubscription.id || 'Non disponible';
-              
-              console.log('📊 État OneSignal:');
-              console.log('  - Push enabled:', isPushEnabled);
-              console.log('  - Permission:', permission);
-              console.log('  - Subscription ID:', subscriptionId);
-              
-              console.log('📤 Test envoi notification...');
-              
-              const response = await fetch('/api/notify-colis-added', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  userId: username,
-                  colisCodes: ['TEST_' + Date.now()],
-                  location: 'hyper-u-locker',
-                  lockerType: 'mondial-relay'
-                })
-              });
-              
-              const result = await response.json();
-              console.log('📨 Résultat API:', result);
-              
-              if (response.ok) {
-                if (result.recipients > 0) {
-                  alert('✅ Test réussi ! Vous devriez recevoir une notification.\n\nRecipients: ' + result.recipients);
-                } else {
-                  alert('⚠️ API OK mais 0 destinataires.\n\nVérifiez que OneSignal.login() a bien été appelé.\n\nSubscription ID: ' + subscriptionId);
-                }
-              } else {
-                alert('❌ Erreur API:\n' + JSON.stringify(result, null, 2));
-              }
-              
-            } catch (error) {
-              console.error('❌ Erreur test:', error);
-              alert('❌ Erreur: ' + error.message);
-            }
-          }}
-          className="fixed bottom-4 right-4 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-purple-700 transition z-50 text-sm"
-        >
-          🧪 Test OneSignal
-        </button>
-      )}
+        {oneSignalReady && (
+          <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
+            🔔 Notifications actives
+          </div>
+        )}
         
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between mb-6">
@@ -960,62 +846,60 @@ return (
             />
             
             <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4 transition-colors duration-300`}>
-  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Lieu de récupération du colis :</p>
-  <div className="space-y-2">
-    {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
-      <label key={loc} className="flex items-center gap-3 cursor-pointer">
-        <input 
-          type="radio" 
-          name="pickupLocation" 
-          value={loc} 
-          checked={pickupLocation === loc && !showCustomLocationInput} 
-          onChange={(e) => {
-            setPickupLocation(e.target.value);
-            setShowCustomLocationInput(false);
-            setCustomLocation('');
-          }} 
-          className="w-4 h-4 text-indigo-600" 
-        />
-        <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>{getPickupLocationName(loc)}</span>
-      </label>
-    ))}
-    
-    {/* Nouveau : Autre point de retrait */}
-    <label className="flex items-center gap-3 cursor-pointer">
-      <input 
-        type="radio" 
-        name="pickupLocation" 
-        checked={showCustomLocationInput} 
-        onChange={() => {
-          setShowCustomLocationInput(true);
-          setPickupLocation('custom:');
-        }} 
-        className="w-4 h-4 text-indigo-600" 
-      />
-      <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>📍 Autre point de retrait</span>
-    </label>
-    
-    {/* Champ de saisie du commentaire */}
-    {showCustomLocationInput && (
-      <div className="ml-7 mt-2">
-        <input
-          type="text"
-          value={customLocation}
-          onChange={(e) => {
-            setCustomLocation(e.target.value);
-            setPickupLocation(`custom:${e.target.value}`);
-          }}
-          placeholder="Ex: Pharmacie centrale, Boulangerie du coin..."
-          className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm ${
-            darkMode 
-              ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400' 
-              : 'bg-white border-gray-300 text-gray-900'
-          }`}
-        />
-      </div>
-    )}
-  </div>
-</div>
+              <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Lieu de récupération du colis :</p>
+              <div className="space-y-2">
+                {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
+                  <label key={loc} className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="pickupLocation" 
+                      value={loc} 
+                      checked={pickupLocation === loc && !showCustomLocationInput} 
+                      onChange={(e) => {
+                        setPickupLocation(e.target.value);
+                        setShowCustomLocationInput(false);
+                        setCustomLocation('');
+                      }} 
+                      className="w-4 h-4 text-indigo-600" 
+                    />
+                    <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>{getPickupLocationName(loc)}</span>
+                  </label>
+                ))}
+                
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="pickupLocation" 
+                    checked={showCustomLocationInput} 
+                    onChange={() => {
+                      setShowCustomLocationInput(true);
+                      setPickupLocation('custom:');
+                    }} 
+                    className="w-4 h-4 text-indigo-600" 
+                  />
+                  <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>📍 Autre point de retrait</span>
+                </label>
+                
+                {showCustomLocationInput && (
+                  <div className="ml-7 mt-2">
+                    <input
+                      type="text"
+                      value={customLocation}
+                      onChange={(e) => {
+                        setCustomLocation(e.target.value);
+                        setPickupLocation(`custom:${e.target.value}`);
+                      }}
+                      placeholder="Ex: Pharmacie centrale, Boulangerie du coin..."
+                      className={`w-full px-3 py-2 border-2 rounded-lg focus:border-indigo-500 focus:outline-none text-sm ${
+                        darkMode 
+                          ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400' 
+                          : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
 
             <button 
               onClick={addParcels} 
@@ -1031,53 +915,43 @@ return (
           </div>
         </div>
 
-        {/* Stats */}
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
-          <div className="grid grid-cols-2 gap-4">
-            <div className={`${darkMode ? 'bg-indigo-900 border-indigo-700' : 'bg-indigo-50 border-indigo-200'} border-2 rounded-xl p-4 transition-colors duration-300`}>
-              <div className={`text-3xl font-bold ${darkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>{pendingParcels.length}</div>
-              <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Colis en attente</div>
-            </div>
-            <div className={`${darkMode ? 'bg-green-900 border-green-700' : 'bg-green-50 border-green-200'} border-2 rounded-xl p-4 transition-colors duration-300`}>
-              <div className={`text-3xl font-bold ${darkMode ? 'text-green-300' : 'text-green-600'}`}>{collectedToday}</div>
-              <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Récupérés aujourd'hui</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Filtres */}
-        {pendingParcels.length > 0 && (
+        {/* ✅ Filtres - Affichés uniquement s'il y a plus d'un transporteur OU plus d'un lieu */}
+        {pendingParcels.length > 0 && shouldShowFilters && (
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
             <h2 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>Filtres</h2>
             
             <div className="space-y-4">
-              <div>
-                <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Par transporteur:</p>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setFilterLockerType('all')} className={`px-3 py-1 rounded-lg text-sm transition ${filterLockerType === 'all' ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
-                    Tous ({pendingParcels.length})
-                  </button>
-                  {['mondial-relay', 'vinted-go', 'relais-colis', 'pickup'].map(type => (
-                    <button key={type} onClick={() => setFilterLockerType(type)} className={`px-3 py-1 rounded-lg text-sm transition ${filterLockerType === type ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
-                      {getLockerName(type)} ({getCountByLockerType(type)})
+              {uniqueLockerTypes.length > 1 && (
+                <div>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Par transporteur:</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setFilterLockerType('all')} className={`px-3 py-1 rounded-lg text-sm transition ${filterLockerType === 'all' ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                      Tous ({pendingParcels.length})
                     </button>
-                  ))}
+                    {uniqueLockerTypes.map(type => (
+                      <button key={type} onClick={() => setFilterLockerType(type)} className={`px-3 py-1 rounded-lg text-sm transition ${filterLockerType === type ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                        {getLockerName(type)} ({getCountByLockerType(type)})
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Par lieu:</p>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setFilterLocation('all')} className={`px-3 py-1 rounded-lg text-sm transition ${filterLocation === 'all' ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
-                    Tous ({pendingParcels.length})
-                  </button>
-                  {['hyper-u-locker', 'hyper-u-accueil', 'intermarche-locker', 'intermarche-accueil', 'rond-point-noyal'].map(loc => (
-                    <button key={loc} onClick={() => setFilterLocation(loc)} className={`px-3 py-1 rounded-lg text-sm transition ${filterLocation === loc ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
-                      {getPickupLocationName(loc).replace(/^.{2}\s/, '')} ({getCountByLocation(loc)})
+              {uniqueLocations.length > 1 && (
+                <div>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Par lieu:</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setFilterLocation('all')} className={`px-3 py-1 rounded-lg text-sm transition ${filterLocation === 'all' ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                      Tous ({pendingParcels.length})
                     </button>
-                  ))}
+                    {uniqueLocations.map(loc => (
+                      <button key={loc} onClick={() => setFilterLocation(loc)} className={`px-3 py-1 rounded-lg text-sm transition ${filterLocation === loc ? (darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white') : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}`}>
+                        {getPickupLocationName(loc).replace(/^.{2}\s/, '')} ({getCountByLocation(loc)})
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1109,15 +983,19 @@ return (
                 return (
                   <div
                     key={parcel.id}
-                    className={`border-2 rounded-xl p-4 transition ${
+                    onClick={() => toggleCollected(parcel.id, parcel.collected)}
+                    className={`border-2 rounded-xl p-4 transition cursor-pointer ${
                       darkMode 
-                        ? `${isUrgent ? 'border-red-600 bg-red-900 bg-opacity-20' : 'border-gray-600 bg-gray-700'}` 
-                        : `${isUrgent ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'}`
+                        ? `${isUrgent ? 'border-red-600 bg-red-900 bg-opacity-20 hover:bg-opacity-30' : 'border-gray-600 bg-gray-700 hover:bg-gray-650'}` 
+                        : `${isUrgent ? 'border-red-400 bg-red-50 hover:bg-red-100' : 'border-gray-200 bg-white hover:bg-gray-50'}`
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <button
-                        onClick={() => toggleCollected(parcel.id, parcel.collected)}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCollected(parcel.id, parcel.collected);
+                        }}
                         className={`mt-1 w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${
                           darkMode 
                             ? 'border-gray-500 hover:border-green-500 hover:bg-green-900' 
@@ -1134,6 +1012,7 @@ return (
                               e.stopPropagation();
                               changeLockerType(parcel.id, e.target.value);
                             }}
+                            onClick={(e) => e.stopPropagation()}
                             className={`text-sm bg-transparent border rounded px-2 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer transition-colors duration-300 ${
                               darkMode 
                                 ? 'border-gray-600 text-gray-300' 
@@ -1142,7 +1021,6 @@ return (
                             style={{
                               color: darkMode ? '#d1d5db' : '#4b5563'
                             }}
-                            onClick={(e) => e.stopPropagation()}
                           >
                             <option value="mondial-relay" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>Mondial Relay</option>
                             <option value="vinted-go" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>Vinted GO</option>
@@ -1164,6 +1042,7 @@ return (
                               e.stopPropagation();
                               changePickupLocation(parcel.id, e.target.value);
                             }}
+                            onClick={(e) => e.stopPropagation()}
                             className={`text-sm bg-transparent border rounded px-2 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer transition-colors duration-300 ${
                               darkMode 
                                 ? 'border-gray-600 text-gray-300' 
@@ -1172,7 +1051,6 @@ return (
                             style={{
                               color: darkMode ? '#d1d5db' : '#4b5563'
                             }}
-                            onClick={(e) => e.stopPropagation()}
                           >
                             <option value="hyper-u-locker" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>🏪 Hyper U - Locker</option>
                             <option value="hyper-u-accueil" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>🏪 Hyper U - Accueil</option>
@@ -1181,7 +1059,7 @@ return (
                             <option value="rond-point-noyal" style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>📍 Rond point Noyal - Locker</option>
                             {parcel.location.startsWith('custom:') && (
                               <option value={parcel.location} style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff', color: darkMode ? '#e5e7eb' : '#1f2937' }}>
-                              📍 Autre point de retrait ({parcel.location.replace('custom:', '')})
+                                📍 Autre point de retrait ({parcel.location.replace('custom:', '')})
                               </option>
                             )}
                           </select>
