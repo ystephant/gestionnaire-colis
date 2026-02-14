@@ -1,4 +1,4 @@
-import { Html, Head, Main, NextScript } from 'next/document'
+import { Html, Head, Main, NextScript } from 'next/document';
 
 export default function Document() {
   return (
@@ -25,12 +25,12 @@ export default function Document() {
         <meta name="mobile-web-app-capable" content="yes" />
         
         {/* ✅ Meta description */}
-        <meta name="description" content="LePetitMeeple gère tout seul ses colis !" />
+        <meta name="description" content="Le Petit Meeeple gère ses colis!" />
       </Head>
       <body>
         <Main />
         <NextScript />
       </body>
     </Html>
-  )
+  );
 }
