@@ -115,7 +115,7 @@ export default function LockerParcelApp() {
         
         try {
           console.log('🔐 Appel OneSignal.login() pour:', username);
-          await window.OneSignal.login(username);
+          await window.OneSignal.User.addAlias('username', username);
           console.log('✅ OneSignal.login() réussi !');
           
           const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
