@@ -1,7 +1,7 @@
 {
   "name": "Le Petit Meeple - Gestionnaire de Colis",
   "short_name": "Le Petit Meeple",
-  "description": "Le PetitMeeple gère tout seul ses colis comme un grand !",
+  "description": "LePetitMeeple gère tout seul ses colis comme un grand!",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1f2937",
@@ -23,12 +23,6 @@
     {
       "src": "/icons/icon-128.png",
       "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-144.png",
-      "sizes": "144x144",
       "type": "image/png",
       "purpose": "any"
     },
