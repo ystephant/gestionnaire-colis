@@ -1,3 +1,5 @@
+// pages/api/notify-colis-added.js
+
 export default async function handler(req, res) {
   // ✅ CORS pour production
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -38,18 +40,6 @@ export default async function handler(req, res) {
       });
     }
 
-    const response = await fetch('https://api.onesignal.com/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
-
-const data = await response.json();  // <-- ici
-    console.log("📊 recipients:", data.recipients);
-    
     if (!appId) {
       console.error('❌ NEXT_PUBLIC_ONESIGNAL_APP_ID manquante');
       return res.status(500).json({ 
@@ -82,33 +72,28 @@ const data = await response.json();  // <-- ici
     console.log('🔗 Deep link URL:', `${siteUrl}/colis`);
     console.log('👤 User ID (external_id):', userId);
 
-    if (!userId) {
-      console.error("❌ userId vide pour notification ajout");
-      return res.status(400).json({ error: "userId missing" });
-    }
-    // ✅ Payload OneSignal avec meilleure structure
+    // ✅ Payload OneSignal
     const payload = {
-  app_id: appId,
-    include_aliases: {
-    external_id: [String(userId)]
-  },
-  target_channel: 'push',
-  headings: { en: 'Nouveaux colis !' },
-  contents: { en: message },
-  data: {
-    type: 'colis_added',
-    userId,
-    codes: colisCodes,
-    timestamp: Date.now(),
-    url: `${siteUrl}/colis`
-  },
-  url: `${siteUrl}/colis`,
-  web_url: `${siteUrl}/colis`,
-  app_url: `${siteUrl}/colis`
-};
+      app_id: appId,
+      include_aliases: [String(userId)], // format correct pour OneSignal
+      target_channel: 'push',
+      headings: { en: 'Nouveaux colis !' },
+      contents: { en: message },
+      data: {
+        type: 'colis_added',
+        userId,
+        codes: colisCodes,
+        timestamp: Date.now(),
+        url: `${siteUrl}/colis`
+      },
+      url: `${siteUrl}/colis`,
+      web_url: `${siteUrl}/colis`,
+      app_url: `${siteUrl}/colis`
+    };
 
     console.log('📦 Payload OneSignal:', JSON.stringify(payload, null, 2));
 
+    // ✅ Envoi à OneSignal
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
@@ -118,50 +103,47 @@ const data = await response.json();  // <-- ici
       body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
-    console.log('📨 Réponse OneSignal (status ' + response.status + '):', JSON.stringify(data, null, 2));
+    const responseData = await response.json(); // renommer data en responseData
+    console.log('📨 Réponse OneSignal (status ' + response.status + '):', JSON.stringify(responseData, null, 2));
 
     if (!response.ok) {
-      console.error('❌ Erreur OneSignal:', data);
-      
-      // ✅ Erreurs spécifiques pour debug
-      if (data.errors) {
-        console.error('🔍 Détails erreurs:', data.errors);
+      console.error('❌ Erreur OneSignal:', responseData);
+      if (responseData.errors) {
+        console.error('🔍 Détails erreurs:', responseData.errors);
       }
-      
+
       return res.status(response.status).json({ 
         error: 'Erreur OneSignal',
         status: response.status,
-        details: data,
+        details: responseData,
         payload: payload
       });
     }
 
-    // ✅ Vérifier si des notifications ont été envoyées
-    if (data.recipients === 0) {
+    // Vérifier si des notifications ont été envoyées
+    if (responseData.recipients === 0) {
       console.warn('⚠️ Aucun destinataire trouvé pour userId:', userId);
-      console.warn('💡 Assurez-vous que l\'utilisateur a bien initialisé OneSignal avec setExternalUserId()');
       return res.status(200).json({ 
         success: true,
         warning: 'No recipients found',
-        data,
+        data: responseData,
         hint: 'Make sure the user has called OneSignal.login() with this userId'
       });
     }
 
     console.log('✅ Notification envoyée avec succès');
-    console.log('📊 Recipients:', data.recipients);
-    
+    console.log('📊 Recipients:', responseData.recipients);
+
     return res.status(200).json({ 
       success: true,
-      recipients: data.recipients,
-      data 
+      recipients: responseData.recipients,
+      data: responseData
     });
 
   } catch (error) {
     console.error('❌ Erreur serveur:', error);
     console.error('📍 Stack:', error.stack);
-    
+
     return res.status(500).json({ 
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
