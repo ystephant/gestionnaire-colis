@@ -1,15 +1,5 @@
-// Service Worker pour OneSignal (version NPM)
-// Ce fichier est nécessaire mais minimal car react-onesignal gère tout
+// OneSignal Service Worker
+// Ce fichier DOIT être à la racine de votre site (dans le dossier public/)
+// Sans ce fichier, OneSignal ne peut PAS fonctionner !
 
-self.addEventListener('install', function(event) {
-  console.log('✅ OneSignal Service Worker installé');
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', function(event) {
-  console.log('✅ OneSignal Service Worker activé');
-  event.waitUntil(self.clients.claim());
-});
-
-// Le package react-onesignal injectera automatiquement
-// le code nécessaire pour gérer les notifications push
+importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js');
