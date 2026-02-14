@@ -736,41 +736,44 @@ const setupRealtimeSubscription = () => {
   };
 
   const deleteAllCollected = async () => {
-    if (!confirm('Supprimer tous les colis récupérés ?')) return;
-    
-    const collectedIds = collectedParcels.map(p => p.id);
-    console.log('🗑️ Suppression de', collectedIds.length, 'colis récupérés');
-    console.log('🔍 IDs:', collectedIds);
+  if (!confirm('Supprimer tous les colis récupérés ?')) return;
 
-    if (!isOnline) { 
-      setParcels(parcels.filter(p => !p.collected)); 
-      collectedIds.forEach(id => addToOfflineQueue({ type: 'delete', id })); 
-      return; 
-    }
+  const collectedIds = parcels
+    .filter(p => p.collected)
+    .map(p => p.id);
 
-    try {
-      const { error } = await supabase
-        .from('parcels')
-        .delete()
-        .in('id', collectedIds);
-      
-      if (error) throw error;
-      
-      console.log('✅ Suppression réussie dans Supabase');
-      
-      // ✅ CORRECTION : Recharger les données depuis Supabase pour s'assurer de la synchronisation
-      await loadParcels();
-      
-      setToastMessage(`✅ ${collectedIds.length} colis supprimés`); 
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
-      
-      console.log('✅ Données rechargées, synchronisation terminée');
-    } catch (error) { 
-      console.error('❌ Erreur de suppression:', error); 
-      alert('Erreur lors de la suppression'); 
-    }
-  };
+  if (collectedIds.length === 0) return;
+
+  // 🔥 1️⃣ Suppression optimiste IMMÉDIATE sur l’UI
+  const previousParcels = parcels; // backup pour rollback
+  setParcels(prev => prev.filter(p => !p.collected));
+
+  // 📦 Mode offline
+  if (!isOnline) {
+    collectedIds.forEach(id =>
+      addToOfflineQueue({ type: 'delete', id })
+    );
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('parcels')
+      .delete()
+      .in('id', collectedIds);
+
+    if (error) throw error;
+
+    // ❗ IMPORTANT : on ne fait PAS loadParcels()
+    // Realtime s’en charge
+
+  } catch (error) {
+    console.error('Erreur suppression:', error);
+
+    // 🔁 Rollback si erreur serveur
+    setParcels(previousParcels);
+  }
+};
 
   const getRemainingDays = (dateAdded) => { 
     const added = new Date(dateAdded); 
