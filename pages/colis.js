@@ -4,6 +4,25 @@ import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
 import NotificationPermission from '../components/NotificationPermission';
 
+// Ajouter après les imports, avant le composant
+const checkAuth = async () => {
+  const startTime = Date.now();
+  
+  const savedUsername = localStorage.getItem('username');
+  const savedPassword = localStorage.getItem('password');
+  
+  if (!savedUsername || !savedPassword) {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    }
+  }
+  
+  const elapsedTime = Date.now() - startTime;
+  if (elapsedTime < 800) {
+    await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
+  }
+};
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
