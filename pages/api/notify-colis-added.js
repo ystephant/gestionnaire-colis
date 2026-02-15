@@ -1,4 +1,5 @@
 export default async function handler(req, res) {
+  // ✅ CORS pour production
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -16,6 +17,7 @@ export default async function handler(req, res) {
 
     console.log('🔥 Requête ajout de colis reçue:', { userId, colisCodes, location });
 
+    // ✅ Validation des données
     if (!userId || !Array.isArray(colisCodes) || colisCodes.length === 0) {
       console.error('❌ Données manquantes:', { userId: !!userId, colisCodes: !!colisCodes });
       return res.status(400).json({ 
@@ -24,14 +26,23 @@ export default async function handler(req, res) {
       });
     }
 
+    // ✅ Vérification des variables d'environnement
     const apiKey = process.env.ONESIGNAL_REST_API_KEY;
     const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
 
-    if (!apiKey || !appId) {
-      console.error('❌ Variables d\'environnement manquantes');
+    if (!apiKey) {
+      console.error('❌ ONESIGNAL_REST_API_KEY manquante');
       return res.status(500).json({ 
         error: 'Server configuration error',
-        details: 'ONESIGNAL credentials missing'
+        details: 'ONESIGNAL_REST_API_KEY is not set'
+      });
+    }
+
+    if (!appId) {
+      console.error('❌ NEXT_PUBLIC_ONESIGNAL_APP_ID manquante');
+      return res.status(500).json({ 
+        error: 'Server configuration error',
+        details: 'NEXT_PUBLIC_ONESIGNAL_APP_ID is not set'
       });
     }
 
@@ -50,6 +61,7 @@ export default async function handler(req, res) {
       ? `📦 ${colisCodes.length} nouveaux colis ajoutés à ${locationNames[location] || location}`
       : `📦 Nouveau colis ${colisCodes[0]} ajouté à ${locationNames[location] || location}`;
 
+    // ✅ Détecter l'URL du site automatiquement
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
                     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
                     'https://lepetitmeeple.vercel.app');
@@ -59,18 +71,18 @@ export default async function handler(req, res) {
     console.log('👤 User ID (external_id):', userId);
     console.log('📦 Colis ajoutés:', colisCodes);
 
-    // ✅ NOUVELLE API OneSignal
+    // ✅ Payload OneSignal - EXACTEMENT comme notify-colis-collected
     const payload = {
       app_id: appId,
       include_aliases: {
-        external_id: [String(userId)]
+        external_id: [userId]  // ✅ Pas de String() - exactement comme collected
       },
       target_channel: 'push',
       headings: { en: 'Nouveaux colis !' },
       contents: { en: message },
       data: {
         type: 'colis_added',
-        userId,
+        userId: userId,
         codes: colisCodes,
         timestamp: Date.now(),
         url: `${siteUrl}/colis`
@@ -82,7 +94,6 @@ export default async function handler(req, res) {
 
     console.log('📦 Payload OneSignal:', JSON.stringify(payload, null, 2));
 
-    // ✅ Utiliser le nouvel endpoint et Bearer
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
@@ -97,19 +108,23 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       console.error('❌ Erreur OneSignal:', data);
+      
       if (data.errors) {
         console.error('🔍 Détails erreurs:', data.errors);
       }
+      
       return res.status(response.status).json({ 
         error: 'Erreur OneSignal',
         status: response.status,
         details: data,
-        payload
+        payload: payload
       });
     }
 
+    // ✅ Vérifier si des notifications ont été envoyées
     if (data.recipients === 0) {
       console.warn('⚠️ Aucun destinataire trouvé pour userId:', userId);
+      console.warn('💡 Assurez-vous que l\'utilisateur a bien initialisé OneSignal avec login()');
       return res.status(200).json({ 
         success: true,
         warning: 'No recipients found',
@@ -120,13 +135,17 @@ export default async function handler(req, res) {
 
     console.log('✅ Notification envoyée avec succès');
     console.log('📊 Recipients:', data.recipients);
-
-    return res.status(200).json({ success: true, recipients: data.recipients, data });
+    
+    return res.status(200).json({ 
+      success: true,
+      recipients: data.recipients,
+      data 
+    });
 
   } catch (error) {
     console.error('❌ Erreur serveur:', error);
     console.error('🔍 Stack:', error.stack);
-
+    
     return res.status(500).json({ 
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
