@@ -34,75 +34,117 @@ export default function MyApp({ Component, pageProps }) {
     checkAuth();
   }, [router.pathname]);
 
-  // ✅ INITIALISATION ONESIGNAL - VERSION AVEC GESTION INDEXEDDB
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      console.log('🔔 Initialisation OneSignal...');
-      
-      // ✅ Vérifier que l'App ID est bien défini
-      const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
-      
-      if (!appId) {
-        console.error('❌ NEXT_PUBLIC_ONESIGNAL_APP_ID non définie dans les variables d\'environnement');
-        return;
-      }
-      
-      console.log('🔌 OneSignal App ID:', appId.substring(0, 8) + '...');
-      
-      // ✅ Charger le SDK OneSignal avec gestion d'erreur
-      const script = document.createElement('script');
-      script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
-      script.defer = true;
-      
-      script.onerror = () => {
-        console.error('❌ Impossible de charger le SDK OneSignal');
-        console.log('💡 Causes possibles :');
-        console.log('  • Bloqueur de publicités actif (uBlock, AdBlock...)');
-        console.log('  • Problème de connexion réseau');
-        console.log('  • cdn.onesignal.com bloqué par votre pare-feu');
-      };
-      
-      script.onload = () => {
-        console.log('✅ SDK OneSignal chargé avec succès');
-      };
-      
-      document.head.appendChild(script);
-      
-      // ✅ Initialiser OneSignal avec gestion d'erreur complète
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      
-      window.OneSignalDeferred.push(async function(OneSignal) {
-        try {
-          console.log('🔧 Configuration OneSignal...');
-          
-          await OneSignal.init({
-            appId: appId,
-            serviceWorkerParam: { scope: '/' },
-            serviceWorkerPath: 'OneSignalSDKWorker.js',
-            allowLocalhostAsSecureOrigin: true,
-            autoRegister: false,
-            autoResubscribe: true,
-            notifyButton: { enable: false },
-          });
+  // ✅ INITIALISATION ONESIGNAL - VERSION ANTI-DOUBLE-INIT
+useEffect(() => {
+  if (typeof window !== 'undefined') {
+    
+    // ✅ Vérifier si déjà initialisé pour éviter la double init
+    if (window.OneSignalInitialized) {
+      console.log('ℹ️ OneSignal déjà initialisé, skip');
+      return;
+    }
+    
+    console.log('🔔 Initialisation OneSignal...');
+    
+    const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+    
+    if (!appId) {
+      console.error('❌ NEXT_PUBLIC_ONESIGNAL_APP_ID non définie');
+      return;
+    }
+    
+    console.log('🔌 OneSignal App ID:', appId.substring(0, 8) + '...');
+    
+    // ✅ Marquer comme en cours d'initialisation
+    window.OneSignalInitialized = true;
+    
+    const script = document.createElement('script');
+    script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+    script.defer = true;
+    
+    script.onerror = () => {
+      console.error('❌ Impossible de charger le SDK OneSignal');
+      console.log('💡 Bloqueur de pub actif ou problème réseau');
+      window.OneSignalInitialized = false; // Permettre un retry
+    };
+    
+    script.onload = () => {
+      console.log('✅ SDK OneSignal chargé');
+    };
+    
+    document.head.appendChild(script);
+    
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    
+    window.OneSignalDeferred.push(async function(OneSignal) {
+      try {
+        console.log('🔧 Configuration OneSignal...');
+        
+        await OneSignal.init({
+          appId: appId,
+          serviceWorkerParam: { scope: '/' },
+          serviceWorkerPath: 'OneSignalSDKWorker.js',
+          allowLocalhostAsSecureOrigin: true,
+          autoRegister: false,
+          autoResubscribe: true,
+          notifyButton: { enable: false },
+        });
 
-          console.log('✅ OneSignal initialisé avec succès');
+        console.log('✅ OneSignal initialisé avec succès');
+        window.OneSignal = OneSignal;
+        
+        try {
+          OneSignal.Notifications.addEventListener('permissionChange', function(isGranted) {
+            console.log('🔔 Permission:', isGranted ? 'Accordée ✅' : 'Refusée ❌');
+          });
           
-          // ✅ Rendre OneSignal accessible globalement
-          window.OneSignal = OneSignal;
-          
-          // ✅ Écouter les changements de permission
-          try {
-            OneSignal.Notifications.addEventListener('permissionChange', function(isGranted) {
-              console.log('🔔 Permission notifications changée:', isGranted ? 'Accordée ✅' : 'Refusée ❌');
-            });
-            
-            // Écouter les changements de subscription
-            OneSignal.User.PushSubscription.addEventListener('change', function(subscription) {
-              console.log('📱 Subscription changée:', subscription);
-            });
-          } catch (listenerError) {
-            console.warn('⚠️ Impossible d\'attacher les listeners:', listenerError.message);
-          }
+          OneSignal.User.PushSubscription.addEventListener('change', function(subscription) {
+            console.log('📱 Subscription changée:', subscription);
+          });
+        } catch (listenerError) {
+          console.warn('⚠️ Listeners non attachés:', listenerError.message);
+        }
+        
+        console.log('⏳ OneSignal prêt - En attente du login...');
+        
+      } catch (error) {
+        console.error('❌ Erreur init OneSignal:', error.message);
+        
+        // ✅ Permettre un retry si erreur
+        window.OneSignalInitialized = false;
+        
+        if (error.message && (
+          error.message.includes('IndexedDB') || 
+          error.message.includes('backing store')
+        )) {
+          console.error('');
+          console.error('🔴 ════════════════════════════════════');
+          console.error('🔴 PROBLÈME INDEXEDDB - CACHE CORROMPU');
+          console.error('🔴 ════════════════════════════════════');
+          console.error('');
+          console.log('🔧 SOLUTION IMMÉDIATE :');
+          console.log('');
+          console.log('1. Ouvrez un nouvel onglet');
+          console.log('2. Tapez : chrome://settings/clearBrowserData');
+          console.log('3. Période : "Depuis toujours"');
+          console.log('4. Cochez "Cookies" et "Cache"');
+          console.log('5. Cliquez "Effacer les données"');
+          console.log('6. FERMEZ LE NAVIGATEUR complètement');
+          console.log('7. Rouvrez et rechargez cette page');
+          console.log('');
+          console.error('🔴 ════════════════════════════════════');
+          console.error('');
+        } else if (error.message && error.message.includes('already initialized')) {
+          console.log('ℹ️ OneSignal déjà init (normal après rechargement)');
+        } else {
+          console.log('💡 Rechargez la page (Ctrl+F5)');
+        }
+        
+        console.log('ℹ️ L\'app fonctionne sans notifications');
+      }
+    });
+  }
+}, []); // ✅ Tableau vide = une seule fois
           
           // ✅ NE PAS faire OneSignal.login() ici !
           // Le login sera fait dans colis.js quand l'utilisateur est réellement connecté
