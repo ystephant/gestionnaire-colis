@@ -59,13 +59,13 @@ export default async function handler(req, res) {
     console.log('👤 User ID (external_id):', userId);
     console.log('📦 Colis ajoutés:', colisCodes);
 
-    // ✅ NOUVELLE API OneSignal (comme notify-colis-collected)
+    // ✅ NOUVELLE API OneSignal
     const payload = {
       app_id: appId,
       include_aliases: {
-        external_id: [String(userId)]  // ✅ Format correct pour multi-appareils
+        external_id: [String(userId)]
       },
-      target_channel: 'push',  // ✅ Obligatoire pour la nouvelle API
+      target_channel: 'push',
       headings: { en: 'Nouveaux colis !' },
       contents: { en: message },
       data: {
@@ -82,12 +82,12 @@ export default async function handler(req, res) {
 
     console.log('📦 Payload OneSignal:', JSON.stringify(payload, null, 2));
 
-    // ✅ Utiliser le bon endpoint et Bearer au lieu de Basic
+    // ✅ Utiliser le nouvel endpoint et Bearer
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`  // ✅ Bearer au lieu de Basic
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(payload)
     });
@@ -110,7 +110,6 @@ export default async function handler(req, res) {
 
     if (data.recipients === 0) {
       console.warn('⚠️ Aucun destinataire trouvé pour userId:', userId);
-      console.warn('💡 Assurez-vous que l\'utilisateur a bien initialisé OneSignal avec login()');
       return res.status(200).json({ 
         success: true,
         warning: 'No recipients found',
