@@ -99,7 +99,7 @@ export default function LockerParcelApp() {
 // À remplacer dans pages/colis.js (lignes 97-149 environ)
 // ========================================================================
 
-// 🔥 CONFIGURATION ONESIGNAL - VERSION CORRIGÉE SANS LOGOUT
+// 🔥 CONFIGURATION ONESIGNAL - VERSION AVEC GESTION INDEXEDDB
 useEffect(() => {
   if (isLoggedIn && username) {
     console.log('👤 Utilisateur connecté:', username);
@@ -108,20 +108,32 @@ useEffect(() => {
     const setupOneSignalUser = async (retryCount = 0) => {
       const maxRetries = 3;
       
-      // Attendre que OneSignal soit chargé
+      // ✅ Attendre que OneSignal soit chargé
       if (typeof window === 'undefined' || !window.OneSignal) {
         if (retryCount < maxRetries) {
           console.log(`⏳ OneSignal pas encore chargé, retry ${retryCount + 1}/${maxRetries}...`);
           setTimeout(() => setupOneSignalUser(retryCount + 1), 1000);
         } else {
           console.error('❌ OneSignal non disponible après plusieurs tentatives');
-          console.log('💡 Vérifiez que le SDK OneSignal est bien chargé');
         }
         return;
       }
       
       try {
-        // ✅ LOGIN DIRECT sans logout préalable (supporte multi-appareils)
+        // ✅ Vérifier que OneSignal est VRAIMENT prêt (pas juste chargé)
+        console.log('🔍 Vérification de l\'état d\'initialisation...');
+        
+        // Attendre un peu pour que OneSignal finisse son init
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Vérifier que les objets internes sont prêts
+        if (!window.OneSignal.User || !window.OneSignal.User.PushSubscription) {
+          throw new Error('OneSignal pas complètement initialisé');
+        }
+        
+        console.log('✅ OneSignal prêt, démarrage du login...');
+        
+        // ✅ LOGIN DIRECT sans logout préalable
         console.log('🔐 Appel OneSignal.login() pour:', username);
         
         await window.OneSignal.login(username);
@@ -192,11 +204,37 @@ useEffect(() => {
         console.error('❌ Erreur configuration OneSignal:', error.message);
         console.error('🔍 Détails:', error);
         
+        // ✅ Détecter les erreurs IndexedDB
+        if (error.message && error.message.includes('IndexedDB')) {
+          console.error('🔴 ERREUR INDEXEDDB DÉTECTÉE');
+          console.log('');
+          console.log('💡 SOLUTIONS POSSIBLES :');
+          console.log('  1. Videz le cache du navigateur (Ctrl+Shift+Delete)');
+          console.log('  2. Désactivez votre bloqueur de pub (uBlock, AdBlock, etc.)');
+          console.log('  3. Quittez le mode navigation privée');
+          console.log('  4. Vérifiez l\'espace disque disponible');
+          console.log('');
+          console.log('📋 Pour vider le cache :');
+          console.log('  Chrome/Edge: Paramètres > Confidentialité > Effacer les données');
+          console.log('  Firefox: Options > Vie privée > Effacer l\'historique récent');
+          console.log('');
+          
+          // Ne pas retry si c'est un problème IndexedDB
+          return;
+        }
+        
         if (retryCount < maxRetries) {
-          console.log(`🔄 Nouvelle tentative dans 3 secondes... (${retryCount + 1}/${maxRetries})`);
-          setTimeout(() => setupOneSignalUser(retryCount + 1), 3000);
+          console.log(`🔄 Nouvelle tentative dans 2 secondes... (${retryCount + 1}/${maxRetries})`);
+          setTimeout(() => setupOneSignalUser(retryCount + 1), 2000);
         } else {
           console.error('❌ Impossible de configurer OneSignal après', maxRetries, 'tentatives');
+          console.log('');
+          console.log('📋 DIAGNOSTIC :');
+          console.log('  • Vérifiez que vous n\'êtes pas en navigation privée');
+          console.log('  • Désactivez temporairement les extensions de navigateur');
+          console.log('  • Videz le cache et les cookies du site');
+          console.log('  • Les notifications peuvent ne pas fonctionner');
+          console.log('');
         }
       }
     };
@@ -205,66 +243,6 @@ useEffect(() => {
     setupOneSignalUser();
   }
 }, [isLoggedIn, username]);
-
-  useEffect(() => { 
-  return () => {
-    isCleaningUp.current = true;
-    
-    if (channelRef.current) {
-      console.log('🧹 Nettoyage du canal Realtime...');
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
-    
-    disableWakeLock();
-  }; 
-}, []);
-
-  // ✅ Recharger les données quand la page reprend le focus
-  useEffect(() => {
-    const handleFocus = () => {
-      if (isLoggedIn && username) {
-        console.log('🔄 Page active, rechargement des données...');
-        loadParcels();
-      }
-    };
-    
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && isLoggedIn && username) {
-        console.log('🔄 Page visible, rechargement des données...');
-        loadParcels();
-      }
-    };
-    
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isLoggedIn, username]);
-  
-  const checkAuth = async () => {
-    const startTime = Date.now();
-    
-    const savedUsername = localStorage.getItem('username');
-    const savedPassword = localStorage.getItem('password');
-    if (savedUsername && savedPassword) { 
-      setUsername(savedUsername); 
-      setPassword(savedPassword); 
-      setIsLoggedIn(true); 
-    } else {
-      router.push('/');
-    }
-    
-    const elapsedTime = Date.now() - startTime;
-    if (elapsedTime < 800) {
-      await new Promise(resolve => setTimeout(resolve, 800 - elapsedTime));
-    }
-    
-    setLoading(false);
-  };
   
   const loadParcels = async () => {
     try {
