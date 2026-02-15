@@ -14,31 +14,12 @@ export default async function handler(req, res) {
   try {
     const { userId, colisCodes, location } = req.body;
 
-    // 🔍 DEBUG - Type de userId
-    console.log('🔍 DEBUG userId:', {
-      value: userId,
-      type: typeof userId,
-      isString: typeof userId === 'string',
-      isNumber: typeof userId === 'number'
-    });
-    console.log('🔍 DEBUG colisCodes:', {
-      value: colisCodes,
-      type: typeof colisCodes,
-      isArray: Array.isArray(colisCodes),
-      length: colisCodes?.length
-    });
-
-    console.log('🔥 Requête ajout de colis reçue:', { userId, colisCodes, location });
+    console.log('🔥 Requête ajout reçue:', { userId, colisCodes, location });
 
     if (!userId || !Array.isArray(colisCodes) || colisCodes.length === 0) {
       console.error('❌ Données manquantes');
       return res.status(400).json({ 
-        error: 'Missing required fields',
-        details: { 
-          userId: !!userId, 
-          colisCodes: !!colisCodes,
-          isArray: Array.isArray(colisCodes)
-        }
+        error: 'Missing required fields'
       });
     }
 
@@ -46,14 +27,13 @@ export default async function handler(req, res) {
     const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
 
     if (!apiKey || !appId) {
-      console.error('❌ Variables d\'environnement manquantes');
+      console.error('❌ Variables manquantes');
       return res.status(500).json({ 
         error: 'Server configuration error'
       });
     }
 
     console.log('✅ Variables OK');
-    console.log('🔌 App ID:', appId.substring(0, 8) + '...');
 
     const locationNames = {
       'hyper-u-locker': 'Hyper U - Locker',
@@ -71,39 +51,29 @@ export default async function handler(req, res) {
                     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
                     'https://lepetitmeeple.vercel.app');
 
-    console.log('📤 Envoi notification ajout...');
+    console.log('📤 Envoi notification...');
 
-    // 🔍 FORCER userId en string comme collected
-    const userIdString = String(userId);
-    console.log('🔍 userId converti:', {
-      original: userId,
-      converted: userIdString,
-      type: typeof userIdString
-    });
-
-    // ✅ Payload OneSignal - EXACTEMENT comme collected
+    // ✅ PAYLOAD SANS le champ "url"
     const payload = {
       app_id: appId,
       include_aliases: {
-        external_id: [userIdString]  // 🔍 Utiliser la version string
+        external_id: [userId]
       },
       target_channel: 'push',
       headings: { en: 'Nouveaux colis !' },
       contents: { en: message },
       data: {
         type: 'colis_added',
-        userId: userIdString,
+        userId: userId,
         codes: colisCodes,
-        timestamp: Date.now(),
-        url: `${siteUrl}/colis`
+        timestamp: Date.now()
       },
-      url: `${siteUrl}/colis`,
       web_url: `${siteUrl}/colis`,
       app_url: `${siteUrl}/colis`
+      // ❌ PAS de champ "url" ici !
     };
 
-    console.log('📦 Payload complet:', JSON.stringify(payload, null, 2));
-    console.log('🔍 external_id spécifiquement:', payload.include_aliases.external_id);
+    console.log('📦 Payload:', JSON.stringify(payload, null, 2));
 
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
@@ -115,41 +85,30 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    console.log('📨 Réponse OneSignal (status ' + response.status + '):', JSON.stringify(data, null, 2));
+    console.log('📨 Réponse (status ' + response.status + '):', JSON.stringify(data, null, 2));
 
     if (!response.ok) {
-      console.error('❌ Erreur OneSignal:', data);
-      
+      console.error('❌ Erreur:', data);
       if (data.errors) {
-        console.error('🔍 Détails erreurs:', JSON.stringify(data.errors, null, 2));
+        console.error('🔍 Erreurs:', JSON.stringify(data.errors, null, 2));
       }
-      
-      // 🔍 Retourner TOUS les détails pour debug
       return res.status(response.status).json({ 
         error: 'Erreur OneSignal',
         status: response.status,
-        details: data,
-        payload: payload,
-        debugInfo: {
-          userId: userId,
-          userIdType: typeof userId,
-          userIdString: userIdString,
-          external_id: payload.include_aliases.external_id
-        }
+        details: data
       });
     }
 
     if (data.recipients === 0) {
-      console.warn('⚠️ Aucun destinataire trouvé');
+      console.warn('⚠️ Aucun destinataire');
       return res.status(200).json({ 
         success: true,
-        warning: 'No recipients found',
+        warning: 'No recipients',
         data
       });
     }
 
-    console.log('✅ Notification envoyée avec succès');
-    console.log('📊 Recipients:', data.recipients);
+    console.log('✅ Envoyé! Recipients:', data.recipients);
     
     return res.status(200).json({ 
       success: true,
@@ -159,11 +118,8 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('❌ Erreur serveur:', error);
-    console.error('🔍 Stack:', error.stack);
-    
     return res.status(500).json({ 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
 }
