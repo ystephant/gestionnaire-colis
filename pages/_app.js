@@ -34,12 +34,12 @@ export default function MyApp({ Component, pageProps }) {
     checkAuth();
   }, [router.pathname]);
 
-  // ✅ INITIALISATION ONESIGNAL - VERSION CORRIGÉE
+  // ✅ INITIALISATION ONESIGNAL - VERSION AVEC GESTION INDEXEDDB
   useEffect(() => {
     if (typeof window !== 'undefined') {
       console.log('🔔 Initialisation OneSignal...');
       
-      // Vérifier que l'App ID est bien défini
+      // ✅ Vérifier que l'App ID est bien défini
       const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
       
       if (!appId) {
@@ -49,21 +49,32 @@ export default function MyApp({ Component, pageProps }) {
       
       console.log('🔌 OneSignal App ID:', appId.substring(0, 8) + '...');
       
-      // Charger le SDK OneSignal
+      // ✅ Charger le SDK OneSignal avec gestion d'erreur
       const script = document.createElement('script');
       script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
       script.defer = true;
+      
       script.onerror = () => {
-        console.warn('⚠️ OneSignal SDK bloqué (bloqueur de pubs ou erreur réseau)');
+        console.error('❌ Impossible de charger le SDK OneSignal');
+        console.log('💡 Causes possibles :');
+        console.log('  • Bloqueur de publicités actif (uBlock, AdBlock...)');
+        console.log('  • Problème de connexion réseau');
+        console.log('  • cdn.onesignal.com bloqué par votre pare-feu');
+      };
+      
+      script.onload = () => {
+        console.log('✅ SDK OneSignal chargé avec succès');
       };
       
       document.head.appendChild(script);
       
-      // Initialiser OneSignal
+      // ✅ Initialiser OneSignal avec gestion d'erreur complète
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       
       window.OneSignalDeferred.push(async function(OneSignal) {
         try {
+          console.log('🔧 Configuration OneSignal...');
+          
           await OneSignal.init({
             appId: appId,
             serviceWorkerParam: { scope: '/' },
@@ -76,25 +87,83 @@ export default function MyApp({ Component, pageProps }) {
 
           console.log('✅ OneSignal initialisé avec succès');
           
-          // Rendre OneSignal accessible globalement
+          // ✅ Rendre OneSignal accessible globalement
           window.OneSignal = OneSignal;
           
           // ✅ Écouter les changements de permission
-          OneSignal.Notifications.addEventListener('permissionChange', function(isGranted) {
-            console.log('🔔 Permission notifications changée:', isGranted ? 'Accordée ✅' : 'Refusée ❌');
-          });
-          
-          // Écouter les changements de subscription
-          OneSignal.User.PushSubscription.addEventListener('change', function(subscription) {
-            console.log('📱 Subscription changée:', subscription);
-          });
+          try {
+            OneSignal.Notifications.addEventListener('permissionChange', function(isGranted) {
+              console.log('🔔 Permission notifications changée:', isGranted ? 'Accordée ✅' : 'Refusée ❌');
+            });
+            
+            // Écouter les changements de subscription
+            OneSignal.User.PushSubscription.addEventListener('change', function(subscription) {
+              console.log('📱 Subscription changée:', subscription);
+            });
+          } catch (listenerError) {
+            console.warn('⚠️ Impossible d\'attacher les listeners:', listenerError.message);
+          }
           
           // ✅ NE PAS faire OneSignal.login() ici !
           // Le login sera fait dans colis.js quand l'utilisateur est réellement connecté
           console.log('⏳ OneSignal prêt - En attente du login utilisateur...');
+          console.log('');
           
         } catch (error) {
           console.error('❌ Erreur initialisation OneSignal:', error.message);
+          
+          // ✅ DÉTECTION SPÉCIFIQUE DES ERREURS INDEXEDDB
+          if (error.message && (
+            error.message.includes('IndexedDB') || 
+            error.message.includes('backing store') ||
+            error.message.includes('storage')
+          )) {
+            console.error('');
+            console.error('🔴 ═══════════════════════════════════════════');
+            console.error('🔴 PROBLÈME INDEXEDDB DÉTECTÉ');
+            console.error('🔴 ═══════════════════════════════════════════');
+            console.error('');
+            console.log('💡 SOLUTIONS (dans l\'ordre) :');
+            console.log('');
+            console.log('1️⃣  VIDER LE CACHE DU NAVIGATEUR :');
+            console.log('   • Chrome/Edge: Ctrl+Shift+Delete → Cochez "Cookies" et "Cache" → Effacer');
+            console.log('   • Firefox: Ctrl+Shift+Delete → Cochez tout → Effacer');
+            console.log('   • Safari: Développer > Vider les caches');
+            console.log('');
+            console.log('2️⃣  DÉSACTIVER LES BLOQUEURS :');
+            console.log('   • Désactivez uBlock Origin, AdBlock, Brave Shields');
+            console.log('   • Rechargez la page après désactivation');
+            console.log('');
+            console.log('3️⃣  QUITTER LA NAVIGATION PRIVÉE :');
+            console.log('   • IndexedDB est limité en mode privé');
+            console.log('   • Ouvrez le site en navigation normale');
+            console.log('');
+            console.log('4️⃣  VÉRIFIER L\'ESPACE DISQUE :');
+            console.log('   • Assurez-vous d\'avoir au moins 100 MB disponibles');
+            console.log('');
+            console.error('🔴 ═══════════════════════════════════════════');
+            console.error('');
+          } else if (error.message && error.message.includes('Service Worker')) {
+            console.error('');
+            console.error('⚠️ Erreur Service Worker détectée');
+            console.log('💡 Solutions possibles :');
+            console.log('  • Désactivez votre bloqueur de pub');
+            console.log('  • Vérifiez que cdn.onesignal.com est accessible');
+            console.log('  • Videz le cache du navigateur');
+            console.error('');
+          } else {
+            console.error('');
+            console.error('⚠️ Erreur générale OneSignal');
+            console.log('💡 Essayez de :');
+            console.log('  • Recharger la page (Ctrl+F5)');
+            console.log('  • Vider le cache du navigateur');
+            console.log('  • Désactiver temporairement les extensions');
+            console.error('');
+          }
+          
+          // ✅ Ne pas bloquer l'application même si OneSignal échoue
+          console.log('ℹ️  L\'application continuera de fonctionner, mais sans notifications push');
+          console.log('');
         }
       });
     }
