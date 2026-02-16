@@ -4,54 +4,41 @@ import { useTheme } from '../lib/ThemeContext';
 export default function NotificationPermission() {
   const { darkMode } = useTheme();
   const [permissionState, setPermissionState] = useState('default');
-  const [showPrompt, setShowPrompt] = useState(true); // TOUJOURS true au départ
-  const [debugInfo, setDebugInfo] = useState('Chargement...');
+  const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
-    // Masquer automatiquement après 30 secondes pour ne pas gêner
-    const autoHide = setTimeout(() => {
-      setShowPrompt(false);
-    }, 30000);
-    
+    // Attendre que OneSignal soit chargé
     const timer = setTimeout(() => {
       checkPermissionState();
     }, 2000);
     
-    return () => {
-      clearTimeout(timer);
-      clearTimeout(autoHide);
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   const checkPermissionState = async () => {
-    setDebugInfo('Vérification OneSignal...');
-    
-    if (typeof window === 'undefined') {
-      setDebugInfo('❌ window undefined');
-      return;
-    }
-    
-    if (!window.OneSignal) {
-      setDebugInfo('❌ OneSignal pas chargé');
+    if (typeof window === 'undefined' || !window.OneSignal) {
       return;
     }
 
     try {
-      setDebugInfo('Demande permission status...');
+      // Vérifier si la permission est déjà accordée
       const permission = await window.OneSignal.Notifications.permission;
       
-      setDebugInfo(`Permission: ${permission ? 'OUI ✅' : 'NON ❌'}`);
-      
       if (permission) {
+        // Permission déjà accordée → Ne PAS afficher
         setPermissionState('granted');
-        // NE PAS masquer pour le debug
-        // setShowPrompt(false);
+        setShowPrompt(false);
       } else {
-        setPermissionState('default');
-        setShowPrompt(true);
+        // Permission pas encore accordée → Afficher UNE FOIS
+        const hasAskedBefore = localStorage.getItem('notification_prompt_dismissed');
+        
+        if (!hasAskedBefore) {
+          setPermissionState('default');
+          setShowPrompt(true);
+        }
       }
     } catch (error) {
-      setDebugInfo(`❌ Erreur: ${error.message}`);
+      console.error('❌ Erreur vérification permission:', error);
     }
   };
 
@@ -62,41 +49,38 @@ export default function NotificationPermission() {
     }
 
     setPermissionState('loading');
-    setDebugInfo('Demande en cours...');
 
     try {
       const permission = await window.OneSignal.Notifications.requestPermission();
-      
-      setDebugInfo(`Résultat: ${permission ? 'Accordé ✅' : 'Refusé ❌'}`);
 
       if (permission) {
         setPermissionState('granted');
+        setShowPrompt(false);
+        localStorage.setItem('notification_prompt_dismissed', 'true');
         
         const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
         
         if (isPushEnabled) {
-          const subscriptionId = window.OneSignal.User.PushSubscription.id;
-          setDebugInfo(`✅ ID: ${subscriptionId.substring(0, 15)}...`);
-          alert('✅ Notifications activées !');
-          
-          // Masquer après succès
-          setTimeout(() => setShowPrompt(false), 2000);
+          console.log('✅ Notifications activées !');
         }
       } else {
         setPermissionState('denied');
-        alert('❌ Notifications refusées.');
+        setShowPrompt(false);
+        localStorage.setItem('notification_prompt_dismissed', 'true');
       }
     } catch (error) {
-      setDebugInfo(`❌ Erreur: ${error.message}`);
+      console.error('❌ Erreur activation notifications:', error);
       setPermissionState('default');
     }
   };
 
   const handleDismiss = () => {
     setShowPrompt(false);
+    localStorage.setItem('notification_prompt_dismissed', 'true');
   };
 
-  if (!showPrompt) {
+  // N'afficher QUE si permission non accordée ET pas déjà fermé
+  if (!showPrompt || permissionState === 'granted') {
     return null;
   }
 
@@ -105,11 +89,6 @@ export default function NotificationPermission() {
       <div className={`${
         darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       } border-2 rounded-2xl shadow-2xl p-5`}>
-        {/* DEBUG INFO - visible seulement en mode debug */}
-        <div className="mb-2 text-xs font-mono bg-gray-100 dark:bg-gray-900 p-2 rounded">
-          🔍 {debugInfo}
-        </div>
-        
         <div className="flex items-start gap-4">
           <div className="flex-shrink-0 w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
@@ -127,7 +106,7 @@ export default function NotificationPermission() {
             <p className={`text-sm mb-4 ${
               darkMode ? 'text-gray-400' : 'text-gray-600'
             }`}>
-              Recevez une alerte quand un colis arrive ou est récupéré.
+              Recevez une alerte sur tous vos appareils quand un colis arrive.
             </p>
             
             <div className="flex gap-2">
@@ -160,7 +139,7 @@ export default function NotificationPermission() {
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                Fermer
+                Plus tard
               </button>
             </div>
           </div>
