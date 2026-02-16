@@ -99,7 +99,7 @@ export default function LockerParcelApp() {
 // À remplacer dans pages/colis.js (lignes 97-149 environ)
 // ========================================================================
 
-// 🔥 CONFIGURATION ONESIGNAL - VERSION AVEC ENREGISTREMENT FORCÉ
+// 🔥 CONFIGURATION ONESIGNAL - AVEC DEMANDE AUTO DE PERMISSION
 useEffect(() => {
   if (isLoggedIn && username) {
     console.log('👤 Utilisateur connecté:', username);
@@ -121,41 +121,55 @@ useEffect(() => {
       try {
         console.log('🔐 Début configuration OneSignal...');
         
-        // ✅ ÉTAPE 1 : Vérifier/Demander la permission AVANT le login
-        let permission = await window.OneSignal.Notifications.permission;
-        console.log('🔔 Permission actuelle:', permission);
+        // ✅ ÉTAPE 1 : Vérifier la permission actuelle
+        const currentPermission = await window.OneSignal.Notifications.permission;
+        console.log('🔔 Permission actuelle:', currentPermission);
         
-        if (!permission) {
-          console.log('📢 Demande de permission notifications...');
+        // ✅ ÉTAPE 2 : Si pas de permission, demander AUTOMATIQUEMENT
+        if (!currentPermission) {
+          console.log('📢 Première connexion détectée !');
+          console.log('📢 Demande AUTOMATIQUE de permission notifications...');
+          
+          // Petit délai pour que l'utilisateur voie la page
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
           try {
-            permission = await window.OneSignal.Notifications.requestPermission();
-            console.log('📢 Permission accordée:', permission);
+            const granted = await window.OneSignal.Notifications.requestPermission();
+            
+            if (granted) {
+              console.log('✅ Permission ACCORDÉE par l\'utilisateur !');
+            } else {
+              console.log('❌ Permission REFUSÉE par l\'utilisateur');
+              console.log('💡 L\'utilisateur peut la réactiver plus tard dans les paramètres du navigateur');
+            }
           } catch (permError) {
-            console.warn('⚠️ Permission refusée par l\'utilisateur');
+            console.error('❌ Erreur demande permission:', permError);
           }
+        } else {
+          console.log('✅ Permission déjà accordée');
         }
         
-        // ✅ ÉTAPE 2 : Login avec le username
+        // ✅ ÉTAPE 3 : Login avec le username
         console.log('🔐 Login OneSignal pour:', username);
         await window.OneSignal.login(username);
         console.log('✅ Login réussi');
         
-        // ✅ ÉTAPE 3 : Attendre que l'enregistrement se propage
+        // ✅ ÉTAPE 4 : Attendre que l'enregistrement se propage
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // ✅ ÉTAPE 4 : Vérifier que tout est OK
+        // ✅ ÉTAPE 5 : Vérifier l'état final
         const verifyExternalId = window.OneSignal.User?.externalId;
         const subscriptionId = window.OneSignal.User?.PushSubscription?.id;
         const token = window.OneSignal.User?.PushSubscription?.token;
-        const optedIn = window.OneSignal.User?.PushSubscription?.optedIn;
+        const optedIn = await window.OneSignal.User?.PushSubscription?.optedIn;
         
-        console.log('🔍 VERIFICATION après login:');
+        console.log('🔍 État après configuration:');
         console.log('   - External ID:', verifyExternalId);
-        console.log('   - Subscription ID:', subscriptionId);
-        console.log('   - Token:', token ? 'Présent (✅)' : 'ABSENT (❌)');
-        console.log('   - Opted In:', optedIn);
+        console.log('   - Subscription ID:', subscriptionId ? subscriptionId.substring(0, 20) + '...' : 'AUCUNE');
+        console.log('   - Token:', token ? 'Présent ✅' : 'ABSENT ❌');
+        console.log('   - Opted In:', optedIn ? 'OUI ✅' : 'NON ❌');
         
-        // ✅ ÉTAPE 5 : Ajouter alias pour compatibilité
+        // ✅ ÉTAPE 6 : Ajouter alias
         try {
           await window.OneSignal.User.addAlias('external_id', username);
           console.log('✅ Alias external_id ajouté');
@@ -163,21 +177,20 @@ useEffect(() => {
           console.log('ℹ️ Alias déjà présent');
         }
         
-        // ✅ ÉTAPE 6 : Vérifier qu'on est bien enregistré
+        // ✅ ÉTAPE 7 : Marquer comme prêt si tout est OK
         if (optedIn && subscriptionId && token) {
           setOneSignalReady(true);
           console.log('✅ Appareil CORRECTEMENT enregistré !');
-          console.log('🆔 Cet appareil recevra les notifications');
+          console.log('🔔 Cet appareil recevra les notifications');
         } else {
           console.warn('⚠️ Appareil PAS complètement enregistré');
-          console.warn('💡 Raisons possibles:');
-          if (!optedIn) console.warn('   - Notifications pas autorisées');
-          if (!subscriptionId) console.warn('   - Pas de subscription ID');
-          if (!token) console.warn('   - Pas de token FCM');
-          console.warn('💡 Solution : Autoriser les notifications dans le navigateur');
+          if (!optedIn) {
+            console.warn('💡 Les notifications ont été refusées');
+            console.warn('💡 Pour les activer : Cliquez sur la cloche 🔔 dans la barre d\'adresse');
+          }
         }
         
-        // ✅ ÉTAPE 7 : Listeners
+        // ✅ ÉTAPE 8 : Listeners
         try {
           window.OneSignal.Notifications.addEventListener('click', (event) => {
             console.log('🔔 Notification cliquée:', event);
@@ -188,14 +201,14 @@ useEffect(() => {
             console.log('📱 Subscription changée:', subscription);
             if (subscription.current.optedIn) {
               setOneSignalReady(true);
-              console.log('✅ Appareil maintenant enregistré !');
+              console.log('✅ Notifications activées !');
             }
           });
         } catch (eventError) {
           console.warn('⚠️ Listeners non attachés');
         }
         
-        // ✅ RÉSUMÉ
+        // ✅ RÉSUMÉ FINAL
         console.log('');
         console.log('═══════════════════════════════════════════');
         console.log('✅ ONESIGNAL CONFIGURÉ');
@@ -207,9 +220,8 @@ useEffect(() => {
         
         if (!optedIn) {
           console.log('');
-          console.log('⚠️ IMPORTANT : Cet appareil ne recevra PAS de notifications');
-          console.log('💡 Pour activer : Cliquez sur la cloche 🔔 dans la barre d\'adresse');
-          console.log('💡 Puis rechargez la page');
+          console.log('⚠️ Notifications désactivées sur cet appareil');
+          console.log('💡 Pour activer : Paramètres navigateur → Notifications → Autoriser');
         }
         
         console.log('═══════════════════════════════════════════');
@@ -220,13 +232,15 @@ useEffect(() => {
         console.error('🔍 Détails:', error);
         
         if (error.message && error.message.includes('IndexedDB')) {
-          console.error('🔴 ERREUR INDEXEDDB - Videz le cache');
+          console.error('🔴 ERREUR INDEXEDDB - Videz le cache du navigateur');
           return;
         }
         
         if (retryCount < maxRetries) {
-          console.log(`🔄 Retry ${retryCount + 1}/${maxRetries}...`);
+          console.log(`🔄 Nouvelle tentative dans 2s... (${retryCount + 1}/${maxRetries})`);
           setTimeout(() => setupOneSignalUser(retryCount + 1), 2000);
+        } else {
+          console.error('❌ Impossible de configurer OneSignal après', maxRetries, 'tentatives');
         }
       }
     };
