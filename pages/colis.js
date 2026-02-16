@@ -99,7 +99,7 @@ export default function LockerParcelApp() {
 // À remplacer dans pages/colis.js (lignes 97-149 environ)
 // ========================================================================
 
-// 🔥 CONFIGURATION ONESIGNAL - AVEC DEMANDE AUTO DE PERMISSION
+// 🔥 CONFIGURATION ONESIGNAL - AVEC ATTENTE DE SYNCHRONISATION
 useEffect(() => {
   if (isLoggedIn && username) {
     console.log('👤 Utilisateur connecté:', username);
@@ -121,55 +121,48 @@ useEffect(() => {
       try {
         console.log('🔐 Début configuration OneSignal...');
         
-        // ✅ ÉTAPE 1 : Vérifier la permission actuelle
+        // ÉTAPE 1 : Vérifier/Demander permission
         const currentPermission = await window.OneSignal.Notifications.permission;
         console.log('🔔 Permission actuelle:', currentPermission);
         
-        // ✅ ÉTAPE 2 : Si pas de permission, demander AUTOMATIQUEMENT
         if (!currentPermission) {
-          console.log('📢 Première connexion détectée !');
-          console.log('📢 Demande AUTOMATIQUE de permission notifications...');
-          
-          // Petit délai pour que l'utilisateur voie la page
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
+          console.log('📢 Demande de permission...');
           try {
             const granted = await window.OneSignal.Notifications.requestPermission();
-            
             if (granted) {
-              console.log('✅ Permission ACCORDÉE par l\'utilisateur !');
+              console.log('✅ Permission accordée');
             } else {
-              console.log('❌ Permission REFUSÉE par l\'utilisateur');
-              console.log('💡 L\'utilisateur peut la réactiver plus tard dans les paramètres du navigateur');
+              console.log('❌ Permission refusée');
             }
           } catch (permError) {
-            console.error('❌ Erreur demande permission:', permError);
+            console.error('❌ Erreur permission:', permError);
           }
         } else {
           console.log('✅ Permission déjà accordée');
         }
         
-        // ✅ ÉTAPE 3 : Login avec le username
+        // ÉTAPE 2 : Login
         console.log('🔐 Login OneSignal pour:', username);
         await window.OneSignal.login(username);
         console.log('✅ Login réussi');
         
-        // ✅ ÉTAPE 4 : Attendre que l'enregistrement se propage
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // 🔥 ÉTAPE 3 : ATTENDRE que la synchronisation se fasse (CRUCIAL !)
+        console.log('⏳ Attente synchronisation serveur (5s)...');
+        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 secondes
         
-        // ✅ ÉTAPE 5 : Vérifier l'état final
+        // ÉTAPE 4 : Vérifier l'état APRÈS synchronisation
         const verifyExternalId = window.OneSignal.User?.externalId;
         const subscriptionId = window.OneSignal.User?.PushSubscription?.id;
         const token = window.OneSignal.User?.PushSubscription?.token;
         const optedIn = await window.OneSignal.User?.PushSubscription?.optedIn;
         
-        console.log('🔍 État après configuration:');
+        console.log('🔍 État après synchronisation (après 5s):');
         console.log('   - External ID:', verifyExternalId);
         console.log('   - Subscription ID:', subscriptionId ? subscriptionId.substring(0, 20) + '...' : 'AUCUNE');
         console.log('   - Token:', token ? 'Présent ✅' : 'ABSENT ❌');
         console.log('   - Opted In:', optedIn ? 'OUI ✅' : 'NON ❌');
         
-        // ✅ ÉTAPE 6 : Ajouter alias
+        // ÉTAPE 5 : Ajouter alias
         try {
           await window.OneSignal.User.addAlias('external_id', username);
           console.log('✅ Alias external_id ajouté');
@@ -177,20 +170,24 @@ useEffect(() => {
           console.log('ℹ️ Alias déjà présent');
         }
         
-        // ✅ ÉTAPE 7 : Marquer comme prêt si tout est OK
-        if (optedIn && subscriptionId && token) {
+        // ÉTAPE 6 : Vérifier que TOUT est OK
+        if (optedIn && subscriptionId && token && verifyExternalId === username) {
           setOneSignalReady(true);
           console.log('✅ Appareil CORRECTEMENT enregistré !');
           console.log('🔔 Cet appareil recevra les notifications');
+          console.log('🆔 External ID vérifié:', verifyExternalId);
         } else {
           console.warn('⚠️ Appareil PAS complètement enregistré');
-          if (!optedIn) {
-            console.warn('💡 Les notifications ont été refusées');
-            console.warn('💡 Pour les activer : Cliquez sur la cloche 🔔 dans la barre d\'adresse');
-          }
+          if (!optedIn) console.warn('   ❌ Opted In: false');
+          if (!subscriptionId) console.warn('   ❌ Pas de Subscription ID');
+          if (!token) console.warn('   ❌ Pas de Token');
+          if (verifyExternalId !== username) console.warn('   ❌ External ID incorrect:', verifyExternalId, '≠', username);
+          
+          // NE PAS marquer comme prêt si pas tout OK
+          setOneSignalReady(false);
         }
         
-        // ✅ ÉTAPE 8 : Listeners
+        // ÉTAPE 7 : Listeners
         try {
           window.OneSignal.Notifications.addEventListener('click', (event) => {
             console.log('🔔 Notification cliquée:', event);
@@ -208,7 +205,7 @@ useEffect(() => {
           console.warn('⚠️ Listeners non attachés');
         }
         
-        // ✅ RÉSUMÉ FINAL
+        // RÉSUMÉ
         console.log('');
         console.log('═══════════════════════════════════════════');
         console.log('✅ ONESIGNAL CONFIGURÉ');
@@ -221,7 +218,6 @@ useEffect(() => {
         if (!optedIn) {
           console.log('');
           console.log('⚠️ Notifications désactivées sur cet appareil');
-          console.log('💡 Pour activer : Paramètres navigateur → Notifications → Autoriser');
         }
         
         console.log('═══════════════════════════════════════════');
@@ -232,7 +228,7 @@ useEffect(() => {
         console.error('🔍 Détails:', error);
         
         if (error.message && error.message.includes('IndexedDB')) {
-          console.error('🔴 ERREUR INDEXEDDB - Videz le cache du navigateur');
+          console.error('🔴 ERREUR INDEXEDDB - Videz le cache');
           return;
         }
         
