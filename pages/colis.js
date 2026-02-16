@@ -141,10 +141,29 @@ useEffect(() => {
           console.log('✅ Permission déjà accordée');
         }
         
-        // ÉTAPE 2 : Login
-        console.log('🔐 Login OneSignal pour:', username);
-        await window.OneSignal.login(username);
-        console.log('✅ Login réussi');
+        // ÉTAPE 2 : Nettoyage + Login FORCÉ
+console.log('🔐 Nettoyage des anciennes sessions...');
+
+try {
+  // Logout pour nettoyer
+  await window.OneSignal.logout();
+  console.log('🧹 Logout effectué');
+  await new Promise(resolve => setTimeout(resolve, 1000));
+} catch (logoutError) {
+  console.log('ℹ️ Pas de session à nettoyer');
+}
+
+console.log('🔐 Login OneSignal pour:', username);
+await window.OneSignal.login(username);
+console.log('✅ Login réussi');
+
+// Forcer l'enregistrement push
+try {
+  await window.OneSignal.User.PushSubscription.optIn();
+  console.log('✅ Push subscription forcée');
+} catch (optInError) {
+  console.log('ℹ️ Déjà opted in');
+
         
         // 🔥 ÉTAPE 3 : ATTENDRE que la synchronisation se fasse (CRUCIAL !)
         console.log('⏳ Attente synchronisation serveur (5s)...');
