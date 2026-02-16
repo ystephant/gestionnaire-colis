@@ -547,67 +547,64 @@ const setupRealtimeSubscription = () => {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('parcels')
-        .insert(newParcels)
-        .select();
-      
-      if (error) throw error;
+  const { data, error } = await supabase
+    .from('parcels')
+    .insert(newParcels)
+    .select();
+  
+  if (error) throw error;
 
-      // ✅ ENVOI DE NOTIFICATION avec logs détaillés
-      console.log('📤 Tentative envoi notification...');
-      console.log('🔍 oneSignalReady:', oneSignalReady);
-      console.log('🔍 window.OneSignal:', !!window.OneSignal);
+  // ✅ ENVOI DE NOTIFICATION avec logs détaillés
+  console.log('📤 Tentative envoi notification...');
+  console.log('🔍 oneSignalReady:', oneSignalReady);
+  console.log('🔍 window.OneSignal:', !!window.OneSignal);
+  
+  if (oneSignalReady && window.OneSignal) {
+    try {
+      console.log('📦 Envoi pour userId:', username);
+      console.log('📦 Codes:', codes);
       
-      if (oneSignalReady && window.OneSignal) {
-        try {
-          console.log('📦 Envoi pour userId:', username);
-          console.log('📦 Codes:', codes);
-          
-          const notifResponse = await fetch('/api/notify-colis-added', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: username,
-              colisCodes: codes,
-              location: pickupLocation,
-              lockerType: lockerType
-            })
-          });
-          
-          const notifResult = await notifResponse.json();
-          
-          console.log('📨 Résultat notification (status ' + notifResponse.status + '):', notifResult);
-          
-          if (notifResponse.ok) {
-            console.log('✅ Notification envoyée avec succès');
-            if (notifResult.recipients > 0) {
-              console.log('📊 Destinataires:', notifResult.recipients, 'appareil(s)');
-            } else {
-              console.log('ℹ️ Note: Le compteur destinataires peut être à 0 mais les notifications sont envoyées');
-            }
-          }
-          } else {
-            console.error('❌ Erreur API notification:', notifResult);
-          }
-          
-        } catch (notifError) {
-          console.error('⚠️ Erreur notification:', notifError);
+      const notifResponse = await fetch('/api/notify-colis-added', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: username,
+          colisCodes: codes,
+          location: pickupLocation
+        })
+      });
+      
+      const notifResult = await notifResponse.json();
+      
+      console.log('📨 Résultat notification (status ' + notifResponse.status + '):', notifResult);
+      
+      if (notifResponse.ok) {
+        console.log('✅ Notification envoyée avec succès');
+        if (notifResult.recipients > 0) {
+          console.log('📊 Destinataires:', notifResult.recipients, 'appareil(s)');
+        } else {
+          console.log('ℹ️ Note: Le compteur peut être à 0 mais les notifications sont envoyées');
         }
       } else {
-        console.warn('⚠️ OneSignal pas prêt, notification non envoyée');
+        console.error('❌ Erreur API notification:', notifResult);
       }
-
-      await loadParcels(); 
-      setCodeInput('');
-      setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`); 
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
-    } catch (error) { 
-      console.error('❌ Erreur d\'ajout:', error); 
-      alert('Erreur lors de l\'ajout des colis'); 
+      
+    } catch (notifError) {
+      console.error('⚠️ Erreur notification:', notifError);
     }
-  };
+  } else {
+    console.warn('⚠️ OneSignal pas prêt, notification non envoyée');
+  }
+
+  await loadParcels(); 
+  setCodeInput('');
+  setToastMessage(`✅ ${data.length} colis ajouté${data.length > 1 ? 's' : ''}`); 
+  setShowToast(true);
+  setTimeout(() => setShowToast(false), 3000);
+} catch (error) { 
+  console.error('❌ Erreur d\'ajout:', error); 
+  alert('Erreur lors de l\'ajout des colis'); 
+}
 
   // ✅ Marquer un colis comme récupéré
   const toggleCollected = async (id, currentStatus) => {
