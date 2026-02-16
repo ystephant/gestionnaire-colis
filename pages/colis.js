@@ -369,11 +369,22 @@ const setupRealtimeSubscription = () => {
       { 
         event: '*', 
         schema: 'public', 
-        table: 'parcels', 
-        filter: `user_id=eq.${username}` 
+        table: 'parcels'
+        // 🧪 TEST : Filtre temporairement désactivé pour déboguer
+        // filter: `user_id=eq.${username}` 
       }, 
       (payload) => {
         console.log('🔄 Changement temps réel:', payload);
+        
+        // 🆕 Filtrer côté client si le user_id ne correspond pas
+        if (payload.new && payload.new.user_id !== username) {
+          console.log('⚠️ Événement ignoré : user_id différent');
+          return;
+        }
+        if (payload.old && payload.old.user_id !== username) {
+          console.log('⚠️ Événement DELETE ignoré : user_id différent');
+          return;
+        }
         
         if (payload.eventType === 'INSERT') {
           setParcels(prev => {
