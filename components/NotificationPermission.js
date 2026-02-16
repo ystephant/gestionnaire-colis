@@ -16,25 +16,20 @@ export default function NotificationPermission() {
     }
 
     try {
-      // Vérifier la permission OneSignal
       const permission = await window.OneSignal.Notifications.permission;
-      console.log('🔔 État permission NotificationPermission:', permission);
+      console.log('🔔 État permission:', permission);
       
       if (permission) {
-        // Permission déjà accordée
         setPermissionState('granted');
         setShowPrompt(false);
       } else {
-        // Permission pas encore demandée ou refusée
         const hasAskedBefore = localStorage.getItem('onesignal_prompt_shown');
         
         if (!hasAskedBefore) {
-          // Première fois → Afficher le prompt automatiquement
-          console.log('🔔 Première connexion → Affichage automatique du prompt');
+          console.log('🔔 Première connexion → Affichage du prompt');
           setPermissionState('default');
           setShowPrompt(true);
         } else {
-          // Déjà demandé → Ne pas ré-afficher
           setPermissionState('denied');
           setShowPrompt(false);
         }
@@ -53,60 +48,50 @@ export default function NotificationPermission() {
     setPermissionState('loading');
 
     try {
-      console.log('🔔 Demande de permission notifications...');
+      console.log('🔔 Demande de permission...');
       
-      // Demander la permission (clic = interaction utilisateur)
       const permission = await window.OneSignal.Notifications.requestPermission();
-      console.log('📨 Résultat permission:', permission);
+      console.log('📨 Résultat:', permission);
 
       if (permission) {
         setPermissionState('granted');
         setShowPrompt(false);
-        
-        // Marquer qu'on a demandé
         localStorage.setItem('onesignal_prompt_shown', 'true');
         
-        // Vérifier l'inscription
         const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
         console.log('✅ Push activé:', isPushEnabled);
         
         if (isPushEnabled) {
           const subscriptionId = window.OneSignal.User.PushSubscription.id;
           console.log('🆔 Subscription ID:', subscriptionId);
-          
-          // Afficher un message de succès
-          alert('✅ Notifications activées ! Vous recevrez désormais les alertes de colis.');
+          alert('✅ Notifications activées !');
         }
       } else {
         setPermissionState('denied');
         setShowPrompt(false);
-        
-        // Marquer qu'on a demandé
         localStorage.setItem('onesignal_prompt_shown', 'true');
-        
-        console.log('❌ Permission refusée par l\'utilisateur');
-        alert('❌ Notifications refusées. Vous pouvez les réactiver dans les paramètres de votre navigateur.');
+        console.log('❌ Permission refusée');
+        alert('❌ Notifications refusées.');
       }
     } catch (error) {
-      console.error('❌ Erreur activation notifications:', error);
+      console.error('❌ Erreur:', error);
       setPermissionState('default');
-      alert('Erreur lors de l\'activation des notifications. Vérifiez que vous n\'avez pas bloqué les notifications pour ce site.');
+      alert('Erreur lors de l\'activation des notifications.');
     }
   };
 
   const handleDismiss = () => {
     setShowPrompt(false);
     localStorage.setItem('onesignal_prompt_shown', 'true');
-    console.log('🔕 Prompt notifications fermé par l\'utilisateur');
+    console.log('🔕 Prompt fermé');
   };
 
-  // Ne rien afficher si la permission est déjà accordée ou refusée
   if (!showPrompt || permissionState === 'granted' || permissionState === 'denied') {
     return null;
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 animate-slide-up">
+    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 animate-fade-slide-in">
       <div className={`${
         darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       } border-2 rounded-2xl shadow-2xl p-5`}>
@@ -127,7 +112,7 @@ export default function NotificationPermission() {
             <p className={`text-sm mb-4 ${
               darkMode ? 'text-gray-400' : 'text-gray-600'
             }`}>
-              Recevez une notification quand un colis est ajouté ou récupéré, même quand l'application est fermée.
+              Recevez une notification quand un colis est ajouté ou récupéré.
             </p>
             
             <div className="flex gap-2">
@@ -138,6 +123,34 @@ export default function NotificationPermission() {
               >
                 {permissionState === 'loading' ? (
                   <>
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    Activation...
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Activer
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={handleDismiss}
+                disabled={permissionState === 'loading'}
+                className={`px-4 py-2.5 rounded-lg font-semibold transition ${
+                  darkMode 
+                    ? 'text-gray-300 hover:bg-gray-700' 
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Plus tard
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
