@@ -99,7 +99,7 @@ export default function LockerParcelApp() {
 // À remplacer dans pages/colis.js (lignes 97-149 environ)
 // ========================================================================
 
-// 🔥 CONFIGURATION ONESIGNAL - AVEC ATTENTE DE SYNCHRONISATION
+// 🔥 CONFIGURATION ONESIGNAL - AVEC NETTOYAGE ET ENREGISTREMENT FORCÉ
 useEffect(() => {
   if (isLoggedIn && username) {
     console.log('👤 Utilisateur connecté:', username);
@@ -142,40 +142,39 @@ useEffect(() => {
         }
         
         // ÉTAPE 2 : Nettoyage + Login FORCÉ
-console.log('🔐 Nettoyage des anciennes sessions...');
-
-try {
-  // Logout pour nettoyer
-  await window.OneSignal.logout();
-  console.log('🧹 Logout effectué');
-  await new Promise(resolve => setTimeout(resolve, 1000));
-} catch (logoutError) {
-  console.log('ℹ️ Pas de session à nettoyer');
-}
-
-console.log('🔐 Login OneSignal pour:', username);
-await window.OneSignal.login(username);
-console.log('✅ Login réussi');
-
-// Forcer l'enregistrement push
-try {
-  await window.OneSignal.User.PushSubscription.optIn();
-  console.log('✅ Push subscription forcée');
-} catch (optInError) {
-  console.log('ℹ️ Déjà opted in');
-
+        console.log('🔐 Nettoyage des anciennes sessions...');
         
-        // 🔥 ÉTAPE 3 : ATTENDRE que la synchronisation se fasse (CRUCIAL !)
+        try {
+          await window.OneSignal.logout();
+          console.log('🧹 Logout effectué');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (logoutError) {
+          console.log('ℹ️ Pas de session à nettoyer');
+        }
+        
+        console.log('🔐 Login OneSignal pour:', username);
+        await window.OneSignal.login(username);
+        console.log('✅ Login réussi');
+        
+        // Forcer l'enregistrement push
+        try {
+          await window.OneSignal.User.PushSubscription.optIn();
+          console.log('✅ Push subscription forcée');
+        } catch (optInError) {
+          console.log('ℹ️ Déjà opted in');
+        }
+        
+        // ÉTAPE 3 : Attendre synchronisation
         console.log('⏳ Attente synchronisation serveur (5s)...');
-        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 secondes
+        await new Promise(resolve => setTimeout(resolve, 5000));
         
-        // ÉTAPE 4 : Vérifier l'état APRÈS synchronisation
+        // ÉTAPE 4 : Vérifier l'état
         const verifyExternalId = window.OneSignal.User?.externalId;
         const subscriptionId = window.OneSignal.User?.PushSubscription?.id;
         const token = window.OneSignal.User?.PushSubscription?.token;
         const optedIn = await window.OneSignal.User?.PushSubscription?.optedIn;
         
-        console.log('🔍 État après synchronisation (après 5s):');
+        console.log('🔍 État après synchronisation:');
         console.log('   - External ID:', verifyExternalId);
         console.log('   - Subscription ID:', subscriptionId ? subscriptionId.substring(0, 20) + '...' : 'AUCUNE');
         console.log('   - Token:', token ? 'Présent ✅' : 'ABSENT ❌');
@@ -189,7 +188,7 @@ try {
           console.log('ℹ️ Alias déjà présent');
         }
         
-        // ÉTAPE 6 : Vérifier que TOUT est OK
+        // ÉTAPE 6 : Marquer comme prêt
         if (optedIn && subscriptionId && token && verifyExternalId === username) {
           setOneSignalReady(true);
           console.log('✅ Appareil CORRECTEMENT enregistré !');
@@ -200,9 +199,7 @@ try {
           if (!optedIn) console.warn('   ❌ Opted In: false');
           if (!subscriptionId) console.warn('   ❌ Pas de Subscription ID');
           if (!token) console.warn('   ❌ Pas de Token');
-          if (verifyExternalId !== username) console.warn('   ❌ External ID incorrect:', verifyExternalId, '≠', username);
-          
-          // NE PAS marquer comme prêt si pas tout OK
+          if (verifyExternalId !== username) console.warn('   ❌ External ID incorrect');
           setOneSignalReady(false);
         }
         
