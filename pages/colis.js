@@ -99,7 +99,7 @@ export default function LockerParcelApp() {
 // À remplacer dans pages/colis.js (lignes 97-149 environ)
 // ========================================================================
 
-// 🔥 CONFIGURATION ONESIGNAL - VERSION FINALE
+// 🔥 CONFIGURATION ONESIGNAL - VERSION AVEC ENREGISTREMENT FORCÉ
 useEffect(() => {
   if (isLoggedIn && username) {
     console.log('👤 Utilisateur connecté:', username);
@@ -119,13 +119,43 @@ useEffect(() => {
       }
       
       try {
-        // ✅ TOUJOURS faire le login (crucial pour multi-appareils)
+        console.log('🔐 Début configuration OneSignal...');
+        
+        // ✅ ÉTAPE 1 : Vérifier/Demander la permission AVANT le login
+        let permission = await window.OneSignal.Notifications.permission;
+        console.log('🔔 Permission actuelle:', permission);
+        
+        if (!permission) {
+          console.log('📢 Demande de permission notifications...');
+          try {
+            permission = await window.OneSignal.Notifications.requestPermission();
+            console.log('📢 Permission accordée:', permission);
+          } catch (permError) {
+            console.warn('⚠️ Permission refusée par l\'utilisateur');
+          }
+        }
+        
+        // ✅ ÉTAPE 2 : Login avec le username
         console.log('🔐 Login OneSignal pour:', username);
-        
         await window.OneSignal.login(username);
-        console.log('✅ Login réussi - Appareil enregistré');
+        console.log('✅ Login réussi');
         
-        // ✅ Ajouter alias
+        // ✅ ÉTAPE 3 : Attendre que l'enregistrement se propage
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // ✅ ÉTAPE 4 : Vérifier que tout est OK
+        const verifyExternalId = window.OneSignal.User?.externalId;
+        const subscriptionId = window.OneSignal.User?.PushSubscription?.id;
+        const token = window.OneSignal.User?.PushSubscription?.token;
+        const optedIn = window.OneSignal.User?.PushSubscription?.optedIn;
+        
+        console.log('🔍 VERIFICATION après login:');
+        console.log('   - External ID:', verifyExternalId);
+        console.log('   - Subscription ID:', subscriptionId);
+        console.log('   - Token:', token ? 'Présent (✅)' : 'ABSENT (❌)');
+        console.log('   - Opted In:', optedIn);
+        
+        // ✅ ÉTAPE 5 : Ajouter alias pour compatibilité
         try {
           await window.OneSignal.User.addAlias('external_id', username);
           console.log('✅ Alias external_id ajouté');
@@ -133,19 +163,21 @@ useEffect(() => {
           console.log('ℹ️ Alias déjà présent');
         }
         
-        // ✅ Vérifier l'état des notifications
-        const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
-        const subscriptionId = window.OneSignal.User.PushSubscription.id;
-        
-        if (isPushEnabled && subscriptionId) {
-          console.log('✅ Notifications activées');
-          console.log('🆔 Subscription ID:', subscriptionId.substring(0, 20) + '...');
+        // ✅ ÉTAPE 6 : Vérifier qu'on est bien enregistré
+        if (optedIn && subscriptionId && token) {
           setOneSignalReady(true);
+          console.log('✅ Appareil CORRECTEMENT enregistré !');
+          console.log('🆔 Cet appareil recevra les notifications');
         } else {
-          console.log('⚠️ Notifications non activées');
+          console.warn('⚠️ Appareil PAS complètement enregistré');
+          console.warn('💡 Raisons possibles:');
+          if (!optedIn) console.warn('   - Notifications pas autorisées');
+          if (!subscriptionId) console.warn('   - Pas de subscription ID');
+          if (!token) console.warn('   - Pas de token FCM');
+          console.warn('💡 Solution : Autoriser les notifications dans le navigateur');
         }
         
-        // ✅ Listeners
+        // ✅ ÉTAPE 7 : Listeners
         try {
           window.OneSignal.Notifications.addEventListener('click', (event) => {
             console.log('🔔 Notification cliquée:', event);
@@ -156,24 +188,36 @@ useEffect(() => {
             console.log('📱 Subscription changée:', subscription);
             if (subscription.current.optedIn) {
               setOneSignalReady(true);
+              console.log('✅ Appareil maintenant enregistré !');
             }
           });
         } catch (eventError) {
           console.warn('⚠️ Listeners non attachés');
         }
         
+        // ✅ RÉSUMÉ
         console.log('');
         console.log('═══════════════════════════════════════════');
         console.log('✅ ONESIGNAL CONFIGURÉ');
         console.log('═══════════════════════════════════════════');
         console.log('👤 Username:', username);
-        console.log('📱 Notifications:', isPushEnabled ? 'Activées ✅' : 'Désactivées ⚠️');
-        console.log('🌍 Multi-appareils actif');
+        console.log('📱 Notifications:', optedIn ? 'Activées ✅' : 'Désactivées ❌');
+        console.log('🆔 Subscription:', subscriptionId ? subscriptionId.substring(0, 20) + '...' : 'AUCUNE');
+        console.log('🌍 Multi-appareils:', optedIn ? 'Actif ✅' : 'Inactif ❌');
+        
+        if (!optedIn) {
+          console.log('');
+          console.log('⚠️ IMPORTANT : Cet appareil ne recevra PAS de notifications');
+          console.log('💡 Pour activer : Cliquez sur la cloche 🔔 dans la barre d\'adresse');
+          console.log('💡 Puis rechargez la page');
+        }
+        
         console.log('═══════════════════════════════════════════');
         console.log('');
         
       } catch (error) {
         console.error('❌ Erreur OneSignal:', error.message);
+        console.error('🔍 Détails:', error);
         
         if (error.message && error.message.includes('IndexedDB')) {
           console.error('🔴 ERREUR INDEXEDDB - Videz le cache');
@@ -190,7 +234,6 @@ useEffect(() => {
     setupOneSignalUser();
   }
 }, [isLoggedIn, username]);
-
 // ========================================================================
 // FIN DU CODE À REMPLACER
 // ========================================================================
