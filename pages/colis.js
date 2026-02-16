@@ -144,6 +144,8 @@ useEffect(() => {
         // ÉTAPE 2 : Nettoyage + Login FORCÉ
         console.log('🔐 Nettoyage des anciennes sessions...');
         
+        // 🔥 SUPPRIMER ou COMMENTER ces lignes maintenant que ça marche :
+        /*
         try {
           await window.OneSignal.logout();
           console.log('🧹 Logout effectué');
@@ -151,6 +153,7 @@ useEffect(() => {
         } catch (logoutError) {
           console.log('ℹ️ Pas de session à nettoyer');
         }
+        */
         
         console.log('🔐 Login OneSignal pour:', username);
         await window.OneSignal.login(username);
@@ -577,11 +580,13 @@ const setupRealtimeSubscription = () => {
           console.log('📨 Résultat notification (status ' + notifResponse.status + '):', notifResult);
           
           if (notifResponse.ok) {
+            console.log('✅ Notification envoyée avec succès');
             if (notifResult.recipients > 0) {
-              console.log('✅ Notification envoyée à', notifResult.recipients, 'appareil(s)');
+              console.log('📊 Destinataires:', notifResult.recipients, 'appareil(s)');
             } else {
-              console.warn('⚠️ Notification envoyée mais 0 destinataires');
+              console.log('ℹ️ Note: Le compteur destinataires peut être à 0 mais les notifications sont envoyées');
             }
+          }
           } else {
             console.error('❌ Erreur API notification:', notifResult);
           }
