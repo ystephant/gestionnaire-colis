@@ -703,33 +703,35 @@ const setupRealtimeSubscription = () => {
   };
 
   const deleteParcel = async (id) => {
-    const parcelToDelete = parcels.find(p => p.id === id);
-    setParcels(prev => prev.filter(p => p.id !== id));
+  if (!confirm('Supprimer ce colis ?')) return;
 
-    if (!isOnline) { 
-      addToOfflineQueue({ type: 'delete', id }); 
-      return; 
-    }
+  // ✅ Optimistic Update - Retirer immédiatement de l'affichage
+  const previousParcels = [...parcels];
+  setParcels(prev => prev.filter(p => p.id !== id));
 
-    try {
-      const { error } = await supabase
-        .from('parcels')
-        .delete()
-        .eq('id', id);
-      
-      if (error) { 
-        console.error('Erreur suppression:', error); 
-        setParcels(prev => [...prev, parcelToDelete].sort((a, b) => 
-          a.collected === b.collected ? 0 : a.collected ? 1 : -1
-        )); 
-        alert('Erreur lors de la suppression'); 
-        throw error; 
-      }
-      console.log('✅ Colis supprimé:', id);
-    } catch (error) { 
-      console.error('Erreur de suppression:', error); 
-    }
-  };
+  if (!isOnline) {
+    addToOfflineQueue({ type: 'delete', id });
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('parcels')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
+    
+    console.log('✅ Colis supprimé:', id);
+    
+  } catch (error) {
+    console.error('❌ Erreur suppression:', error);
+    
+    // 🔁 Rollback si erreur
+    setParcels(previousParcels);
+    alert('Erreur lors de la suppression');
+  }
+};
 
   const deleteAllCollected = async () => {
   if (!confirm('Supprimer tous les colis récupérés ?')) return;
