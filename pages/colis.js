@@ -605,6 +605,7 @@ const setupRealtimeSubscription = () => {
   console.error('❌ Erreur d\'ajout:', error); 
   alert('Erreur lors de l\'ajout des colis'); 
 }
+  };
 
   // ✅ Marquer un colis comme récupéré
   const toggleCollected = async (id, currentStatus) => {
