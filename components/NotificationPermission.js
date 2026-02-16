@@ -4,92 +4,99 @@ import { useTheme } from '../lib/ThemeContext';
 export default function NotificationPermission() {
   const { darkMode } = useTheme();
   const [permissionState, setPermissionState] = useState('default');
-  const [showPrompt, setShowPrompt] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(true); // TOUJOURS true au départ
+  const [debugInfo, setDebugInfo] = useState('Chargement...');
 
   useEffect(() => {
-    // Attendre un peu que OneSignal soit chargé
+    // Masquer automatiquement après 30 secondes pour ne pas gêner
+    const autoHide = setTimeout(() => {
+      setShowPrompt(false);
+    }, 30000);
+    
     const timer = setTimeout(() => {
       checkPermissionState();
-    }, 2000); // 2 secondes après le chargement de la page
+    }, 2000);
     
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(autoHide);
+    };
   }, []);
 
   const checkPermissionState = async () => {
-    if (typeof window === 'undefined' || !window.OneSignal) {
-      console.log('⏳ OneSignal pas encore disponible');
+    setDebugInfo('Vérification OneSignal...');
+    
+    if (typeof window === 'undefined') {
+      setDebugInfo('❌ window undefined');
+      return;
+    }
+    
+    if (!window.OneSignal) {
+      setDebugInfo('❌ OneSignal pas chargé');
       return;
     }
 
     try {
-      // Vérifier la permission OneSignal
+      setDebugInfo('Demande permission status...');
       const permission = await window.OneSignal.Notifications.permission;
-      console.log('🔔 NotificationPermission - État permission:', permission);
+      
+      setDebugInfo(`Permission: ${permission ? 'OUI ✅' : 'NON ❌'}`);
       
       if (permission) {
-        // Permission déjà accordée → Ne pas afficher
-        console.log('✅ Permission déjà accordée - Pas de popup');
         setPermissionState('granted');
-        setShowPrompt(false);
+        // NE PAS masquer pour le debug
+        // setShowPrompt(false);
       } else {
-        // Permission PAS accordée
-        console.log('🔔 Permission non accordée - Affichage de la popup');
         setPermissionState('default');
         setShowPrompt(true);
       }
     } catch (error) {
-      console.error('❌ Erreur vérification permission:', error);
+      setDebugInfo(`❌ Erreur: ${error.message}`);
     }
   };
 
   const handleEnableNotifications = async () => {
     if (!window.OneSignal) {
-      alert('❌ OneSignal n\'est pas chargé. Veuillez recharger la page.');
+      alert('❌ OneSignal n\'est pas chargé. Rechargez la page.');
       return;
     }
 
     setPermissionState('loading');
+    setDebugInfo('Demande en cours...');
 
     try {
-      console.log('🔔 Demande de permission notifications...');
-      
-      // Demander la permission (le clic = interaction utilisateur nécessaire)
       const permission = await window.OneSignal.Notifications.requestPermission();
-      console.log('📨 Résultat permission:', permission);
+      
+      setDebugInfo(`Résultat: ${permission ? 'Accordé ✅' : 'Refusé ❌'}`);
 
       if (permission) {
         setPermissionState('granted');
-        setShowPrompt(false);
         
-        // Vérifier l'inscription
         const isPushEnabled = await window.OneSignal.User.PushSubscription.optedIn;
-        console.log('✅ Push activé:', isPushEnabled);
         
         if (isPushEnabled) {
           const subscriptionId = window.OneSignal.User.PushSubscription.id;
-          console.log('🆔 Subscription ID:', subscriptionId);
-          alert('✅ Notifications activées ! Vous recevrez désormais les alertes de colis.');
+          setDebugInfo(`✅ ID: ${subscriptionId.substring(0, 15)}...`);
+          alert('✅ Notifications activées !');
+          
+          // Masquer après succès
+          setTimeout(() => setShowPrompt(false), 2000);
         }
       } else {
         setPermissionState('denied');
-        setShowPrompt(false);
-        console.log('❌ Permission refusée par l\'utilisateur');
-        alert('❌ Notifications refusées. Vous pouvez les réactiver plus tard dans les paramètres du navigateur.');
+        alert('❌ Notifications refusées.');
       }
     } catch (error) {
-      console.error('❌ Erreur activation notifications:', error);
+      setDebugInfo(`❌ Erreur: ${error.message}`);
       setPermissionState('default');
-      alert('Erreur lors de l\'activation des notifications.');
     }
   };
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    console.log('🔕 Popup fermée par l\'utilisateur');
   };
 
-  // Afficher uniquement si permission non accordée ET pas refusée définitivement
-  if (!showPrompt || permissionState === 'granted') {
+  if (!showPrompt) {
     return null;
   }
 
@@ -98,6 +105,11 @@ export default function NotificationPermission() {
       <div className={`${
         darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       } border-2 rounded-2xl shadow-2xl p-5`}>
+        {/* DEBUG INFO - visible seulement en mode debug */}
+        <div className="mb-2 text-xs font-mono bg-gray-100 dark:bg-gray-900 p-2 rounded">
+          🔍 {debugInfo}
+        </div>
+        
         <div className="flex items-start gap-4">
           <div className="flex-shrink-0 w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
@@ -148,7 +160,7 @@ export default function NotificationPermission() {
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                Plus tard
+                Fermer
               </button>
             </div>
           </div>
