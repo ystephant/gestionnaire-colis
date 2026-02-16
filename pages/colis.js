@@ -41,6 +41,7 @@ export default function LockerParcelApp() {
   const [wakeLock, setWakeLock] = useState(null);
   const isCleaningUp = useRef(false);
   const channelRef = useRef(null);
+  const isRealtimeConnected = useRef(false); // 🆕 Suivi de l'état de connexion realtime
 
   // ✅ Wake Lock - Empêche la mise en veille
   const enableWakeLock = async () => {
@@ -356,6 +357,7 @@ const setupRealtimeSubscription = () => {
   // ✅ Nettoyer l'ancien canal si existant
   if (channelRef.current) {
     isCleaningUp.current = true;
+    isRealtimeConnected.current = false; // 🆕
     supabase.removeChannel(channelRef.current);
     channelRef.current = null;
     isCleaningUp.current = false;
@@ -399,11 +401,12 @@ const setupRealtimeSubscription = () => {
             return updated;
           });
         } else if (payload.eventType === 'DELETE') {
-          console.log('🗑️ Suppression détectée:', payload.old.id);
+          console.log('🗑️ DELETE reçu via realtime:', payload.old.id);
           setParcels(prev => {
-            const updated = prev.filter(p => p.id !== payload.old.id);
-            localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-            return updated;
+            const filtered = prev.filter(p => p.id !== payload.old.id);
+            localStorage.setItem(`parcels_${username}`, JSON.stringify(filtered));
+            console.log(`✅ Colis ${payload.old.id} supprimé via realtime. Restant:`, filtered.length);
+            return filtered;
           });
         }
       }
@@ -412,12 +415,16 @@ const setupRealtimeSubscription = () => {
       console.log('📡 État canal Realtime:', status);
       
       if (status === 'SUBSCRIBED') { 
+        isRealtimeConnected.current = true; // 🆕
         console.log('✅ Temps réel activé'); 
         setSyncStatus('🟢 Synchronisé en temps réel'); 
       } else if (status === 'CHANNEL_ERROR') { 
+        isRealtimeConnected.current = false; // 🆕
         console.error('❌ Erreur canal Realtime'); 
         setSyncStatus('⚠️ Erreur de synchronisation'); 
       } else if (status === 'CLOSED') {
+        isRealtimeConnected.current = false; // 🆕
+        
         // ✅ CORRECTION : Ne pas nettoyer si on est déjà en train de nettoyer
         if (isCleaningUp.current) {
           console.log('🧹 Nettoyage en cours, skip reconnexion');
@@ -649,7 +656,14 @@ const setupRealtimeSubscription = () => {
         }
       }
 
-      await loadParcels();
+      // 🆕 FILET DE SÉCURITÉ : Recharger après mise à jour si realtime non connecté
+      setTimeout(() => {
+        if (!isRealtimeConnected.current) {
+          console.log('⚠️ Realtime non connecté - rechargement manuel');
+          loadParcels();
+        }
+      }, 1000);
+      
     } catch (error) { 
       console.error('Erreur de mise à jour:', error); 
       setParcels(parcels); 
@@ -705,9 +719,15 @@ const setupRealtimeSubscription = () => {
   const deleteParcel = async (id) => {
   if (!confirm('Supprimer ce colis ?')) return;
 
+  console.log('🗑️ Début suppression du colis:', id);
+  
   // ✅ Optimistic Update - Retirer immédiatement de l'affichage
   const previousParcels = [...parcels];
-  setParcels(prev => prev.filter(p => p.id !== id));
+  setParcels(prev => {
+    const filtered = prev.filter(p => p.id !== id);
+    console.log(`📊 UI mise à jour - ${filtered.length} colis restants`);
+    return filtered;
+  });
 
   if (!isOnline) {
     addToOfflineQueue({ type: 'delete', id });
@@ -722,7 +742,17 @@ const setupRealtimeSubscription = () => {
     
     if (error) throw error;
     
-    console.log('✅ Colis supprimé:', id);
+    console.log('✅ Suppression DB réussie pour:', id);
+    
+    // 🆕 FILET DE SÉCURITÉ : Recharger si realtime pas connecté
+    setTimeout(() => {
+      if (!isRealtimeConnected.current) {
+        console.log('⚠️ Realtime non connecté - rechargement forcé');
+        loadParcels();
+      } else {
+        console.log('✅ Realtime actif - pas de rechargement nécessaire');
+      }
+    }, 1500);
     
   } catch (error) {
     console.error('❌ Erreur suppression:', error);
@@ -742,9 +772,16 @@ const setupRealtimeSubscription = () => {
 
   if (collectedIds.length === 0) return;
 
-  // 🔥 1️⃣ Suppression optimiste IMMÉDIATE sur l’UI
-  const previousParcels = parcels; // backup pour rollback
-  setParcels(prev => prev.filter(p => !p.collected));
+
+  console.log(`🗑️ Suppression de ${collectedIds.length} colis récupérés:`, collectedIds);
+
+  // 🔥 1️⃣ Suppression optimiste IMMÉDIATE sur l'UI
+  const previousParcels = [...parcels]; // backup pour rollback
+  setParcels(prev => {
+    const filtered = prev.filter(p => !p.collected);
+    console.log(`📊 UI mise à jour - ${filtered.length} colis restants`);
+    return filtered;
+  });
 
   // 📦 Mode offline
   if (!isOnline) {
@@ -762,11 +799,21 @@ const setupRealtimeSubscription = () => {
 
     if (error) throw error;
 
-    // ❗ IMPORTANT : on ne fait PAS loadParcels()
-    // Realtime s’en charge
+    console.log(`✅ Suppression DB réussie pour ${collectedIds.length} colis`);
+
+    // 🆕 FILET DE SÉCURITÉ : Recharger si realtime pas connecté
+    setTimeout(() => {
+      if (!isRealtimeConnected.current) {
+        console.log('⚠️ Realtime non connecté - rechargement forcé');
+        loadParcels();
+      } else {
+        console.log('✅ Realtime actif - synchronisation en cours...');
+      }
+    }, 1500);
 
   } catch (error) {
-    console.error('Erreur suppression:', error);
+    console.error('❌ Erreur suppression:', error);
+    alert('Erreur lors de la suppression');
 
     // 🔁 Rollback si erreur serveur
     setParcels(previousParcels);
@@ -899,6 +946,15 @@ const setupRealtimeSubscription = () => {
             🔔 Notifications actives
           </div>
         )}
+
+        {/* 🆕 Indicateur Realtime */}
+        <div className={`fixed top-28 right-4 px-3 py-1 rounded-lg shadow text-xs z-50 ${
+          isRealtimeConnected.current 
+            ? 'bg-green-100 text-green-800' 
+            : 'bg-yellow-100 text-yellow-800'
+        }`}>
+          {isRealtimeConnected.current ? '🔄 Sync temps réel' : '⏸️ Sync manuel'}
+        </div>
         
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between mb-6">
