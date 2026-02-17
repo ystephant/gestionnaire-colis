@@ -745,13 +745,19 @@ const setupRealtimeSubscription = () => {
     const { error } = await supabase
       .from('parcels')
       .delete()
-      .in('id', collectedIds);
-  
-    if (error) {
-      console.error('❌ DELETE ALL ERROR:', error);
-      throw error;
-    }
-  
+      .eq('id', id); // ✅ Suppression unitaire par id
+
+    if (error) throw error;
+
+    console.log('✅ Suppression DB réussie pour:', id);
+
+    setTimeout(() => {
+      if (!isRealtimeConnected.current) {
+        console.log('⚠️ Realtime non connecté - rechargement forcé');
+        loadParcels();
+      }
+    }, 1500);
+
   } catch (error) {
     console.error('❌ Erreur suppression:', error);
     setParcels(previousParcels);
