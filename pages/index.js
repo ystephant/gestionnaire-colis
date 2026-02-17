@@ -226,13 +226,29 @@ export default function MenuPrincipal() {
               </button>
               <button
                 onClick={handleLogout}
-                className={`px-4 py-2 rounded-xl font-medium transition ${
-                  darkMode 
-                    ? 'bg-red-900 text-red-200 hover:bg-red-800' 
-                    : 'bg-red-100 text-red-600 hover:bg-red-200'
+                className={`group flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 border ${
+                  darkMode
+                    ? 'border-gray-600 text-gray-400 hover:border-red-500 hover:text-red-400 hover:bg-red-500/10'
+                    : 'border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50'
                 }`}
+                title="Se déconnecter"
               >
-                Se déconnecter
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="transition-transform duration-200 group-hover:translate-x-0.5"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                <span className="hidden sm:inline">Déconnexion</span>
               </button>
             </div>
           </div>
