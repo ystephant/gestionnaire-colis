@@ -41,7 +41,8 @@ export default function LockerParcelApp() {
   const [wakeLock, setWakeLock] = useState(null);
   const isCleaningUp = useRef(false);
   const channelRef = useRef(null);
-  const isRealtimeConnected = useRef(false); // 🆕 Suivi de l'état de connexion realtime
+  const isRealtimeConnected = useRef(false);
+  const [openPopover, setOpenPopover] = useState(null); // 'sync' | 'notif' | 'realtime' | null
 
   // ✅ Wake Lock - Empêche la mise en veille
   const enableWakeLock = async () => {
@@ -267,6 +268,13 @@ useEffect(() => {
 // ========================================================================
 // FIN DU CODE À REMPLACER
 // ========================================================================
+
+  useEffect(() => {
+    if (openPopover === null) return;
+    const close = () => setOpenPopover(null);
+    document.addEventListener('click', close, { capture: true, once: true });
+    return () => document.removeEventListener('click', close, { capture: true });
+  }, [openPopover]);
 
   useEffect(() => { 
   return () => {
@@ -737,7 +745,7 @@ const setupRealtimeSubscription = () => {
     const { error } = await supabase
       .from('parcels')
       .delete()
-      .eq('id', id);
+      .in('id', collectedIds);
   
     if (error) {
       console.error('❌ DELETE ALL ERROR:', error);
@@ -916,32 +924,92 @@ const setupRealtimeSubscription = () => {
 
         <NotificationPermission />
         
-        {syncStatus && (
-          <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
-            isOnline ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-          }`}>
-            {syncStatus}
-            {offlineQueue.length > 0 && (
-              <span className="ml-2 bg-white px-2 py-1 rounded text-xs">
-                {offlineQueue.length} en attente
-              </span>
+        {/* ── Indicateurs de statut compacts ── */}
+        <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1.5">
+
+          {/* 1. Connexion / sync */}
+          <div className="relative">
+            <button
+              onClick={() => setOpenPopover(prev => prev === 'sync' ? null : 'sync')}
+              className={`w-8 h-8 rounded-full shadow-md flex items-center justify-center transition-transform active:scale-90 ${
+                isOnline ? 'bg-green-100' : 'bg-orange-100'
+              }`}
+              title="Statut de connexion"
+            >
+              <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-orange-400'}`} />
+            </button>
+            {openPopover === 'sync' && (
+              <div className={`absolute top-0 right-10 w-56 rounded-xl shadow-xl px-4 py-3 text-sm ${
+                darkMode ? 'bg-gray-800 text-gray-100 border border-gray-700' : 'bg-white text-gray-800 border border-gray-100'
+              }`}>
+                <p className="font-semibold mb-1">{isOnline ? '🟢 En ligne' : '🔴 Hors ligne'}</p>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{syncStatus}</p>
+                {offlineQueue.length > 0 && (
+                  <p className="mt-1 text-xs text-orange-500">{offlineQueue.length} modification(s) en attente de sync</p>
+                )}
+              </div>
             )}
           </div>
-        )}
 
-        {oneSignalReady && (
-          <div className="fixed top-16 right-4 px-3 py-1 rounded-lg shadow bg-blue-100 text-blue-800 text-xs z-50">
-            🔔 Notifications actives
+          {/* 2. Notifications OneSignal */}
+          <div className="relative">
+            <button
+              onClick={() => setOpenPopover(prev => prev === 'notif' ? null : 'notif')}
+              className={`w-8 h-8 rounded-full shadow-md flex items-center justify-center transition-transform active:scale-90 ${
+                oneSignalReady ? 'bg-blue-100' : 'bg-gray-100'
+              }`}
+              title="Statut notifications"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke={oneSignalReady ? '#3b82f6' : '#9ca3af'} strokeWidth="2.5">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+            </button>
+            {openPopover === 'notif' && (
+              <div className={`absolute top-0 right-10 w-56 rounded-xl shadow-xl px-4 py-3 text-sm ${
+                darkMode ? 'bg-gray-800 text-gray-100 border border-gray-700' : 'bg-white text-gray-800 border border-gray-100'
+              }`}>
+                <p className="font-semibold mb-1">{oneSignalReady ? '🔔 Notifications actives' : '🔕 Notifications inactives'}</p>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {oneSignalReady
+                    ? 'Cet appareil recevra les alertes de nouveaux colis.'
+                    : 'Les notifications push ne sont pas activées sur cet appareil.'}
+                </p>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* 🆕 Indicateur Realtime */}
-        <div className={`fixed top-28 right-4 px-3 py-1 rounded-lg shadow text-xs z-50 ${
-          isRealtimeConnected.current 
-            ? 'bg-green-100 text-green-800' 
-            : 'bg-yellow-100 text-yellow-800'
-        }`}>
-          {isRealtimeConnected.current ? '🔄 Sync temps réel' : '⏸️ Sync manuel'}
+          {/* 3. Realtime Supabase */}
+          <div className="relative">
+            <button
+              onClick={() => setOpenPopover(prev => prev === 'realtime' ? null : 'realtime')}
+              className={`w-8 h-8 rounded-full shadow-md flex items-center justify-center transition-transform active:scale-90 ${
+                isRealtimeConnected.current ? 'bg-green-100' : 'bg-yellow-100'
+              }`}
+              title="Statut temps réel"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke={isRealtimeConnected.current ? '#22c55e' : '#eab308'} strokeWidth="2.5">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.36-3.36L23 10M1 14l5.13 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+            </button>
+            {openPopover === 'realtime' && (
+              <div className={`absolute top-0 right-10 w-56 rounded-xl shadow-xl px-4 py-3 text-sm ${
+                darkMode ? 'bg-gray-800 text-gray-100 border border-gray-700' : 'bg-white text-gray-800 border border-gray-100'
+              }`}>
+                <p className="font-semibold mb-1">{isRealtimeConnected.current ? '🔄 Sync temps réel actif' : '⏸️ Sync manuel'}</p>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {isRealtimeConnected.current
+                    ? 'Les modifications sont synchronisées instantanément entre tous les appareils.'
+                    : 'Le canal temps réel est déconnecté. Reconnexion automatique en cours...'}
+                </p>
+              </div>
+            )}
+          </div>
+
         </div>
         
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
