@@ -365,63 +365,56 @@ const setupRealtimeSubscription = () => {
   
   const channel = supabase
     .channel(`parcels-${username}`)
-    .on('postgres_changes', 
-      { 
-        event: '*', 
-        schema: 'public', 
-        table: 'parcels'
-        // 🧪 TEST : Filtre temporairement désactivé pour déboguer
-        // filter: `user_id=eq.${username}` 
-      }, 
-      (payload) => {
-        console.log('🔄 Changement temps réel:', payload);
-        
-        // 🆕 Filtrer côté client si le user_id ne correspond pas
-        if (payload.new && payload.new.user_id !== username) {
-          console.log('⚠️ Événement ignoré : user_id différent');
-          return;
-        }
-        if (payload.old && payload.old.user_id !== username) {
-          console.log('⚠️ Événement DELETE ignoré : user_id différent');
-          return;
-        }
-        
-        if (payload.eventType === 'INSERT') {
-          setParcels(prev => {
-            const exists = prev.some(p => p.id === payload.new.id);
-            if (exists) { 
-              console.log('⚠️ Doublon évité:', payload.new.id); 
-              return prev; 
-            }
-            const updated = [payload.new, ...prev];
-            localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-            return updated;
-          });
-        } else if (payload.eventType === 'UPDATE') {
-          setParcels(prev => {
-            const updated = prev.map(p => p.id === payload.new.id ? payload.new : p);
-            localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
-            
-            if (payload.new.collected && !payload.old?.collected) {
-              showNotification(
-                `Colis ${payload.new.code} récupéré ! 🎉`,
-                `collected-${payload.new.id}`
-              );
-            }
-            
-            return updated;
-          });
-        } else if (payload.eventType === 'DELETE') {
-          console.log('🗑️ DELETE reçu via realtime:', payload.old.id);
-          setParcels(prev => {
-            const filtered = prev.filter(p => p.id !== payload.old.id);
-            localStorage.setItem(`parcels_${username}`, JSON.stringify(filtered));
-            console.log(`✅ Colis ${payload.old.id} supprimé via realtime. Restant:`, filtered.length);
-            return filtered;
-          });
-        }
+    .on(
+  'postgres_changes',
+  {
+    event: '*',
+    schema: 'public',
+    table: 'parcels',
+    filter: `user_id=eq.${username}`
+  },
+  (payload) => {
+    console.log('🔄 Changement temps réel:', payload);
+
+    if (payload.eventType === 'INSERT') {
+      setParcels(prev => {
+        const exists = prev.some(p => p.id === payload.new.id);
+        if (exists) return prev;
+
+        const updated = [payload.new, ...prev];
+        localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    else if (payload.eventType === 'UPDATE') {
+      setParcels(prev => {
+        const updated = prev.map(p =>
+          p.id === payload.new.id ? payload.new : p
+        );
+
+        localStorage.setItem(`parcels_${username}`, JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    else if (payload.eventType === 'DELETE') {
+      console.log('🗑️ DELETE reçu via realtime:', payload);
+
+      if (!payload.old || !payload.old.id) {
+        console.warn('⚠️ DELETE sans payload.old.id → reload sécurité');
+        loadParcels();
+        return;
       }
-    )
+
+      setParcels(prev => {
+        const filtered = prev.filter(p => p.id !== payload.old.id);
+        localStorage.setItem(`parcels_${username}`, JSON.stringify(filtered));
+        return filtered;
+      });
+    }
+  }
+)
     .subscribe((status) => {
       console.log('📡 État canal Realtime:', status);
       
@@ -730,15 +723,10 @@ const setupRealtimeSubscription = () => {
   const deleteParcel = async (id) => {
   if (!confirm('Supprimer ce colis ?')) return;
 
-  console.log('🗑️ Début suppression du colis:', id);
-  
-  // ✅ Optimistic Update - Retirer immédiatement de l'affichage
   const previousParcels = [...parcels];
-  setParcels(prev => {
-    const filtered = prev.filter(p => p.id !== id);
-    console.log(`📊 UI mise à jour - ${filtered.length} colis restants`);
-    return filtered;
-  });
+
+  // Optimistic update
+  setParcels(prev => prev.filter(p => p.id !== id));
 
   if (!isOnline) {
     addToOfflineQueue({ type: 'delete', id });
@@ -749,26 +737,15 @@ const setupRealtimeSubscription = () => {
     const { error } = await supabase
       .from('parcels')
       .delete()
-      .eq('id', id);
-    
-    if (error) throw error;
-    
-    console.log('✅ Suppression DB réussie pour:', id);
-    
-    // 🆕 FILET DE SÉCURITÉ : Recharger si realtime pas connecté
-    setTimeout(() => {
-      if (!isRealtimeConnected.current) {
-        console.log('⚠️ Realtime non connecté - rechargement forcé');
-        loadParcels();
-      } else {
-        console.log('✅ Realtime actif - pas de rechargement nécessaire');
-      }
-    }, 1500);
-    
+      .in('id', collectedIds);
+  
+    if (error) {
+      console.error('❌ DELETE ALL ERROR:', error);
+      throw error;
+    }
+  
   } catch (error) {
     console.error('❌ Erreur suppression:', error);
-    
-    // 🔁 Rollback si erreur
     setParcels(previousParcels);
     alert('Erreur lors de la suppression');
   }
