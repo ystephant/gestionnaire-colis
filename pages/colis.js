@@ -737,7 +737,7 @@ const setupRealtimeSubscription = () => {
     const { error } = await supabase
       .from('parcels')
       .delete()
-      .in('id', collectedIds);
+      .eq('id', id);
   
     if (error) {
       console.error('❌ DELETE ALL ERROR:', error);
