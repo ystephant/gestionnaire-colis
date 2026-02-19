@@ -284,10 +284,12 @@ export default function MenuPrincipal() {
                 {flashStatus.active && bannerDismissed && (
                   <button
                     onClick={() => window.open(PHILIBERT_FLASH_URL, '_blank')}
-                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 bg-amber-400 hover:bg-amber-500 text-white"
+                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 bg-amber-400 hover:bg-amber-500 text-black"
                     title="Voir les ventes flash Philibert"
                   >
-                    <span>⚡</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="black" stroke="black" strokeWidth="1">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
                     <span className="hidden sm:inline">Vente flash !</span>
                   </button>
                 )}
