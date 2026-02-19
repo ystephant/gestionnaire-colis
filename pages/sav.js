@@ -398,8 +398,9 @@ export default function SAVJeux() {
                 onClick={() => router.push('/')}
                 className={`${darkMode ? 'text-gray-400 hover:text-cyan-400 hover:bg-gray-700' : 'text-gray-600 hover:text-cyan-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
               >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="19" y1="12" x2="5" y2="12"></line>
+                  <polyline points="12 19 5 12 12 5"></polyline>
                 </svg>
               </button>
               <div className="bg-gradient-to-br from-cyan-500 to-blue-600 p-3 rounded-xl">
