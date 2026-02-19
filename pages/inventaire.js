@@ -894,7 +894,10 @@ const resetInventory = async () => {
                 className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
                 title="Retour à l'accueil"
               >
-                <Home size={24} />
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <line x1="19" y1="12" x2="5" y2="12"></line>
+  <polyline points="12 19 5 12 12 5"></polyline>
+</svg>
               </button>
               <div className="bg-orange-600 p-3 rounded-xl">
                 <Package size={28} color="white" />
@@ -913,7 +916,10 @@ const resetInventory = async () => {
                           className="px-3 py-2 rounded-lg font-medium transition text-sm whitespace-nowrap bg-orange-600 text-white hover:bg-orange-700 flex items-center gap-1.5"
                           title="Retour à la recherche de jeu"
                         >
-                          <Home size={16} />
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="19" y1="12" x2="5" y2="12"></line>
+                            <polyline points="12 19 5 12 12 5"></polyline>
+                          </svg>
                           Rechercher un jeu
                         </button>
                       )}
