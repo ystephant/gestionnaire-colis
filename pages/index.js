@@ -19,16 +19,16 @@ function getFlashSaleStatus() {
   const isBeforeNoon = hours < 12;
 
   if (day === 2 && isNoonOrAfter) {
-    return { active: true, message: "Hey ! on est mardi midi ! il est temps de regarder les ventes flash sur Philibert ! ⚡" };
+    return { active: true, message: "Hey ! on est mardi midi ! il est temps de regarder les ventes flash sur Philibert !" };
   }
   if (day === 3) {
-    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert ! ⚡" };
+    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert !" };
   }
   if (day === 4) {
-    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert ! ⚡" };
+    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert !" };
   }
   if (day === 5 && isBeforeNoon) {
-    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert ! ⚡" };
+    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert !" };
   }
   return { active: false, message: '' };
 }
@@ -211,18 +211,24 @@ export default function MenuPrincipal() {
       {/* ⚡ BANDEAU VENTES FLASH PHILIBERT */}
       {flashStatus.active && !bannerDismissed && (
         <div
-          className="relative w-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-400 text-white py-3 px-6 flex items-center justify-center cursor-pointer shadow-md"
+          className="relative w-full bg-amber-400 text-black py-3 px-6 flex items-center justify-center cursor-pointer shadow-md"
           onClick={() => window.open(PHILIBERT_FLASH_URL, '_blank')}
         >
-          <span className="font-semibold text-sm sm:text-base text-center pr-8">
+          <span className="font-semibold text-sm sm:text-base text-center pr-8 flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="black" stroke="black" strokeWidth="1">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
             {flashStatus.message}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="black" stroke="black" strokeWidth="1">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
           </span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               setBannerDismissed(true);
             }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-amber-100 transition-colors"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-black hover:text-amber-800 transition-colors"
             title="Fermer"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
