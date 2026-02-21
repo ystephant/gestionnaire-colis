@@ -43,6 +43,8 @@ export default function LockerParcelApp() {
   const channelRef = useRef(null);
   const isRealtimeConnected = useRef(false);
   const [openPopover, setOpenPopover] = useState(null); // 'sync' | 'notif' | 'realtime' | null
+  const [swipeOffsets, setSwipeOffsets] = useState({}); // { [parcelId]: number }
+  const touchStartRef = useRef({}); // { [parcelId]: { x, y, swiping } }
 
   // ✅ Wake Lock - Empêche la mise en veille
   const enableWakeLock = async () => {
@@ -908,20 +910,68 @@ const setupRealtimeSubscription = () => {
     } 
   };
 
+  // ✅ Swipe vers la gauche pour marquer comme récupéré (mobile)
+  const SWIPE_THRESHOLD = 110; // px à parcourir pour valider
+
+  const handleTouchStart = (e, parcelId) => {
+    const touch = e.touches[0];
+    touchStartRef.current[parcelId] = { x: touch.clientX, y: touch.clientY, swiping: false, cancelled: false };
+  };
+
+  const handleTouchMove = (e, parcelId) => {
+    const start = touchStartRef.current[parcelId];
+    if (!start || start.cancelled) return;
+
+    const touch = e.touches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+
+    // Si le mouvement est majoritairement vertical, annuler le swipe (scroll normal)
+    if (!start.swiping && Math.abs(dy) > Math.abs(dx)) {
+      touchStartRef.current[parcelId].cancelled = true;
+      return;
+    }
+
+    // Seulement swipe gauche (dx négatif)
+    if (dx >= 0) {
+      setSwipeOffsets(prev => ({ ...prev, [parcelId]: 0 }));
+      return;
+    }
+
+    touchStartRef.current[parcelId].swiping = true;
+    // Résistance progressive après le seuil (offset = valeur absolue, appliquée en négatif au transform)
+    const absDx = Math.abs(dx);
+    const offset = absDx < SWIPE_THRESHOLD ? absDx : SWIPE_THRESHOLD + (absDx - SWIPE_THRESHOLD) * 0.15;
+    setSwipeOffsets(prev => ({ ...prev, [parcelId]: offset }));
+
+    // Empêcher le scroll vertical uniquement si on swipe horizontalement
+    if (start.swiping) e.preventDefault();
+  };
+
+  const handleTouchEnd = (e, parcelId, currentCollected) => {
+    const start = touchStartRef.current[parcelId];
+    const offset = swipeOffsets[parcelId] || 0;
+
+    if (!start || start.cancelled || offset < SWIPE_THRESHOLD) {
+      // Snap back
+      setSwipeOffsets(prev => ({ ...prev, [parcelId]: 0 }));
+      return;
+    }
+
+    // ✅ Swipe validé : marquer comme récupéré avec animation de sortie vers la gauche
+    setSwipeOffsets(prev => ({ ...prev, [parcelId]: 400 }));
+    setTimeout(() => {
+      toggleCollected(parcelId, currentCollected);
+      setSwipeOffsets(prev => { const next = { ...prev }; delete next[parcelId]; return next; });
+    }, 280);
+  };
+
   // ✅ Calculer le nombre unique de transporteurs et de lieux
   const uniqueLockerTypes = [...new Set(pendingParcels.map(p => p.locker_type))];
   const uniqueLocations = [...new Set(pendingParcels.map(p => p.location))];
   
   // ✅ Afficher les filtres uniquement s'il y a plus d'un transporteur OU plus d'un lieu
   const shouldShowFilters = uniqueLockerTypes.length > 1 || uniqueLocations.length > 1;
-
-  // ✅ Reset automatique des filtres quand il ne reste plus qu'un seul emplacement/transporteur
-  useEffect(() => {
-    if (!shouldShowFilters && pendingParcels.length > 0) {
-      if (filterLockerType !== 'all') setFilterLockerType('all');
-      if (filterLocation !== 'all') setFilterLocation('all');
-    }
-  }, [shouldShowFilters, pendingParcels.length]);
 
   if (loading) {
     return null;
@@ -1225,20 +1275,6 @@ const setupRealtimeSubscription = () => {
           </div>
         )}
 
-        {/* ✅ Message quand tous les colis restants sont au même endroit */}
-        {pendingParcels.length > 0 && !shouldShowFilters && (
-          <div className={`flex items-center gap-3 rounded-xl px-4 py-3 mb-6 border ${
-            darkMode
-              ? 'bg-indigo-900 bg-opacity-30 border-indigo-600 text-indigo-300'
-              : 'bg-indigo-50 border-indigo-300 text-indigo-700'
-          }`}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            <span className="text-sm font-medium">Pas de filtre actifs ! tous tes colis sont au même endroit !</span>
-          </div>
-        )}
-
         {/* ⚠️ Bandeau d'alerte délai */}
         {(() => {
           const oneDayParcels = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) <= 1);
@@ -1309,10 +1345,32 @@ const setupRealtimeSubscription = () => {
                 const isWarning = remainingDays === 2;  // jaune
                 
                 return (
+                  <div key={parcel.id} className="relative rounded-xl overflow-hidden">
+                    {/* ✅ Fond vert révélé au swipe (à droite, swipe gauche) */}
+                    <div
+                      className="absolute inset-0 flex items-center justify-end pr-5 rounded-xl bg-green-500"
+                      style={{ opacity: Math.min((swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) }}
+                      aria-hidden="true"
+                    >
+                      <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                        Récupéré !
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    {/* ✅ Carte déplaçable */}
                   <div
-                    key={parcel.id}
-                    onClick={() => toggleCollected(parcel.id, parcel.collected)}
-                    className={`border-2 rounded-xl p-4 transition cursor-pointer ${
+                    onClick={() => { if ((swipeOffsets[parcel.id] || 0) < 5) toggleCollected(parcel.id, parcel.collected); }}
+                    onTouchStart={(e) => handleTouchStart(e, parcel.id)}
+                    onTouchMove={(e) => handleTouchMove(e, parcel.id)}
+                    onTouchEnd={(e) => handleTouchEnd(e, parcel.id, parcel.collected)}
+                    style={{
+                      transform: `translateX(-${swipeOffsets[parcel.id] || 0}px)`,
+                      transition: (touchStartRef.current[parcel.id]?.swiping) ? 'none' : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                    }}
+                    className={`border-2 rounded-xl p-4 cursor-pointer select-none ${
                       darkMode
                         ? isExpiring
                           ? 'border-orange-500 bg-orange-900 bg-opacity-25 hover:bg-opacity-35'
@@ -1441,6 +1499,7 @@ const setupRealtimeSubscription = () => {
                       </button>
                     </div>
                   </div>
+                  </div> {/* ✅ Fermeture wrapper swipe */}
                 );
               })}
             </div>
