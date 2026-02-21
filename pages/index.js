@@ -117,7 +117,7 @@ export default function MenuPrincipal() {
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 w-full max-w-md transition-colors duration-300`}>
           <div className="flex items-center justify-center gap-3 mb-8">
             <div>
-              <img src="/meeple_outils.png" alt="Logo" width="96" height="96" className="object-contain" />
+              <img src="/meeple_outils.png" alt="Logo" width="50" height="50" className="object-contain" />
             </div>
             <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
           </div>
@@ -244,7 +244,7 @@ export default function MenuPrincipal() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="shrink-0">
-                  <img src="/meeple_outils.png" alt="Logo" width="96" height="96" className="object-contain" />
+                  <img src="/meeple_outils.png" alt="Logo" width="50" height="50" className="object-contain" />
                 </div>
                 <div>
                   <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
