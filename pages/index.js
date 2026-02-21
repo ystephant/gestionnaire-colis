@@ -117,10 +117,7 @@ export default function MenuPrincipal() {
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 w-full max-w-md transition-colors duration-300`}>
           <div className="flex items-center justify-center gap-3 mb-8">
             <div className="bg-indigo-600 p-3 rounded-xl">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-              </svg>
+              <img src="/meeple_outils.png" alt="Logo" width="32" height="32" className="object-contain" />
             </div>
             <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
           </div>
@@ -247,10 +244,7 @@ export default function MenuPrincipal() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="bg-indigo-600 p-3 rounded-xl shrink-0">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                  </svg>
+                  <img src="/meeple_outils.png" alt="Logo" width="32" height="32" className="object-contain" />
                 </div>
                 <div>
                   <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Mes Outils</h1>
