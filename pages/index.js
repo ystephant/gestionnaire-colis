@@ -243,9 +243,9 @@ export default function MenuPrincipal() {
       <div className="py-8 px-4">
         <div className="max-w-7xl mx-auto">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-8 transition-colors duration-300`}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="bg-indigo-600 p-3 rounded-xl">
+                <div className="bg-indigo-600 p-3 rounded-xl shrink-0">
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                     <polyline points="9 22 9 12 15 12 15 22"></polyline>
@@ -258,7 +258,7 @@ export default function MenuPrincipal() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 sm:self-auto self-start">
 
                 {/* ⚙️ Bouton Paramètres */}
                 <div className="relative">
