@@ -1393,23 +1393,22 @@ const setupRealtimeSubscription = () => {
           </h2>
           
           {filteredPendingParcels.length === 0 ? (
-            <div className="flex items-center gap-4 py-6 px-2">
+            <div className="text-center py-4">
               {/* 🎭 Meeple qui pleure */}
               <img
                 src="/LePetitMeeple_triste.png"
                 alt="Le Petit Meeple triste"
-                style={{ width: 192, height: 192, objectFit: 'contain', flexShrink: 0 }}
+                className="mx-auto mb-2"
+                style={{ width: 192, height: 192, objectFit: 'contain' }}
               />
-              <div className="text-left">
-                <p className={`text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-1`}>
-                  {pendingParcels.length > 0 ? '😔 Aucun résultat avec ces filtres' : 'Le Petit Meeple est triste…'}
-                </p>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {pendingParcels.length > 0
-                    ? 'Essayez de changer ou réinitialiser les filtres'
-                    : "Il n'a aucun colis à aller récupérer !"}
-                </p>
-              </div>
+              <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-0.5`}>
+                {pendingParcels.length > 0 ? '😔 Aucun résultat avec ces filtres' : 'Le Petit Meeple est triste…'}
+              </p>
+              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                {pendingParcels.length > 0
+                  ? 'Essayez de changer ou réinitialiser les filtres'
+                  : "Il n'a aucun colis à aller récupérer !"}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
