@@ -1407,7 +1407,7 @@ const setupRealtimeSubscription = () => {
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 {pendingParcels.length > 0
                   ? 'Essayez de changer ou réinitialiser les filtres'
-                  : 'Il n'a aucun colis à aller récupérer !'}
+                  : "Il n'a aucun colis à aller récupérer !"}
               </p>
             </div>
           ) : (
