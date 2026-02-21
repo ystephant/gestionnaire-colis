@@ -1217,6 +1217,49 @@ const setupRealtimeSubscription = () => {
           </div>
         )}
 
+        {/* ⚠️ Bandeau d'alerte délai */}
+        {(() => {
+          const oneDayParcels = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) <= 1);
+          const twoDayParcels = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) === 2);
+          if (oneDayParcels.length === 0 && twoDayParcels.length === 0) return null;
+          return (
+            <div className="space-y-2 mb-4">
+              {oneDayParcels.length > 0 && (
+                <div className={`flex items-start gap-3 rounded-xl px-4 py-3 border ${
+                  darkMode
+                    ? 'bg-orange-900 bg-opacity-30 border-orange-500 text-orange-200'
+                    : 'bg-orange-50 border-orange-400 text-orange-800'
+                }`}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  <span className="font-semibold text-sm">
+                    Attention ! Il ne reste plus que {oneDayParcels[0] && getRemainingDays(oneDayParcels[0].date_added) === 0 ? '0 jour' : '1 jour'} pour aller chercher {oneDayParcels.length === 1 ? 'ce colis' : `ces ${oneDayParcels.length} colis`} !
+                  </span>
+                </div>
+              )}
+              {twoDayParcels.length > 0 && (
+                <div className={`flex items-start gap-3 rounded-xl px-4 py-3 border ${
+                  darkMode
+                    ? 'bg-yellow-900 bg-opacity-25 border-yellow-500 text-yellow-200'
+                    : 'bg-yellow-50 border-yellow-400 text-yellow-800'
+                }`}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  <span className="font-semibold text-sm">
+                    Attention ! Il ne reste plus que 2 jours pour aller chercher {twoDayParcels.length === 1 ? 'ce colis' : `ces ${twoDayParcels.length} colis`} !
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Liste des colis */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
           <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
@@ -1240,15 +1283,25 @@ const setupRealtimeSubscription = () => {
               {filteredPendingParcels.map(parcel => {
                 const remainingDays = getRemainingDays(parcel.date_added);
                 const isUrgent = remainingDays <= 1;
+                const isExpiring = remainingDays === 1; // orange
+                const isWarning = remainingDays === 2;  // jaune
                 
                 return (
                   <div
                     key={parcel.id}
                     onClick={() => toggleCollected(parcel.id, parcel.collected)}
                     className={`border-2 rounded-xl p-4 transition cursor-pointer ${
-                      darkMode 
-                        ? `${isUrgent ? 'border-red-600 bg-red-900 bg-opacity-20 hover:bg-opacity-30' : 'border-gray-600 bg-gray-700 hover:bg-gray-650'}` 
-                        : `${isUrgent ? 'border-red-400 bg-red-50 hover:bg-red-100' : 'border-gray-200 bg-white hover:bg-gray-50'}`
+                      darkMode
+                        ? isExpiring
+                          ? 'border-orange-500 bg-orange-900 bg-opacity-25 hover:bg-opacity-35'
+                          : isWarning
+                            ? 'border-yellow-500 bg-yellow-900 bg-opacity-20 hover:bg-opacity-30'
+                            : 'border-gray-600 bg-gray-700 hover:bg-gray-650'
+                        : isExpiring
+                          ? 'border-orange-400 bg-orange-50 hover:bg-orange-100'
+                          : isWarning
+                            ? 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100'
+                            : 'border-gray-200 bg-white hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-start gap-3">
