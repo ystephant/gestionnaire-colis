@@ -286,8 +286,8 @@ export default function MenuPrincipal() {
                   )}
                 </button>
 
-                {/* ⚡ Bouton Vente flash (visible uniquement si bandeau fermé) */}
-                {flashStatus.active && bannerDismissed && (
+                {/* ⚡ Bouton Vente flash (visible si bandeau fermé ou hors période de ventes flash) */}
+                {(!flashStatus.active || bannerDismissed) && (
                   <button
                     onClick={() => window.open(PHILIBERT_FLASH_URL, '_blank')}
                     className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 bg-amber-400 hover:bg-amber-500 text-black"
