@@ -42,6 +42,7 @@ export default function MenuPrincipal() {
   const [loading, setLoading] = useState(true);
   const [urgentParcels, setUrgentParcels] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const flashStatus = getFlashSaleStatus();
 
@@ -258,6 +259,82 @@ export default function MenuPrincipal() {
                 </div>
               </div>
               <div className="flex gap-2">
+
+                {/* ⚙️ Bouton Paramètres */}
+                <div className="relative">
+                  <button
+                    onClick={() => setSettingsOpen(!settingsOpen)}
+                    className={`p-3 rounded-xl transition-all duration-300 ${
+                      darkMode
+                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-gray-200'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                    }`}
+                    title="Paramètres"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3"></circle>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                  </button>
+
+                  {/* Fenêtre flottante */}
+                  {settingsOpen && (
+                    <>
+                      {/* Overlay transparent pour fermer en cliquant ailleurs */}
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setSettingsOpen(false)}
+                      />
+                      <div className={`absolute right-0 top-full mt-2 w-56 rounded-xl shadow-2xl border z-20 overflow-hidden ${
+                        darkMode
+                          ? 'bg-gray-800 border-gray-700'
+                          : 'bg-white border-gray-200'
+                      }`}>
+                        <div className={`px-4 py-2.5 border-b text-xs font-semibold uppercase tracking-wider ${
+                          darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-100 text-gray-400'
+                        }`}>
+                          Outils
+                        </div>
+
+                        {/* 🖨️ Imprimer des étiquettes */}
+                        <button
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            const filePath = '/Etiquettes_LePetitMeeple.pdf';
+                            const ext = filePath.split('.').pop().toLowerCase();
+                            if (ext === 'pdf') {
+                              window.open(filePath, '_blank');
+                            } else {
+                              const w = window.open('', '_blank');
+                              w.document.write(
+                                `<!DOCTYPE html><html><head><title>Étiquettes</title>` +
+                                `<style>*{margin:0;padding:0;}img{width:100%;height:auto;}` +
+                                `@media print{@page{margin:0;}}</style></head>` +
+                                `<body onload="window.print()"><img src="${filePath}" /></body></html>`
+                              );
+                              w.document.close();
+                            }
+                          }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors duration-150 ${
+                            darkMode
+                              ? 'text-gray-300 hover:bg-gray-700'
+                              : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                            <rect x="6" y="14" width="12" height="8"></rect>
+                          </svg>
+                          Imprimer des étiquettes
+                        </button>
+
+                        {/* Emplacement pour futurs menus */}
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <button
                   onClick={toggleDarkMode}
                   className={`p-3 rounded-xl transition-all duration-300 ${
