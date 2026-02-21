@@ -910,12 +910,12 @@ const setupRealtimeSubscription = () => {
     } 
   };
 
-  // ✅ Swipe vers la gauche pour marquer comme récupéré (mobile)
+  // ✅ Swipe gauche OU droite pour marquer comme récupéré (mobile)
   const SWIPE_THRESHOLD = 110; // px à parcourir pour valider
 
   const handleTouchStart = (e, parcelId) => {
     const touch = e.touches[0];
-    touchStartRef.current[parcelId] = { x: touch.clientX, y: touch.clientY, swiping: false, cancelled: false };
+    touchStartRef.current[parcelId] = { x: touch.clientX, y: touch.clientY, swiping: false, cancelled: false, direction: null };
   };
 
   const handleTouchMove = (e, parcelId) => {
@@ -932,19 +932,18 @@ const setupRealtimeSubscription = () => {
       return;
     }
 
-    // Seulement swipe gauche (dx négatif)
-    if (dx >= 0) {
-      setSwipeOffsets(prev => ({ ...prev, [parcelId]: 0 }));
-      return;
+    // Déterminer la direction au premier mouvement horizontal
+    if (!start.direction) {
+      touchStartRef.current[parcelId].direction = dx > 0 ? 'right' : 'left';
     }
 
     touchStartRef.current[parcelId].swiping = true;
-    // Résistance progressive après le seuil (offset = valeur absolue, appliquée en négatif au transform)
     const absDx = Math.abs(dx);
+    // Résistance progressive après le seuil
     const offset = absDx < SWIPE_THRESHOLD ? absDx : SWIPE_THRESHOLD + (absDx - SWIPE_THRESHOLD) * 0.15;
-    setSwipeOffsets(prev => ({ ...prev, [parcelId]: offset }));
+    // Stocker offset signé pour savoir dans quel sens translate
+    setSwipeOffsets(prev => ({ ...prev, [parcelId]: dx > 0 ? offset : -offset }));
 
-    // Empêcher le scroll vertical uniquement si on swipe horizontalement
     if (start.swiping) e.preventDefault();
   };
 
@@ -952,16 +951,55 @@ const setupRealtimeSubscription = () => {
     const start = touchStartRef.current[parcelId];
     const offset = swipeOffsets[parcelId] || 0;
 
-    if (!start || start.cancelled || offset < SWIPE_THRESHOLD) {
+    if (!start || start.cancelled || Math.abs(offset) < SWIPE_THRESHOLD) {
       // Snap back
       setSwipeOffsets(prev => ({ ...prev, [parcelId]: 0 }));
       return;
     }
 
-    // ✅ Swipe validé : marquer comme récupéré avec animation de sortie vers la gauche
-    setSwipeOffsets(prev => ({ ...prev, [parcelId]: 400 }));
+    // ✅ Swipe validé : animation de sortie dans la direction du swipe
+    const exitOffset = offset > 0 ? 500 : -500;
+    setSwipeOffsets(prev => ({ ...prev, [parcelId]: exitOffset }));
     setTimeout(() => {
       toggleCollected(parcelId, currentCollected);
+      setSwipeOffsets(prev => { const next = { ...prev }; delete next[parcelId]; return next; });
+    }, 280);
+  };
+
+  // ✅ Handler de fin de swipe pour suppression (colis récupérés) — sans confirm()
+  const handleTouchEndDelete = async (e, parcelId) => {
+    const start = touchStartRef.current[parcelId];
+    const offset = swipeOffsets[parcelId] || 0;
+
+    if (!start || start.cancelled || Math.abs(offset) < SWIPE_THRESHOLD) {
+      setSwipeOffsets(prev => ({ ...prev, [parcelId]: 0 }));
+      return;
+    }
+
+    const exitOffset = offset > 0 ? 500 : -500;
+    setSwipeOffsets(prev => ({ ...prev, [parcelId]: exitOffset }));
+
+    setTimeout(async () => {
+      // Suppression directe sans confirm() — le swipe est la confirmation
+      const previousParcels = [...parcels];
+      setParcels(prev => prev.filter(p => p.id !== parcelId));
+
+      if (!isOnline) {
+        addToOfflineQueue({ type: 'delete', id: parcelId });
+        return;
+      }
+
+      try {
+        const { error } = await supabase.from('parcels').delete().eq('id', parcelId);
+        if (error) throw error;
+        setTimeout(() => {
+          if (!isRealtimeConnected.current) loadParcels();
+        }, 1500);
+      } catch (error) {
+        console.error('❌ Erreur suppression swipe:', error);
+        setParcels(previousParcels);
+      }
+
       setSwipeOffsets(prev => { const next = { ...prev }; delete next[parcelId]; return next; });
     }, 280);
   };
@@ -1346,10 +1384,24 @@ const setupRealtimeSubscription = () => {
                 
                 return (
                   <div key={parcel.id} className="relative rounded-xl overflow-hidden">
-                    {/* ✅ Fond vert révélé au swipe (à droite, swipe gauche) */}
+                    {/* ✅ Fond vert gauche — révélé au swipe droite */}
+                    <div
+                      className="absolute inset-0 flex items-center pl-5 rounded-xl bg-green-500"
+                      style={{ opacity: (swipeOffsets[parcel.id] || 0) > 0 ? Math.min((swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
+                      aria-hidden="true"
+                    >
+                      <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        Récupéré !
+                      </div>
+                    </div>
+
+                    {/* ✅ Fond vert droite — révélé au swipe gauche */}
                     <div
                       className="absolute inset-0 flex items-center justify-end pr-5 rounded-xl bg-green-500"
-                      style={{ opacity: Math.min((swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) }}
+                      style={{ opacity: (swipeOffsets[parcel.id] || 0) < 0 ? Math.min(Math.abs(swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
                       aria-hidden="true"
                     >
                       <div className="flex items-center gap-2 text-white font-semibold text-sm">
@@ -1367,7 +1419,7 @@ const setupRealtimeSubscription = () => {
                     onTouchMove={(e) => handleTouchMove(e, parcel.id)}
                     onTouchEnd={(e) => handleTouchEnd(e, parcel.id, parcel.collected)}
                     style={{
-                      transform: `translateX(-${swipeOffsets[parcel.id] || 0}px)`,
+                      transform: `translateX(${swipeOffsets[parcel.id] || 0}px)`,
                       transition: (touchStartRef.current[parcel.id]?.swiping) ? 'none' : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
                     }}
                     className={`border-2 rounded-xl p-4 cursor-pointer select-none ${
@@ -1518,14 +1570,53 @@ const setupRealtimeSubscription = () => {
             
             <div className="space-y-3 mb-4">
               {collectedParcels.map(parcel => (
-                <div
-                  key={parcel.id}
-                  className={`border-2 rounded-xl p-4 transition ${
-                    darkMode 
-                      ? 'border-green-700 bg-green-900 bg-opacity-20 opacity-75' 
-                      : 'border-green-200 bg-green-50 opacity-75'
-                  }`}
-                >
+                <div key={parcel.id} className="relative rounded-xl overflow-hidden">
+
+                  {/* ✅ Fond rouge gauche — révélé au swipe droite */}
+                  <div
+                    className="absolute inset-0 flex items-center pl-5 rounded-xl bg-red-500"
+                    style={{ opacity: (swipeOffsets[parcel.id] || 0) > 0 ? Math.min((swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
+                    aria-hidden="true"
+                  >
+                    <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
+                      Supprimer ?
+                    </div>
+                  </div>
+
+                  {/* ✅ Fond rouge droite — révélé au swipe gauche */}
+                  <div
+                    className="absolute inset-0 flex items-center justify-end pr-5 rounded-xl bg-red-500"
+                    style={{ opacity: (swipeOffsets[parcel.id] || 0) < 0 ? Math.min(Math.abs(swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
+                    aria-hidden="true"
+                  >
+                    <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                      Supprimer ?
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* ✅ Carte déplaçable */}
+                  <div
+                    onTouchStart={(e) => handleTouchStart(e, parcel.id)}
+                    onTouchMove={(e) => handleTouchMove(e, parcel.id)}
+                    onTouchEnd={(e) => handleTouchEndDelete(e, parcel.id)}
+                    style={{
+                      transform: `translateX(${swipeOffsets[parcel.id] || 0}px)`,
+                      transition: (touchStartRef.current[parcel.id]?.swiping) ? 'none' : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                    }}
+                    className={`border-2 rounded-xl p-4 select-none ${
+                      darkMode 
+                        ? 'border-green-700 bg-green-900 bg-opacity-20 opacity-75' 
+                        : 'border-green-200 bg-green-50 opacity-75'
+                    }`}
+                  >
                   <div className="flex items-start gap-3">
                     <button
                       onClick={() => toggleCollected(parcel.id, parcel.collected)}
@@ -1570,6 +1661,7 @@ const setupRealtimeSubscription = () => {
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                       </svg>
                     </button>
+                  </div>
                   </div>
                 </div>
               ))}
