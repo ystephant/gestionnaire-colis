@@ -43,6 +43,7 @@ export default function MenuPrincipal() {
   const [urgentParcels, setUrgentParcels] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('grid');
 
   const flashStatus = getFlashSaleStatus();
 
@@ -335,6 +336,29 @@ export default function MenuPrincipal() {
                   )}
                 </div>
 
+                {/* 🔲 Bouton mode d'affichage */}
+                <button
+                  onClick={() => setViewMode(v => v === 'grid' ? 'list' : 'grid')}
+                  className={`p-3 rounded-xl transition-all duration-300 ${
+                    darkMode
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-gray-200'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                  }`}
+                  title={viewMode === 'grid' ? 'Passer en mode liste' : 'Passer en mode grille'}
+                >
+                  {viewMode === 'grid' ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                      <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                    </svg>
+                  )}
+                </button>
+
                 <button
                   onClick={toggleDarkMode}
                   className={`p-3 rounded-xl transition-all duration-300 ${
@@ -407,196 +431,187 @@ export default function MenuPrincipal() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div 
-              onClick={() => router.push('/colis')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group relative`}
-            >
-              {urgentParcels > 0 && (
-                <div className="absolute top-4 right-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full animate-pulse">
-                  {urgentParcels} urgent{urgentParcels > 1 ? 's' : ''}
-                </div>
-              )}
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+          {(() => {
+            const apps = [
+              {
+                path: '/colis',
+                title: 'Gestionnaire de Colis',
+                description: 'Gérez vos colis de lockers avec rappels automatiques',
+                gradient: 'from-indigo-500 to-purple-600',
+                tags: [{ label: '📦 Suivi', bg: 'bg-indigo-100', text: 'text-indigo-700' }, { label: '⏰ Rappels', bg: 'bg-purple-100', text: 'text-purple-700' }],
+                badge: urgentParcels > 0 ? `${urgentParcels} urgent${urgentParcels > 1 ? 's' : ''}` : null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
                     <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
                     <line x1="12" y1="22.08" x2="12" y2="12"></line>
                   </svg>
-                </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Gestionnaire de Colis</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Gérez vos colis de lockers avec rappels automatiques
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full">📦 Suivi</span>
-                  <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full">⏰ Rappels</span>
-                </div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => router.push('/annonces')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                ),
+              },
+              {
+                path: '/annonces',
+                title: "Générateur d'Annonces",
+                description: 'Créez des descriptions détaillées pour vos annonces',
+                gradient: 'from-emerald-500 to-teal-600',
+                tags: [{ label: '🎲 Jeux', bg: 'bg-emerald-100', text: 'text-emerald-700' }, { label: '⚡ Rapide', bg: 'bg-teal-100', text: 'text-teal-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <line x1="16" y1="13" x2="8" y2="13"></line>
                     <line x1="16" y1="17" x2="8" y2="17"></line>
                   </svg>
-                </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Générateur d'Annonces</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Créez des descriptions détaillées pour vos annonces
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full">🎲 Jeux</span>
-                  <span className="bg-teal-100 text-teal-700 px-3 py-1 rounded-full">⚡ Rapide</span>
-                </div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => router.push('/reponses')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-pink-500 to-rose-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                ),
+              },
+              {
+                path: '/reponses',
+                title: 'Réponses Préfaites',
+                description: 'Répondez rapidement aux acheteurs et vendeurs',
+                gradient: 'from-pink-500 to-rose-600',
+                tags: [{ label: '💬 Messages', bg: 'bg-pink-100', text: 'text-pink-700' }, { label: '🚀 Efficace', bg: 'bg-rose-100', text: 'text-rose-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                   </svg>
-                </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Réponses Préfaites</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Répondez rapidement aux acheteurs et vendeurs
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-pink-100 text-pink-700 px-3 py-1 rounded-full">💬 Messages</span>
-                  <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full">🚀 Efficace</span>
-                </div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => router.push('/inventaire')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-orange-500 to-amber-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                ),
+              },
+              {
+                path: '/inventaire',
+                title: 'Inventaire de Jeux',
+                description: 'Vérifiez le contenu de vos jeux de société',
+                gradient: 'from-orange-500 to-amber-600',
+                tags: [{ label: '📦 Inventaire', bg: 'bg-orange-100', text: 'text-orange-700' }, { label: '✅ Vérification', bg: 'bg-amber-100', text: 'text-amber-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
                     <polyline points="12 12 12 12.01"></polyline>
                     <polyline points="12 6 12 6.01"></polyline>
                     <polyline points="12 18 12 18.01"></polyline>
                   </svg>
-                </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Inventaire de Jeux</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Vérifiez le contenu de vos jeux de société
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full">📦 Inventaire</span>
-                  <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full">✅ Vérification</span>
-                </div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => router.push('/transactions')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-blue-500 to-cyan-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                ),
+              },
+              {
+                path: '/transactions',
+                title: 'Suivi Achats/Ventes',
+                description: 'Suivez vos bénéfices en temps réel',
+                gradient: 'from-blue-500 to-cyan-600',
+                tags: [{ label: '💰 Bénéfices', bg: 'bg-blue-100', text: 'text-blue-700' }, { label: '📊 Stats', bg: 'bg-cyan-100', text: 'text-cyan-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <line x1="12" y1="1" x2="12" y2="23"></line>
                     <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
                   </svg>
-                </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Suivi Achats/Ventes</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Suivez vos bénéfices en temps réel
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full">💰 Bénéfices</span>
-                  <span className="bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full">📊 Stats</span>
-                </div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => router.push('/ludotheque')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-violet-500 to-fuchsia-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                ),
+              },
+              {
+                path: '/ludotheque',
+                title: 'Ma Ludothèque',
+                description: 'Organisez vos jeux sur des étagères virtuelles',
+                gradient: 'from-violet-500 to-fuchsia-600',
+                tags: [{ label: '🎲 Organisation', bg: 'bg-violet-100', text: 'text-violet-700' }, { label: '📚 Règles IA', bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <rect x="3" y="3" width="7" height="7"></rect>
                     <rect x="14" y="3" width="7" height="7"></rect>
                     <rect x="14" y="14" width="7" height="7"></rect>
                     <rect x="3" y="14" width="7" height="7"></rect>
                   </svg>
-                </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Ma Ludothèque</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Organisez vos jeux sur des étagères virtuelles
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-violet-100 text-violet-700 px-3 py-1 rounded-full">🎲 Organisation</span>
-                  <span className="bg-fuchsia-100 text-fuchsia-700 px-3 py-1 rounded-full">📚 Règles IA</span>
-                </div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => router.push('/masquage-pdf')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-red-500 to-orange-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                ),
+              },
+              {
+                path: '/masquage-pdf',
+                title: 'Masquage PDF',
+                description: 'Masquez les informations sensibles sur vos étiquettes',
+                gradient: 'from-red-500 to-orange-600',
+                tags: [{ label: '📄 PDF', bg: 'bg-red-100', text: 'text-red-700' }, { label: '🔒 Confidentialité', bg: 'bg-orange-100', text: 'text-orange-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <rect x="8" y="12" width="8" height="2" fill="white"></rect>
                     <rect x="8" y="16" width="8" height="2" fill="white"></rect>
                   </svg>
-                </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Masquage PDF</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Masquez les informations sensibles sur vos étiquettes
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full">📄 PDF</span>
-                  <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full">🔒 Confidentialité</span>
-                </div>
-              </div>
-            </div>
-
-            {/* NOUVELLE TUILE SAV */}
-            <div 
-              onClick={() => router.push('/sav')}
-              className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group`}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="bg-gradient-to-br from-cyan-500 to-blue-600 p-6 rounded-2xl mb-4 group-hover:scale-110 transition">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                ),
+              },
+              {
+                path: '/sav',
+                title: 'SAV Jeux',
+                description: 'Accédez rapidement aux SAV de vos éditeurs',
+                gradient: 'from-cyan-500 to-blue-600',
+                tags: [{ label: '🔧 Support', bg: 'bg-cyan-100', text: 'text-cyan-700' }, { label: '🔗 Liens', bg: 'bg-blue-100', text: 'text-blue-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
                   </svg>
+                ),
+              },
+            ];
+
+            if (viewMode === 'grid') {
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {apps.map((app) => (
+                    <div
+                      key={app.path}
+                      onClick={() => router.push(app.path)}
+                      className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-8 hover:shadow-2xl transition cursor-pointer group relative`}
+                    >
+                      {app.badge && (
+                        <div className="absolute top-4 right-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full animate-pulse">
+                          {app.badge}
+                        </div>
+                      )}
+                      <div className="flex flex-col items-center text-center">
+                        <div className={`bg-gradient-to-br ${app.gradient} p-6 rounded-2xl mb-4 group-hover:scale-110 transition`}>
+                          {app.icon(48)}
+                        </div>
+                        <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{app.title}</h2>
+                        <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{app.description}</p>
+                        <div className="flex gap-2 flex-wrap justify-center text-sm">
+                          {app.tags.map((tag) => (
+                            <span key={tag.label} className={`${tag.bg} ${tag.text} px-3 py-1 rounded-full`}>{tag.label}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>SAV Jeux</h2>
-                <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Accédez rapidement aux SAV de vos éditeurs
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center text-sm">
-                  <span className="bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full">🔧 Support</span>
-                  <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full">🔗 Liens</span>
-                </div>
+              );
+            }
+
+            return (
+              <div className="flex flex-col gap-2">
+                {apps.map((app) => (
+                  <div
+                    key={app.path}
+                    onClick={() => router.push(app.path)}
+                    className={`${darkMode ? 'bg-gray-800 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow px-4 py-3 flex items-center gap-4 cursor-pointer transition group relative`}
+                  >
+                    <div className={`bg-gradient-to-br ${app.gradient} p-2.5 rounded-xl shrink-0 group-hover:scale-105 transition`}>
+                      {app.icon(22)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{app.title}</span>
+                      <p className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{app.description}</p>
+                    </div>
+                    {app.badge && (
+                      <span className="bg-red-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full animate-pulse shrink-0">{app.badge}</span>
+                    )}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                ))}
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           <div className={`mt-8 rounded-xl p-4 text-center transition-colors duration-300 ${
             darkMode ? 'bg-gray-800 bg-opacity-60' : 'bg-white bg-opacity-60'
