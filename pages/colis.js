@@ -1499,7 +1499,7 @@ const setupRealtimeSubscription = () => {
                       </button>
                     </div>
                   </div>
-                  </div> {/* ✅ Fermeture wrapper swipe */}
+                  </div>
                 );
               })}
             </div>
