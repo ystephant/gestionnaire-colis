@@ -1394,14 +1394,20 @@ const setupRealtimeSubscription = () => {
           
           {filteredPendingParcels.length === 0 ? (
             <div className="text-center py-12">
-              <div className="bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                </svg>
-              </div>
-              <p className={`text-lg ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Aucun colis en attente</p>
-              <p className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-2`}>
-                {pendingParcels.length > 0 ? 'Essayez de changer les filtres' : 'Ajoutez vos premiers colis'}
+              {/* 🎭 Meeple qui pleure */}
+              <img
+                src="/LePetitMeeple_triste.png"
+                alt="Le Petit Meeple triste"
+                className="mx-auto mb-5"
+                style={{ width: 96, height: 96, objectFit: 'contain' }}
+              />
+              <p className={`text-base font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-1`}>
+                {pendingParcels.length > 0 ? '😔 Aucun résultat avec ces filtres' : 'Le Petit Meeple est triste…'}
+              </p>
+              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                {pendingParcels.length > 0
+                  ? 'Essayez de changer ou réinitialiser les filtres'
+                  : 'Il n'a aucun colis à aller récupérer !'}
               </p>
             </div>
           ) : (
