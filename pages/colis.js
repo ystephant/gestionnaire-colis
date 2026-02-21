@@ -43,8 +43,10 @@ export default function LockerParcelApp() {
   const channelRef = useRef(null);
   const isRealtimeConnected = useRef(false);
   const [openPopover, setOpenPopover] = useState(null); // 'sync' | 'notif' | 'realtime' | null
-  const [swipeOffsets, setSwipeOffsets] = useState({}); // { [parcelId]: number }
-  const touchStartRef = useRef({}); // { [parcelId]: { x, y, swiping } }
+  const [swipeOffsets, setSwipeOffsets] = useState({});
+  const touchStartRef = useRef({});
+  const [showForm, setShowForm] = useState(false); // accordéon formulaire
+  const [removingIds, setRemovingIds] = useState(new Set()); // IDs en cours de sortie animée
 
   // ✅ Wake Lock - Empêche la mise en veille
   const enableWakeLock = async () => {
@@ -631,10 +633,19 @@ const setupRealtimeSubscription = () => {
   // ✅ Marquer un colis comme récupéré
   const toggleCollected = async (id, currentStatus) => {
     const parcel = parcels.find(p => p.id === id);
+
+    // Animation de sortie uniquement quand on passe en "récupéré" (retrait de la liste en attente)
+    if (!currentStatus) {
+      animateRemove(id, () => {
+        setParcels(prev => prev.map(p => p.id === id ? { ...p, collected: true } : p));
+      });
+    } else {
+      setParcels(prev => prev.map(p => p.id === id ? { ...p, collected: false } : p));
+    }
+
     const optimisticUpdate = parcels.map(p => 
       p.id === id ? { ...p, collected: !currentStatus } : p
     );
-    setParcels(optimisticUpdate);
 
     if (!isOnline) { 
       addToOfflineQueue({ type: 'update', id, data: { collected: !currentStatus } }); 
@@ -735,8 +746,10 @@ const setupRealtimeSubscription = () => {
 
   const previousParcels = [...parcels];
 
-  // Optimistic update
-  setParcels(prev => prev.filter(p => p.id !== id));
+  // Animation de sortie puis suppression
+  animateRemove(id, () => {
+    setParcels(prev => prev.filter(p => p.id !== id));
+  });
 
   if (!isOnline) {
     addToOfflineQueue({ type: 'delete', id });
@@ -910,8 +923,18 @@ const setupRealtimeSubscription = () => {
     } 
   };
 
-  // ✅ Swipe gauche OU droite pour marquer comme récupéré (mobile)
-  const SWIPE_THRESHOLD = 110; // px à parcourir pour valider
+  // ========== ANIMATION DE SORTIE ==========
+  // Lance l'animation height+opacity puis exécute le callback après 320ms
+  const animateRemove = (id, callback) => {
+    setRemovingIds(prev => new Set([...prev, id]));
+    setTimeout(() => {
+      setRemovingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+      callback();
+    }, 320);
+  };
+
+  // ========== SWIPE ==========
+  const SWIPE_THRESHOLD = 110;
 
   const handleTouchStart = (e, parcelId) => {
     const touch = e.touches[0];
@@ -921,86 +944,63 @@ const setupRealtimeSubscription = () => {
   const handleTouchMove = (e, parcelId) => {
     const start = touchStartRef.current[parcelId];
     if (!start || start.cancelled) return;
-
     const touch = e.touches[0];
     const dx = touch.clientX - start.x;
     const dy = touch.clientY - start.y;
-
-    // Si le mouvement est majoritairement vertical, annuler le swipe (scroll normal)
     if (!start.swiping && Math.abs(dy) > Math.abs(dx)) {
       touchStartRef.current[parcelId].cancelled = true;
       return;
     }
-
-    // Déterminer la direction au premier mouvement horizontal
-    if (!start.direction) {
-      touchStartRef.current[parcelId].direction = dx > 0 ? 'right' : 'left';
-    }
-
+    if (!start.direction) touchStartRef.current[parcelId].direction = dx > 0 ? 'right' : 'left';
     touchStartRef.current[parcelId].swiping = true;
     const absDx = Math.abs(dx);
-    // Résistance progressive après le seuil
     const offset = absDx < SWIPE_THRESHOLD ? absDx : SWIPE_THRESHOLD + (absDx - SWIPE_THRESHOLD) * 0.15;
-    // Stocker offset signé pour savoir dans quel sens translate
     setSwipeOffsets(prev => ({ ...prev, [parcelId]: dx > 0 ? offset : -offset }));
-
     if (start.swiping) e.preventDefault();
   };
 
-  const handleTouchEnd = (e, parcelId, currentCollected) => {
+  // Swipe pour marquer récupéré (colis en attente)
+  const handleTouchEndCollect = (e, parcelId, currentCollected) => {
     const start = touchStartRef.current[parcelId];
     const offset = swipeOffsets[parcelId] || 0;
-
     if (!start || start.cancelled || Math.abs(offset) < SWIPE_THRESHOLD) {
-      // Snap back
       setSwipeOffsets(prev => ({ ...prev, [parcelId]: 0 }));
       return;
     }
-
-    // ✅ Swipe validé : animation de sortie dans la direction du swipe
     const exitOffset = offset > 0 ? 500 : -500;
     setSwipeOffsets(prev => ({ ...prev, [parcelId]: exitOffset }));
     setTimeout(() => {
       toggleCollected(parcelId, currentCollected);
-      setSwipeOffsets(prev => { const next = { ...prev }; delete next[parcelId]; return next; });
+      setSwipeOffsets(prev => { const n = { ...prev }; delete n[parcelId]; return n; });
     }, 280);
   };
 
-  // ✅ Handler de fin de swipe pour suppression (colis récupérés) — sans confirm()
+  // Swipe pour supprimer (colis récupérés) — sans confirm()
   const handleTouchEndDelete = async (e, parcelId) => {
     const start = touchStartRef.current[parcelId];
     const offset = swipeOffsets[parcelId] || 0;
-
     if (!start || start.cancelled || Math.abs(offset) < SWIPE_THRESHOLD) {
       setSwipeOffsets(prev => ({ ...prev, [parcelId]: 0 }));
       return;
     }
-
     const exitOffset = offset > 0 ? 500 : -500;
     setSwipeOffsets(prev => ({ ...prev, [parcelId]: exitOffset }));
-
     setTimeout(async () => {
-      // Suppression directe sans confirm() — le swipe est la confirmation
       const previousParcels = [...parcels];
-      setParcels(prev => prev.filter(p => p.id !== parcelId));
-
-      if (!isOnline) {
-        addToOfflineQueue({ type: 'delete', id: parcelId });
-        return;
-      }
-
+      // Animation height+opacity puis suppression de l'état
+      animateRemove(parcelId, () => {
+        setParcels(prev => prev.filter(p => p.id !== parcelId));
+      });
+      setSwipeOffsets(prev => { const n = { ...prev }; delete n[parcelId]; return n; });
+      if (!isOnline) { addToOfflineQueue({ type: 'delete', id: parcelId }); return; }
       try {
         const { error } = await supabase.from('parcels').delete().eq('id', parcelId);
         if (error) throw error;
-        setTimeout(() => {
-          if (!isRealtimeConnected.current) loadParcels();
-        }, 1500);
+        setTimeout(() => { if (!isRealtimeConnected.current) loadParcels(); }, 1500);
       } catch (error) {
         console.error('❌ Erreur suppression swipe:', error);
         setParcels(previousParcels);
       }
-
-      setSwipeOffsets(prev => { const next = { ...prev }; delete next[parcelId]; return next; });
     }, 280);
   };
 
@@ -1164,7 +1164,35 @@ const setupRealtimeSubscription = () => {
             </div>
           </div>
 
-          <div className="space-y-3">
+          {/* ✅ Bouton accordéon */}
+          <button
+            onClick={() => setShowForm(prev => !prev)}
+            className={`w-full flex items-center justify-between mt-4 px-4 py-3 rounded-xl transition-all duration-200 ${
+              darkMode
+                ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
+            }`}
+          >
+            <span className="font-semibold text-sm">
+              {showForm ? 'Masquer le formulaire' : '➕ Ajouter des colis'}
+            </span>
+            <svg
+              width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5"
+              style={{ transform: showForm ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease' }}
+            >
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {/* ✅ Contenu collapsible */}
+          <div style={{
+            display: 'grid',
+            gridTemplateRows: showForm ? '1fr' : '0fr',
+            transition: 'grid-template-rows 0.3s ease',
+          }}>
+          <div style={{ overflow: 'hidden' }}>
+          <div className="space-y-3 pt-4">
             <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4 transition-colors duration-300`}>
               <p className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-3`}>Type de transporteur :</p>
               <div className="grid grid-cols-2 gap-2">
@@ -1269,6 +1297,8 @@ const setupRealtimeSubscription = () => {
             >
               Ajouter {extractParcelCodes(codeInput).length > 0 ? `(${extractParcelCodes(codeInput).length})` : ''}
             </button>
+          </div>
+          </div>
           </div>
         </div>
 
@@ -1383,22 +1413,31 @@ const setupRealtimeSubscription = () => {
                 const isWarning = remainingDays === 2;  // jaune
                 
                 return (
-                  <div key={parcel.id} className="relative rounded-xl overflow-hidden">
-                    {/* ✅ Fond vert gauche — révélé au swipe droite */}
+                  <div
+                    key={parcel.id}
+                    style={{
+                      overflow: 'hidden',
+                      maxHeight: removingIds.has(parcel.id) ? '0' : '500px',
+                      opacity: removingIds.has(parcel.id) ? 0 : 1,
+                      marginBottom: removingIds.has(parcel.id) ? '0' : '',
+                      transition: removingIds.has(parcel.id) ? 'max-height 0.32s ease, opacity 0.32s ease, margin 0.32s ease' : 'none',
+                    }}
+                  >
+                  <div className="relative rounded-xl overflow-hidden mb-3">
+
+                    {/* Fond vert gauche — swipe droite */}
                     <div
                       className="absolute inset-0 flex items-center pl-5 rounded-xl bg-green-500"
                       style={{ opacity: (swipeOffsets[parcel.id] || 0) > 0 ? Math.min((swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
                       aria-hidden="true"
                     >
                       <div className="flex items-center gap-2 text-white font-semibold text-sm">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                         Récupéré !
                       </div>
                     </div>
 
-                    {/* ✅ Fond vert droite — révélé au swipe gauche */}
+                    {/* Fond vert droite — swipe gauche */}
                     <div
                       className="absolute inset-0 flex items-center justify-end pr-5 rounded-xl bg-green-500"
                       style={{ opacity: (swipeOffsets[parcel.id] || 0) < 0 ? Math.min(Math.abs(swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
@@ -1406,18 +1445,15 @@ const setupRealtimeSubscription = () => {
                     >
                       <div className="flex items-center gap-2 text-white font-semibold text-sm">
                         Récupéré !
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                       </div>
                     </div>
 
-                    {/* ✅ Carte déplaçable */}
                   <div
                     onClick={() => { if ((swipeOffsets[parcel.id] || 0) < 5) toggleCollected(parcel.id, parcel.collected); }}
                     onTouchStart={(e) => handleTouchStart(e, parcel.id)}
                     onTouchMove={(e) => handleTouchMove(e, parcel.id)}
-                    onTouchEnd={(e) => handleTouchEnd(e, parcel.id, parcel.collected)}
+                    onTouchEnd={(e) => handleTouchEndCollect(e, parcel.id, parcel.collected)}
                     style={{
                       transform: `translateX(${swipeOffsets[parcel.id] || 0}px)`,
                       transition: (touchStartRef.current[parcel.id]?.swiping) ? 'none' : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
@@ -1550,8 +1586,9 @@ const setupRealtimeSubscription = () => {
                         </svg>
                       </button>
                     </div>
-                  </div>
-                  </div>
+                  </div> {/* fin carte swipeable */}
+                  </div> {/* fin relative swipe container */}
+                  </div> {/* fin animation wrapper */}
                 );
               })}
             </div>
@@ -1570,24 +1607,30 @@ const setupRealtimeSubscription = () => {
             
             <div className="space-y-3 mb-4">
               {collectedParcels.map(parcel => (
-                <div key={parcel.id} className="relative rounded-xl overflow-hidden">
+                <div
+                  key={parcel.id}
+                  style={{
+                    overflow: 'hidden',
+                    maxHeight: removingIds.has(parcel.id) ? '0' : '300px',
+                    opacity: removingIds.has(parcel.id) ? 0 : 1,
+                    transition: removingIds.has(parcel.id) ? 'max-height 0.32s ease, opacity 0.32s ease' : 'none',
+                  }}
+                >
+                <div className="relative rounded-xl overflow-hidden mb-1">
 
-                  {/* ✅ Fond rouge gauche — révélé au swipe droite */}
+                  {/* Fond rouge gauche — swipe droite */}
                   <div
                     className="absolute inset-0 flex items-center pl-5 rounded-xl bg-red-500"
                     style={{ opacity: (swipeOffsets[parcel.id] || 0) > 0 ? Math.min((swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
                     aria-hidden="true"
                   >
                     <div className="flex items-center gap-2 text-white font-semibold text-sm">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                        <polyline points="3 6 5 6 21 6"></polyline>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                      </svg>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                       Supprimer ?
                     </div>
                   </div>
 
-                  {/* ✅ Fond rouge droite — révélé au swipe gauche */}
+                  {/* Fond rouge droite — swipe gauche */}
                   <div
                     className="absolute inset-0 flex items-center justify-end pr-5 rounded-xl bg-red-500"
                     style={{ opacity: (swipeOffsets[parcel.id] || 0) < 0 ? Math.min(Math.abs(swipeOffsets[parcel.id] || 0) / SWIPE_THRESHOLD, 1) : 0 }}
@@ -1595,14 +1638,10 @@ const setupRealtimeSubscription = () => {
                   >
                     <div className="flex items-center gap-2 text-white font-semibold text-sm">
                       Supprimer ?
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                        <polyline points="3 6 5 6 21 6"></polyline>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                      </svg>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </div>
                   </div>
 
-                  {/* ✅ Carte déplaçable */}
                   <div
                     onTouchStart={(e) => handleTouchStart(e, parcel.id)}
                     onTouchMove={(e) => handleTouchMove(e, parcel.id)}
@@ -1663,6 +1702,7 @@ const setupRealtimeSubscription = () => {
                     </button>
                   </div>
                   </div>
+                </div>
                 </div>
               ))}
             </div>
