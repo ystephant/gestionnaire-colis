@@ -915,6 +915,14 @@ const setupRealtimeSubscription = () => {
   // ✅ Afficher les filtres uniquement s'il y a plus d'un transporteur OU plus d'un lieu
   const shouldShowFilters = uniqueLockerTypes.length > 1 || uniqueLocations.length > 1;
 
+  // ✅ Reset automatique des filtres quand il ne reste plus qu'un seul emplacement/transporteur
+  useEffect(() => {
+    if (!shouldShowFilters && pendingParcels.length > 0) {
+      if (filterLockerType !== 'all') setFilterLockerType('all');
+      if (filterLocation !== 'all') setFilterLocation('all');
+    }
+  }, [shouldShowFilters, pendingParcels.length]);
+
   if (loading) {
     return null;
   }
@@ -1214,6 +1222,20 @@ const setupRealtimeSubscription = () => {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ✅ Message quand tous les colis restants sont au même endroit */}
+        {pendingParcels.length > 0 && !shouldShowFilters && (
+          <div className={`flex items-center gap-3 rounded-xl px-4 py-3 mb-6 border ${
+            darkMode
+              ? 'bg-indigo-900 bg-opacity-30 border-indigo-600 text-indigo-300'
+              : 'bg-indigo-50 border-indigo-300 text-indigo-700'
+          }`}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span className="text-sm font-medium">Pas de filtre actifs ! tous tes colis sont au même endroit !</span>
           </div>
         )}
 
