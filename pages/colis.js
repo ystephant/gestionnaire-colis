@@ -1586,9 +1586,9 @@ const setupRealtimeSubscription = () => {
                         </svg>
                       </button>
                     </div>
-                  </div> {/* fin carte swipeable */}
-                  </div> {/* fin relative swipe container */}
-                  </div> {/* fin animation wrapper */}
+                  </div>
+                  </div>
+                  </div>
                 );
               })}
             </div>
