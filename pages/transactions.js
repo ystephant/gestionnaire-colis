@@ -576,40 +576,30 @@ const loadUserPreferences = async () => {
   };
 
   const getDormantStock = () => {
-    // Games bought multiple times but never sold, grouped by name
+    const excluded = (name) => name.toLowerCase().includes('lot') || name.toLowerCase().includes('extension');
+
     const buysByGame = {};
     buyTransactions
-      .filter(t => t.game_name && t.game_name.trim() !== '' && !t.game_name.toLowerCase().includes('lot') && !t.game_name.toLowerCase().includes('extension'))
+      .filter(t => t.game_name && t.game_name.trim() !== '' && !excluded(t.game_name))
       .forEach(t => {
         const name = t.game_name.trim();
         if (!buysByGame[name]) buysByGame[name] = [];
         buysByGame[name].push(t);
       });
 
-    const soldGames = new Set(
-      sellTransactions
-        .filter(t => t.game_name && t.game_name.trim() !== '')
-        .map(t => t.game_name.trim())
-    );
-
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const now = new Date();
 
     return Object.entries(buysByGame)
-      .filter(([name, buys]) => {
-        const neverSold = !soldGames.has(name);
-        const oldestBuy = new Date(Math.min(...buys.map(b => new Date(b.created_at))));
-        const boughtMultiple = buys.length > 1 || oldestBuy < threeMonthsAgo;
-        return neverSold && boughtMultiple;
-      })
       .map(([name, buys]) => {
-        const oldestBuy = new Date(Math.min(...buys.map(b => new Date(b.created_at))));
+        const firstBuy = new Date(Math.min(...buys.map(b => new Date(b.created_at))));
+        const daysDormant = Math.floor((now - firstBuy) / (1000 * 60 * 60 * 24));
         const totalInvested = buys.reduce((s, t) => s + t.price, 0);
-        const daysDormant = Math.floor((new Date() - oldestBuy) / (1000 * 60 * 60 * 24));
-        return { name, count: buys.length, totalInvested, oldestBuy, daysDormant };
+        return { name, count: buys.length, totalInvested, firstBuy, daysDormant };
       })
+      .filter(item => item.daysDormant >= 90)
       .sort((a, b) => b.daysDormant - a.daysDormant);
   };
+
 
   const handleGameNameChange = (value) => {
     setGameName(value);
@@ -1051,28 +1041,25 @@ const loadUserPreferences = async () => {
               ) : (
                 <div className="space-y-2">
                   {/* En-têtes de colonnes */}
-                  <div className={`flex items-center justify-between px-4 py-1 text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-10 flex-shrink-0 text-center">Ancienneté</span>
-                      <span className="ml-1">Nom du jeu</span>
-                      <span className="flex-shrink-0 opacity-0 select-none">×0 achats</span>
-                    </div>
-                    <span className="flex-shrink-0 ml-3">Total investi</span>
+                  <div className={`grid grid-cols-[4rem_1fr_auto] gap-2 px-4 py-1 text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <span className="text-center">Ancienneté</span>
+                    <span>Nom du jeu</span>
+                    <span>Total investi</span>
                   </div>
                   {dormant.map((item, i) => (
-                    <div key={i} className={`flex items-center justify-between px-4 py-3 rounded-xl ${
+                    <div key={i} className={`grid grid-cols-[4rem_1fr_auto] items-center gap-2 px-4 py-3 rounded-xl ${
                       darkMode ? 'bg-gray-700/60' : 'bg-white'
                     }`}>
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                          item.daysDormant > 180
-                            ? 'bg-red-500/20 text-red-400'
-                            : item.daysDormant > 120
-                              ? 'bg-amber-500/20 text-amber-400'
-                              : 'bg-yellow-500/20 text-yellow-500'
-                        }`} title="Nombre de jours depuis le premier achat">
-                          {item.daysDormant}j
-                        </span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-center ${
+                        item.daysDormant > 180
+                          ? 'bg-red-500/20 text-red-400'
+                          : item.daysDormant > 120
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-yellow-500/20 text-yellow-500'
+                      }`} title="Nombre de jours depuis le premier achat">
+                        {item.daysDormant}j
+                      </span>
+                      <div className="flex items-center gap-2 min-w-0">
                         <span className={`text-sm font-semibold truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
                           {item.name}
                         </span>
@@ -1080,7 +1067,7 @@ const loadUserPreferences = async () => {
                           ×{item.count} achat{item.count > 1 ? 's' : ''}
                         </span>
                       </div>
-                      <span className="text-sm font-bold text-red-400 flex-shrink-0 ml-3" title={`${item.count} achat${item.count > 1 ? 's' : ''} × prix moyen ${(item.totalInvested / item.count).toFixed(2)}€`}>
+                      <span className="text-sm font-bold text-red-400 whitespace-nowrap" title={`${item.count} achat${item.count > 1 ? 's' : ''} × prix moyen ${(item.totalInvested / item.count).toFixed(2)}€`}>
                         -{item.totalInvested.toFixed(2)}€
                       </span>
                     </div>
