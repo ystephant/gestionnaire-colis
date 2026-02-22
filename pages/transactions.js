@@ -1676,7 +1676,7 @@ const loadUserPreferences = async () => {
                 }`}
               >
                 <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  📊 Comparaison mensuelle
+                  📊 Comparaison {timeGrouping === 'day' ? 'journalière' : timeGrouping === 'month' ? 'mensuelle' : 'annuelle'}
                 </h2>
                 <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                   {expandedSections.comparison ? '▼' : '▶'}
