@@ -579,7 +579,7 @@ const loadUserPreferences = async () => {
     // Games bought multiple times but never sold, grouped by name
     const buysByGame = {};
     buyTransactions
-      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .filter(t => t.game_name && t.game_name.trim() !== '' && !t.game_name.toLowerCase().includes('lot') && !t.game_name.toLowerCase().includes('extension'))
       .forEach(t => {
         const name = t.game_name.trim();
         if (!buysByGame[name]) buysByGame[name] = [];
@@ -1050,6 +1050,15 @@ const loadUserPreferences = async () => {
                 </p>
               ) : (
                 <div className="space-y-2">
+                  {/* En-têtes de colonnes */}
+                  <div className={`flex items-center justify-between px-4 py-1 text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-10 flex-shrink-0 text-center">Ancienneté</span>
+                      <span className="ml-1">Nom du jeu</span>
+                      <span className="flex-shrink-0 opacity-0 select-none">×0 achats</span>
+                    </div>
+                    <span className="flex-shrink-0 ml-3">Total investi</span>
+                  </div>
                   {dormant.map((item, i) => (
                     <div key={i} className={`flex items-center justify-between px-4 py-3 rounded-xl ${
                       darkMode ? 'bg-gray-700/60' : 'bg-white'
@@ -1061,7 +1070,7 @@ const loadUserPreferences = async () => {
                             : item.daysDormant > 90
                               ? 'bg-amber-500/20 text-amber-400'
                               : 'bg-yellow-500/20 text-yellow-500'
-                        }`}>
+                        }`} title="Nombre de jours depuis le premier achat">
                           {item.daysDormant}j
                         </span>
                         <span className={`text-sm font-semibold truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
@@ -1071,7 +1080,7 @@ const loadUserPreferences = async () => {
                           ×{item.count} achat{item.count > 1 ? 's' : ''}
                         </span>
                       </div>
-                      <span className="text-sm font-bold text-red-400 flex-shrink-0 ml-3">
+                      <span className="text-sm font-bold text-red-400 flex-shrink-0 ml-3" title={`${item.count} achat${item.count > 1 ? 's' : ''} × prix moyen ${(item.totalInvested / item.count).toFixed(2)}€`}>
                         -{item.totalInvested.toFixed(2)}€
                       </span>
                     </div>
