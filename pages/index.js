@@ -280,7 +280,7 @@ export default function MenuPrincipal() {
                         className="fixed inset-0 z-10"
                         onClick={() => setSettingsOpen(false)}
                       />
-                      <div className={`absolute right-0 top-full mt-2 w-56 rounded-xl shadow-2xl border z-20 overflow-hidden ${
+                      <div className={`fixed left-4 right-4 top-[130px] sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-56 sm:top-auto rounded-xl shadow-2xl border z-20 overflow-hidden ${
                         darkMode
                           ? 'bg-gray-800 border-gray-700'
                           : 'bg-white border-gray-200'
