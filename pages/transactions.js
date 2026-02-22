@@ -1067,7 +1067,7 @@ const loadUserPreferences = async () => {
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
                           item.daysDormant > 180
                             ? 'bg-red-500/20 text-red-400'
-                            : item.daysDormant > 90
+                            : item.daysDormant > 120
                               ? 'bg-amber-500/20 text-amber-400'
                               : 'bg-yellow-500/20 text-yellow-500'
                         }`} title="Nombre de jours depuis le premier achat">
