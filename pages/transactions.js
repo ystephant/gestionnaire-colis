@@ -37,6 +37,7 @@ export default function TransactionsTracker() {
   const [gameSearch, setGameSearch] = useState('');
   const [showGameSearch, setShowGameSearch] = useState(false);
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [toast, setToast] = useState(null); // { message, type: 'buy' | 'sell' }
   const [expandedSections, setExpandedSections] = useState({
     evolution: true,
     comparison: true,
@@ -231,13 +232,8 @@ const loadUserPreferences = async () => {
       console.log('Transaction ajoutée:', data);
       setBuyPrice('');
       setGameName('');
-    } catch (error) {
-      console.error('Erreur d\'ajout:', error);
-      alert('Erreur lors de l\'ajout: ' + error.message);
-    }
-  };
-
-  const addSell = async () => {
+      setToast({ message: `Achat ajouté${gameName.trim() ? ` — ${gameName.trim()}` : ''}`, type: 'buy' });
+      setTimeout(() => setToast(null), 2500); = async () => {
     if (!sellPrice.trim()) return;
     if (!username) {
       alert('Erreur: utilisateur non connecté');
@@ -264,6 +260,8 @@ const loadUserPreferences = async () => {
       console.log('Transaction ajoutée:', data);
       setSellPrice('');
       setGameName('');
+      setToast({ message: `Vente ajoutée${gameName.trim() ? ` — ${gameName.trim()}` : ''}`, type: 'sell' });
+      setTimeout(() => setToast(null), 2500);
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
       alert('Erreur lors de l\'ajout: ' + error.message);
@@ -833,7 +831,8 @@ const loadUserPreferences = async () => {
         {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => router.push('/')}
                 className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
@@ -856,6 +855,36 @@ const loadUserPreferences = async () => {
                   Synchronisation en temps réel
                 </p>
               </div>
+              </div>
+
+              {/* Mini widget mois en cours */}
+              {(() => {
+                const now = new Date();
+                const cm = now.getMonth();
+                const cy = now.getFullYear();
+                const mBuys = buyTransactions.filter(t => { const d = new Date(t.created_at); return d.getMonth() === cm && d.getFullYear() === cy; });
+                const mSells = sellTransactions.filter(t => { const d = new Date(t.created_at); return d.getMonth() === cm && d.getFullYear() === cy; });
+                const mProfit = mSells.reduce((s,t) => s + t.price, 0) - mBuys.reduce((s,t) => s + t.price, 0);
+                const monthLabel = now.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+                return (
+                  <div className={`hidden md:flex flex-col items-end flex-shrink-0 px-3 py-2 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                    <span className={`text-xs font-semibold mb-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{monthLabel}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <span className="font-bold text-red-400">{mBuys.length}</span> achat{mBuys.length > 1 ? 's' : ''}
+                      </span>
+                      <span className={`text-xs ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>·</span>
+                      <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <span className="font-bold text-green-400">{mSells.length}</span> vente{mSells.length > 1 ? 's' : ''}
+                      </span>
+                      <span className={`text-xs ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>·</span>
+                      <span className={`text-xs font-bold ${mProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {mProfit >= 0 ? '+' : ''}{mProfit.toFixed(2)}€
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
@@ -1906,12 +1935,15 @@ const loadUserPreferences = async () => {
                 {expandedSections.detailProfitable && (
                   <div className="p-6 pt-0">
                     <div className="space-y-3">
-                      {top10MostProfitable.map((game, index) => (
+                      {top10MostProfitable.map((game, index) => {
+                        const maxProfit = Math.max(...top10MostProfitable.map(g => Math.abs(g.profit)));
+                        const barWidth = maxProfit > 0 ? (Math.abs(game.profit) / maxProfit) * 100 : 0;
+                        return (
                     <div 
                       key={index}
                       className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} hover:shadow-md transition`}
                     >
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3">
                           <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                             #{index + 1}
@@ -1928,6 +1960,14 @@ const loadUserPreferences = async () => {
                             Marge: {game.margin >= 0 ? '+' : ''}{game.margin.toFixed(1)}%
                           </div>
                         </div>
+                      </div>
+
+                      {/* Barre de progression */}
+                      <div className={`w-full h-1.5 rounded-full mb-3 ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`}>
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-500 ${game.profit >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
+                          style={{ width: `${barWidth}%` }}
+                        />
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1966,7 +2006,7 @@ const loadUserPreferences = async () => {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ); })}
                 </div>
               </div>
                 )}
@@ -1993,12 +2033,15 @@ const loadUserPreferences = async () => {
                 {expandedSections.detailLosses && (
                   <div className="p-6 pt-0">
                     <div className="space-y-3">
-                      {top10LeastProfitable.map((game, index) => (
+                      {top10LeastProfitable.map((game, index) => {
+                        const maxLoss = Math.max(...top10LeastProfitable.map(g => Math.abs(g.profit)));
+                        const barWidth = maxLoss > 0 ? (Math.abs(game.profit) / maxLoss) * 100 : 0;
+                        return (
                     <div 
                       key={index}
                       className={`p-4 rounded-lg ${darkMode ? 'bg-red-900 bg-opacity-20 border-2 border-red-900' : 'bg-red-50 border-2 border-red-200'} hover:shadow-md transition`}
                     >
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3">
                           <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                             #{index + 1}
@@ -2015,6 +2058,14 @@ const loadUserPreferences = async () => {
                             Perte: {game.margin.toFixed(1)}%
                           </div>
                         </div>
+                      </div>
+
+                      {/* Barre de progression */}
+                      <div className={`w-full h-1.5 rounded-full mb-3 ${darkMode ? 'bg-gray-700' : 'bg-red-100'}`}>
+                        <div
+                          className="h-1.5 rounded-full bg-red-500 transition-all duration-500"
+                          style={{ width: `${barWidth}%` }}
+                        />
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -2053,7 +2104,7 @@ const loadUserPreferences = async () => {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ); })}
                 </div>
               </div>
                 )}
@@ -2080,12 +2131,15 @@ const loadUserPreferences = async () => {
                 {expandedSections.detailLossesWithSales && (
                   <div className="p-6 pt-0">
                     <div className="space-y-3">
-                      {top10LeastProfitableWithSales.map((game, index) => (
+                      {top10LeastProfitableWithSales.map((game, index) => {
+                        const maxLoss = Math.max(...top10LeastProfitableWithSales.map(g => Math.abs(g.profit)));
+                        const barWidth = maxLoss > 0 ? (Math.abs(game.profit) / maxLoss) * 100 : 0;
+                        return (
                     <div 
                       key={index}
                       className={`p-4 rounded-lg ${darkMode ? 'bg-red-900 bg-opacity-20 border-2 border-red-900' : 'bg-red-50 border-2 border-red-200'} hover:shadow-md transition`}
                     >
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3">
                           <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                             #{index + 1}
@@ -2102,6 +2156,14 @@ const loadUserPreferences = async () => {
                             Perte: {game.margin.toFixed(1)}%
                           </div>
                         </div>
+                      </div>
+
+                      {/* Barre de progression */}
+                      <div className={`w-full h-1.5 rounded-full mb-3 ${darkMode ? 'bg-gray-700' : 'bg-red-100'}`}>
+                        <div
+                          className="h-1.5 rounded-full bg-red-500 transition-all duration-500"
+                          style={{ width: `${barWidth}%` }}
+                        />
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -2140,7 +2202,7 @@ const loadUserPreferences = async () => {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ); })}
                 </div>
               </div>
                 )}
@@ -2149,6 +2211,19 @@ const loadUserPreferences = async () => {
           </div>
         )}
       </div>
+    </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 ${
+          toast.type === 'buy'
+            ? darkMode ? 'bg-red-900/80 text-red-200 border border-red-700' : 'bg-red-50 text-red-700 border border-red-200'
+            : darkMode ? 'bg-green-900/80 text-green-200 border border-green-700' : 'bg-green-50 text-green-700 border border-green-200'
+        }`}>
+          <span>{toast.type === 'buy' ? '📥' : '📤'}</span>
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }
