@@ -46,6 +46,7 @@ export default function TransactionsTracker() {
     top10LeastProfitable: true,
     detailProfitable: true,
     detailLosses: true,
+    detailLossesWithSales: true,
     avgPrices: false 
     
   });
@@ -528,6 +529,46 @@ const loadUserPreferences = async () => {
       .slice(0, 10);
   };
 
+  const getTop10LeastProfitableGamesWithSales = () => {
+    const gameStats = {};
+    
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].buys += t.price;
+        gameStats[name].buyCount += 1;
+      });
+    
+    sellTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].sells += t.price;
+        gameStats[name].sellCount += 1;
+      });
+    
+    return Object.entries(gameStats)
+      .map(([name, stats]) => {
+        const profit = stats.sells - stats.buys;
+        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        return {
+          name,
+          profit,
+          margin,
+          totalBuy: stats.buys,
+          totalSell: stats.sells,
+          buyCount: stats.buyCount,
+          sellCount: stats.sellCount
+        };
+      })
+      .filter(game => game.profit <= 0 && game.sellCount >= 1) // Only losses with at least 1 sale
+      .sort((a, b) => a.profit - b.profit)
+      .slice(0, 10);
+  };
+
   const handleGameNameChange = (value) => {
     setGameName(value);
     setShowSuggestions(value.length > 0);
@@ -774,6 +815,7 @@ const loadUserPreferences = async () => {
   const top10MostBought = getTop10MostBoughtGames();
   const top10MostProfitable = getTop10MostProfitableGames();
   const top10LeastProfitable = getTop10LeastProfitableGames();
+  const top10LeastProfitableWithSales = getTop10LeastProfitableGamesWithSales();
 
   const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#8b5cf6'];
 
@@ -1952,6 +1994,93 @@ const loadUserPreferences = async () => {
                   <div className="p-6 pt-0">
                     <div className="space-y-3">
                       {top10LeastProfitable.map((game, index) => (
+                    <div 
+                      key={index}
+                      className={`p-4 rounded-lg ${darkMode ? 'bg-red-900 bg-opacity-20 border-2 border-red-900' : 'bg-red-50 border-2 border-red-200'} hover:shadow-md transition`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            #{index + 1}
+                          </div>
+                          <div className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                            {game.name}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-red-500">
+                            {game.profit.toFixed(2)}€
+                          </div>
+                          <div className="text-sm font-semibold text-red-500">
+                            Perte: {game.margin.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💰 Achats
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-red-500">{game.totalBuy.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.buyCount} transaction{game.buyCount > 1 ? 's' : ''}
+                          </div>
+                          {game.buyCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalBuy / game.buyCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💸 Ventes
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-green-500">{game.totalSell.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.sellCount} transaction{game.sellCount > 1 ? 's' : ''}
+                          </div>
+                          {game.sellCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalSell / game.sellCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+                )}
+              </div>
+            )}
+
+            {/* Detailed List of Top 10 Least Profitable Games WITH at least 1 sale */}
+            {top10LeastProfitableWithSales.length > 0 && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('detailLossesWithSales')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📉 Top 10 des Pertes - Jeux les Moins Rentables (avec au moins 1 vente)
+                  </h2>
+                  <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.detailLossesWithSales ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.detailLossesWithSales && (
+                  <div className="p-6 pt-0">
+                    <div className="space-y-3">
+                      {top10LeastProfitableWithSales.map((game, index) => (
                     <div 
                       key={index}
                       className={`p-4 rounded-lg ${darkMode ? 'bg-red-900 bg-opacity-20 border-2 border-red-900' : 'bg-red-50 border-2 border-red-200'} hover:shadow-md transition`}
