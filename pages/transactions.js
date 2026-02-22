@@ -38,6 +38,7 @@ export default function TransactionsTracker() {
   const [showGameSearch, setShowGameSearch] = useState(false);
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [toast, setToast] = useState(null); // { message, type: 'buy' | 'sell' }
+  const [showDormantStock, setShowDormantStock] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     evolution: true,
     comparison: true,
@@ -233,7 +234,14 @@ const loadUserPreferences = async () => {
       setBuyPrice('');
       setGameName('');
       setToast({ message: `Achat ajouté${gameName.trim() ? ` — ${gameName.trim()}` : ''}`, type: 'buy' });
-      setTimeout(() => setToast(null), 2500); = async () => {
+      setTimeout(() => setToast(null), 2500);
+    } catch (error) {
+      console.error('Erreur d\'ajout:', error);
+      alert('Erreur lors de l\'ajout: ' + error.message);
+    }
+  };
+
+  const addSell = async () => {
     if (!sellPrice.trim()) return;
     if (!username) {
       alert('Erreur: utilisateur non connecté');
@@ -565,6 +573,42 @@ const loadUserPreferences = async () => {
       .filter(game => game.profit <= 0 && game.sellCount >= 1) // Only losses with at least 1 sale
       .sort((a, b) => a.profit - b.profit)
       .slice(0, 10);
+  };
+
+  const getDormantStock = () => {
+    // Games bought multiple times but never sold, grouped by name
+    const buysByGame = {};
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!buysByGame[name]) buysByGame[name] = [];
+        buysByGame[name].push(t);
+      });
+
+    const soldGames = new Set(
+      sellTransactions
+        .filter(t => t.game_name && t.game_name.trim() !== '')
+        .map(t => t.game_name.trim())
+    );
+
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+    return Object.entries(buysByGame)
+      .filter(([name, buys]) => {
+        const neverSold = !soldGames.has(name);
+        const oldestBuy = new Date(Math.min(...buys.map(b => new Date(b.created_at))));
+        const boughtMultiple = buys.length > 1 || oldestBuy < threeMonthsAgo;
+        return neverSold && boughtMultiple;
+      })
+      .map(([name, buys]) => {
+        const oldestBuy = new Date(Math.min(...buys.map(b => new Date(b.created_at))));
+        const totalInvested = buys.reduce((s, t) => s + t.price, 0);
+        const daysDormant = Math.floor((new Date() - oldestBuy) / (1000 * 60 * 60 * 24));
+        return { name, count: buys.length, totalInvested, oldestBuy, daysDormant };
+      })
+      .sort((a, b) => b.daysDormant - a.daysDormant);
   };
 
   const handleGameNameChange = (value) => {
@@ -919,7 +963,7 @@ const loadUserPreferences = async () => {
                   onClick={() => {
                     setShowGameSearch(!showGameSearch);
                     if (showGameSearch) {
-                      setGameSearch(''); // Réinitialiser la recherche quand on ferme
+                      setGameSearch('');
                     }
                   }}
                   className={`p-2 md:p-3 rounded-xl transition ${
@@ -937,6 +981,34 @@ const loadUserPreferences = async () => {
                   </svg>
                 </button>
               )}
+
+              {/* Bouton stock dormant */}
+              {(() => {
+                const dormant = getDormantStock();
+                return (
+                  <button
+                    onClick={() => setShowDormantStock(!showDormantStock)}
+                    className={`relative p-2 md:p-3 rounded-xl transition ${
+                      showDormantStock
+                        ? 'bg-amber-500 text-white'
+                        : darkMode
+                          ? 'bg-gray-700 hover:bg-gray-600 text-gray-400'
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                    }`}
+                    title="Stock dormant"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                      <path d="M12 9v4"/><path d="M12 17h.01"/>
+                    </svg>
+                    {dormant.length > 0 && !showDormantStock && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                        {dormant.length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })()}
               
               <button
                 onClick={toggleDarkMode}
@@ -951,6 +1023,64 @@ const loadUserPreferences = async () => {
             </div>
           </div>
         </div>
+
+        {/* Panneau stock dormant */}
+        {showDormantStock && (() => {
+          const dormant = getDormantStock();
+          return (
+            <div className={`${darkMode ? 'bg-gray-800 border border-amber-800/40' : 'bg-amber-50 border border-amber-200'} rounded-2xl shadow-xl p-5 mb-6`}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                    <path d="M12 9v4"/><path d="M12 17h.01"/>
+                  </svg>
+                  <span className={`text-sm font-semibold ${darkMode ? 'text-amber-400' : 'text-amber-700'}`}>
+                    Stock dormant — jeux achetés non revendus
+                  </span>
+                </div>
+                <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  {dormant.length} jeu{dormant.length > 1 ? 'x' : ''}
+                </span>
+              </div>
+
+              {dormant.length === 0 ? (
+                <p className={`text-sm text-center py-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  ✅ Aucun stock dormant détecté
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {dormant.map((item, i) => (
+                    <div key={i} className={`flex items-center justify-between px-4 py-3 rounded-xl ${
+                      darkMode ? 'bg-gray-700/60' : 'bg-white'
+                    }`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                          item.daysDormant > 180
+                            ? 'bg-red-500/20 text-red-400'
+                            : item.daysDormant > 90
+                              ? 'bg-amber-500/20 text-amber-400'
+                              : 'bg-yellow-500/20 text-yellow-500'
+                        }`}>
+                          {item.daysDormant}j
+                        </span>
+                        <span className={`text-sm font-semibold truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                          {item.name}
+                        </span>
+                        <span className={`text-xs flex-shrink-0 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                          ×{item.count} achat{item.count > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-red-400 flex-shrink-0 ml-3">
+                        -{item.totalInvested.toFixed(2)}€
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {!statsView ? (
           <>
