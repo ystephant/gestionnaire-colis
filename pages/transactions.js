@@ -2341,7 +2341,6 @@ const loadUserPreferences = async () => {
           </div>
         )}
       </div>
-    </div>
 
       {/* Toast notification */}
       {toast && (
