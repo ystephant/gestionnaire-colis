@@ -16,18 +16,11 @@ function getFlashSaleStatus() {
   const hours = now.getHours();
   const minutes = now.getMinutes();
   const isNoonOrAfter = hours > 12 || (hours === 12 && minutes >= 0);
-  const isBeforeNoon = hours < 12;
 
   if (day === 2 && isNoonOrAfter) {
     return { active: true, message: "Hey ! on est mardi midi ! il est temps de regarder les ventes flash sur Philibert !" };
   }
   if (day === 3) {
-    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert !" };
-  }
-  if (day === 4) {
-    return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert !" };
-  }
-  if (day === 5 && isBeforeNoon) {
     return { active: true, message: "Hey ! Les ventes flash sont en cours sur Philibert !" };
   }
   return { active: false, message: '' };
