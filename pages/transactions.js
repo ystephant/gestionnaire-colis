@@ -1643,8 +1643,8 @@ const loadUserPreferences = async () => {
                                       onClick={() => setEditingTransaction({ id: transaction.id, price: transaction.price })}
                                       className={`p-1.5 rounded-lg transition ${
                                         darkMode
-                                          ? 'hover:bg-gray-700 text-gray-600 hover:text-gray-300'
-                                          : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                                          ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300'
+                                          : 'hover:bg-gray-200 text-gray-600 hover:text-gray-800'
                                       }`}
                                       title="Modifier le prix"
                                     >
@@ -1771,8 +1771,8 @@ const loadUserPreferences = async () => {
                                       onClick={() => setEditingTransaction({ id: transaction.id, price: transaction.price })}
                                       className={`p-1.5 rounded-lg transition ${
                                         darkMode
-                                          ? 'hover:bg-gray-700 text-gray-600 hover:text-gray-300'
-                                          : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                                          ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300'
+                                          : 'hover:bg-gray-200 text-gray-600 hover:text-gray-800'
                                       }`}
                                       title="Modifier le prix"
                                     >
