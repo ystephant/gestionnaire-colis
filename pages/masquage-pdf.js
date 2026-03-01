@@ -130,7 +130,7 @@ const TRANSLATIONS = {
   },
 };
 
-const LANG_LABELS = { fr: '🇫🇷 FR', en: '🇬🇧 EN', de: '🇩🇪 DE', it: '🇮🇹 IT', es: '🇪🇸 ES' };
+const LANG_LABELS = { fr: '🇫🇷', en: '🇬🇧', de: '🇩🇪', it: '🇮🇹', es: '🇪🇸' };
 
 export default function MasquagePDF() {
   const router = useRouter();
@@ -386,17 +386,17 @@ export default function MasquagePDF() {
               {/* Sélecteur langue */}
               <div className="relative" ref={langMenuRef}>
                 <button onClick={() => setShowLangMenu(v=>!v)}
-                  className={`flex items-center gap-1 px-2 sm:px-3 py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 ${darkMode?'bg-gray-700 hover:bg-gray-600 text-gray-200':'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
-                  <span>{LANG_LABELS[lang]}</span>
+                  className={`flex items-center gap-1 px-2 sm:px-3 py-2 rounded-lg sm:rounded-xl transition-all duration-300 ${darkMode?'bg-gray-700 hover:bg-gray-600':'bg-gray-100 hover:bg-gray-200'}`}>
+                  <span className="text-xl sm:text-2xl leading-none">{LANG_LABELS[lang]}</span>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                    className={`transition-transform duration-200 ${showLangMenu?'rotate-180':''}`}><polyline points="6 9 12 15 18 9"/></svg>
+                    className={`transition-transform duration-200 ${darkMode?'text-gray-400':'text-gray-500'} ${showLangMenu?'rotate-180':''}`}><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 {showLangMenu && (
-                  <div className={`absolute right-0 top-full mt-1 z-50 rounded-xl shadow-2xl border overflow-hidden min-w-28 ${darkMode?'bg-gray-800 border-gray-700':'bg-white border-gray-200'}`}>
-                    {Object.entries(LANG_LABELS).map(([code, label]) => (
+                  <div className={`absolute right-0 top-full mt-1 z-50 rounded-xl shadow-2xl border overflow-hidden ${darkMode?'bg-gray-800 border-gray-700':'bg-white border-gray-200'}`}>
+                    {Object.entries(LANG_LABELS).map(([code, flag]) => (
                       <button key={code} onClick={() => { setLang(code); setShowLangMenu(false); }}
-                        className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${lang===code ? (darkMode?'bg-orange-900/40 text-orange-300':'bg-orange-50 text-orange-700') : (darkMode?'text-gray-300 hover:bg-gray-700':'text-gray-700 hover:bg-gray-50')}`}>
-                        {label}
+                        className={`w-full flex items-center justify-center px-3 py-2.5 text-2xl transition-colors ${lang===code ? (darkMode?'bg-orange-900/40':'bg-orange-50') : (darkMode?'hover:bg-gray-700':'hover:bg-gray-50')}`}>
+                        {flag}
                       </button>
                     ))}
                   </div>
