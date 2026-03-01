@@ -393,6 +393,9 @@ export default function MasquagePDF() {
     const a = document.createElement('a');
     a.href = url; a.download = `${name.replace('.pdf','')}_masqué_${new Date().toISOString().split('T')[0]}.pdf`;
     a.click(); URL.revokeObjectURL(url);
+    setShowFormatBanner(false);
+    setDetectedFormat(null);
+    setDetectedOrientation(null);
   };
 
   const handleDownload = async () => {
