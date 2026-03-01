@@ -130,7 +130,46 @@ const TRANSLATIONS = {
   },
 };
 
-const LANG_LABELS = { fr: '🇫🇷', en: '🇬🇧', de: '🇩🇪', it: '🇮🇹', es: '🇪🇸' };
+const FLAG_ICONS = {
+  fr: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2" width="24" height="16" style={{borderRadius:3,display:'block'}}>
+      <rect width="1" height="2" x="0" fill="#002395"/>
+      <rect width="1" height="2" x="1" fill="#fff"/>
+      <rect width="1" height="2" x="2" fill="#ED2939"/>
+    </svg>
+  ),
+  en: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 30" width="24" height="16" style={{borderRadius:3,display:'block'}}>
+      <clipPath id="uk-clip"><path d="M0,0 v30 h60 v-30 z"/></clipPath>
+      <path d="M0,0 v30 h60 v-30 z" fill="#012169"/>
+      <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" strokeWidth="6"/>
+      <path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" strokeWidth="4"/>
+      <path d="M30,0 v30 M0,15 h60" stroke="#fff" strokeWidth="10"/>
+      <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" strokeWidth="6"/>
+    </svg>
+  ),
+  de: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 3" width="24" height="16" style={{borderRadius:3,display:'block'}}>
+      <rect width="5" height="1" y="0" fill="#000"/>
+      <rect width="5" height="1" y="1" fill="#D00"/>
+      <rect width="5" height="1" y="2" fill="#FFCE00"/>
+    </svg>
+  ),
+  it: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2" width="24" height="16" style={{borderRadius:3,display:'block'}}>
+      <rect width="1" height="2" x="0" fill="#009246"/>
+      <rect width="1" height="2" x="1" fill="#fff"/>
+      <rect width="1" height="2" x="2" fill="#CE2B37"/>
+    </svg>
+  ),
+  es: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2" width="24" height="16" style={{borderRadius:3,display:'block'}}>
+      <rect width="3" height="2" fill="#c60b1e"/>
+      <rect width="3" height="1" y="0.5" fill="#ffc400"/>
+    </svg>
+  ),
+};
+const LANG_LABELS = { fr: '🇫🇷 FR', en: '🇬🇧 EN', de: '🇩🇪 DE', it: '🇮🇹 IT', es: '🇪🇸 ES' };
 
 export default function MasquagePDF() {
   const router = useRouter();
@@ -386,17 +425,17 @@ export default function MasquagePDF() {
               {/* Sélecteur langue */}
               <div className="relative" ref={langMenuRef}>
                 <button onClick={() => setShowLangMenu(v=>!v)}
-                  className={`flex items-center gap-1 px-2 sm:px-3 py-2 rounded-lg sm:rounded-xl transition-all duration-300 ${darkMode?'bg-gray-700 hover:bg-gray-600':'bg-gray-100 hover:bg-gray-200'}`}>
-                  <span className="text-xl sm:text-2xl leading-none">{LANG_LABELS[lang]}</span>
+                  className={`flex items-center gap-1.5 px-2 sm:px-3 py-2 rounded-lg sm:rounded-xl transition-all duration-300 ${darkMode?'bg-gray-700 hover:bg-gray-600':'bg-gray-100 hover:bg-gray-200'}`}>
+                  {FLAG_ICONS[lang]}
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
                     className={`transition-transform duration-200 ${darkMode?'text-gray-400':'text-gray-500'} ${showLangMenu?'rotate-180':''}`}><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 {showLangMenu && (
                   <div className={`absolute right-0 top-full mt-1 z-50 rounded-xl shadow-2xl border overflow-hidden ${darkMode?'bg-gray-800 border-gray-700':'bg-white border-gray-200'}`}>
-                    {Object.entries(LANG_LABELS).map(([code, flag]) => (
+                    {Object.keys(FLAG_ICONS).map((code) => (
                       <button key={code} onClick={() => { setLang(code); setShowLangMenu(false); }}
-                        className={`w-full flex items-center justify-center px-3 py-2.5 text-2xl transition-colors ${lang===code ? (darkMode?'bg-orange-900/40':'bg-orange-50') : (darkMode?'hover:bg-gray-700':'hover:bg-gray-50')}`}>
-                        {flag}
+                        className={`w-full flex items-center justify-center px-4 py-2.5 transition-colors ${lang===code ? (darkMode?'bg-orange-900/40':'bg-orange-50') : (darkMode?'hover:bg-gray-700':'hover:bg-gray-50')}`}>
+                        {FLAG_ICONS[code]}
                       </button>
                     ))}
                   </div>
