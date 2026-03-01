@@ -264,37 +264,77 @@ export default function MasquagePDF() {
     }
   };
 
-  // applyMasking utilise les vraies dimensions de chaque page du PDF
-  // → fonctionne quelle que soit l'orientation réelle du document
+  // applyMasking tient compte de la rotation stockée dans la page PDF.
+  //
+  // Problème : drawRectangle() écrit dans l'espace "content stream" (avant rotation),
+  // mais page.getSize() renvoie les dimensions VISUELLES (après rotation).
+  // → Il faut transformer les coordonnées visuelles vers l'espace content selon l'angle.
+  //
+  // Correspondances visuelles → content stream :
+  //   Rotate=0  : cx=vx,             cy=vy,                cw=vw, ch=vh
+  //   Rotate=90 : cx=vy,             cy=rawH-(vx+vw),      cw=vh, ch=vw
+  //   Rotate=180: cx=rawW-(vx+vw),   cy=rawH-(vy+vh),      cw=vw, ch=vh
+  //   Rotate=270: cx=rawW-(vy+vh),   cy=vx,                cw=vh, ch=vw
   const applyMasking = async (pdfDoc) => {
     const { rgb } = await import('pdf-lib');
     const pages = pdfDoc.getPages();
 
     for (const page of pages) {
-      const { width, height } = page.getSize();
-      // Appliquer les % aux vraies dimensions de la page
-      const maskH = (maskHeightPercent / 100) * height;
-      const maskW = (maskWidthPercent / 100) * width;
+      const rotation = page.getRotation().angle; // 0 | 90 | 180 | 270
+      const mediaBox = page.getMediaBox();
+      const rawW = mediaBox.width;
+      const rawH = mediaBox.height;
+
+      // Dimensions visuelles (après rotation)
+      const isSwapped = rotation === 90 || rotation === 270;
+      const visW = isSwapped ? rawH : rawW;
+      const visH = isSwapped ? rawW : rawH;
+
+      const maskVW = (maskWidthPercent  / 100) * visW;
+      const maskVH = (maskHeightPercent / 100) * visH;
 
       selectedZones.forEach(zone => {
-        let rectConfig = null;
+        // Coin bas-gauche du rectangle dans l'espace VISUEL
+        // (axe y vers le haut, y=0 = bas de la page visuelle)
+        let vx, vy;
         switch (zone) {
-          case 'top-left':
-            rectConfig = { x: 0, y: height - maskH, width: maskW, height: maskH };
+          case 'top-left':     vx = 0;           vy = visH - maskVH; break;
+          case 'top-right':    vx = visW - maskVW; vy = visH - maskVH; break;
+          case 'bottom-left':  vx = 0;           vy = 0;             break;
+          case 'bottom-right': vx = visW - maskVW; vy = 0;             break;
+          default: return;
+        }
+
+        // Transformation vers l'espace content stream selon la rotation
+        let cx, cy, cw, ch;
+        switch (rotation) {
+          case 90:
+            cx = vy;
+            cy = rawH - (vx + maskVW);
+            cw = maskVH;
+            ch = maskVW;
             break;
-          case 'top-right':
-            rectConfig = { x: width - maskW, y: height - maskH, width: maskW, height: maskH };
+          case 180:
+            cx = rawW - (vx + maskVW);
+            cy = rawH - (vy + maskVH);
+            cw = maskVW;
+            ch = maskVH;
             break;
-          case 'bottom-left':
-            rectConfig = { x: 0, y: 0, width: maskW, height: maskH };
+          case 270:
+            cx = rawW - (vy + maskVH);
+            cy = vx;
+            cw = maskVH;
+            ch = maskVW;
             break;
-          case 'bottom-right':
-            rectConfig = { x: width - maskW, y: 0, width: maskW, height: maskH };
+          default: // 0°
+            cx = vx;
+            cy = vy;
+            cw = maskVW;
+            ch = maskVH;
             break;
         }
-        if (rectConfig) {
-          page.drawRectangle({ ...rectConfig, color: rgb(1, 1, 1) });
-        }
+
+        page.drawRectangle({ x: cx, y: cy, width: cw, height: ch, color: rgb(1, 1, 1) });
       });
     }
 
