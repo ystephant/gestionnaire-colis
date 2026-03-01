@@ -19,14 +19,15 @@ const TRANSLATIONS = {
     howStep4: 'Activez la prévisualisation pour vérifier avant téléchargement, ou laissez-la désactivée pour un téléchargement automatique.',
     howStep5: 'Glissez-déposez votre PDF ou sélectionnez un dossier pour traiter plusieurs fichiers.',
     detectedFormat: (f) => `📄 Format ${f} détecté`, unknownFormat: '📄 Format non reconnu',
-    detectedLandscape: '↔ Orientation paysage détectée — sélecteur mis à jour',
-    detectedPortrait: '↕ Orientation portrait détectée — sélecteur mis à jour',
+    detectedLandscape: '↔ Orientation paysage détectée', detectedPortrait: '↕ Orientation portrait détectée',
+    orientationMismatch: "⚠️ Attention : l'orientation détectée ne correspond pas à l'orientation sélectionnée. Le masquage peut ne pas fonctionner correctement.",
     noPDFFound: 'Aucun fichier PDF trouvé dans ce répertoire',
     invalidPDF: 'Veuillez sélectionner un fichier PDF valide',
     errorPDF: 'Erreur lors du traitement du PDF. Assurez-vous que le fichier est valide.',
     errorDownload: 'Erreur lors de la création du PDF masqué.', back: "Retour à l'accueil", half: '50% =',
     zoomTitle: 'Agrandir', zoomHint: 'Cliquez sur l\'aperçu pour l\'agrandir', zoomClose: 'Cliquez en dehors ou appuyez sur Échap pour fermer',
     zoneLabels: { tl: 'H-G', tr: 'H-D', bl: 'B-G', br: 'B-D' },
+    unitLabel: 'cm', useInches: false,
   },
   en: {
     title: 'PDF Masking', subtitle: 'Automatically mask your labels',
@@ -40,18 +41,19 @@ const TRANSLATIONS = {
     howTitle: '📋 How does it work?',
     howStep1: 'Choose the A4 sheet orientation (Portrait or Landscape) — or let the software detect it automatically.',
     howStep2: 'Select one or more corners to mask (top-left, top-right, bottom-left, bottom-right).',
-    howStep3: 'Adjust height and width as a percentage (0–100%). The cm value in parentheses is calculated for your document. Click the value to type it manually.',
+    howStep3: 'Adjust height and width as a percentage (0–100%). The inch value in parentheses is calculated for your document. Click the value to type it manually.',
     howStep4: 'Enable preview to check before downloading, or leave it off for automatic download.',
     howStep5: 'Drag & drop your PDF or select a folder to process multiple files.',
     detectedFormat: (f) => `📄 ${f} format detected`, unknownFormat: '📄 Format not recognized',
-    detectedLandscape: '↔ Landscape orientation detected — selector updated',
-    detectedPortrait: '↕ Portrait orientation detected — selector updated',
+    detectedLandscape: '↔ Landscape orientation detected', detectedPortrait: '↕ Portrait orientation detected',
+    orientationMismatch: '⚠️ Warning: the detected orientation does not match the selected orientation. Masking may not work correctly.',
     noPDFFound: 'No PDF files found in this folder',
     invalidPDF: 'Please select a valid PDF file',
     errorPDF: 'Error processing PDF. Make sure the file is valid.',
     errorDownload: 'Error creating masked PDF.', back: 'Back to home', half: '50% =',
     zoomTitle: 'Enlarge', zoomHint: 'Click the preview to enlarge it', zoomClose: 'Click outside or press Escape to close',
     zoneLabels: { tl: 'T-L', tr: 'T-R', bl: 'B-L', br: 'B-R' },
+    unitLabel: 'in', useInches: true,
   },
   de: {
     title: 'PDF-Maskierung', subtitle: 'Ihre Etiketten automatisch ausblenden',
@@ -69,14 +71,15 @@ const TRANSLATIONS = {
     howStep4: 'Aktivieren Sie die Vorschau, um vor dem Herunterladen zu prüfen, oder lassen Sie sie für den automatischen Download deaktiviert.',
     howStep5: 'Ziehen Sie Ihre PDF-Datei oder wählen Sie einen Ordner, um mehrere Dateien zu verarbeiten.',
     detectedFormat: (f) => `📄 Format ${f} erkannt`, unknownFormat: '📄 Format nicht erkannt',
-    detectedLandscape: '↔ Querformat erkannt — Auswahl aktualisiert',
-    detectedPortrait: '↕ Hochformat erkannt — Auswahl aktualisiert',
+    detectedLandscape: '↔ Querformat erkannt', detectedPortrait: '↕ Hochformat erkannt',
+    orientationMismatch: '⚠️ Achtung: Die erkannte Ausrichtung stimmt nicht mit der gewählten überein. Die Maskierung funktioniert möglicherweise nicht korrekt.',
     noPDFFound: 'Keine PDF-Dateien in diesem Ordner gefunden',
     invalidPDF: 'Bitte wählen Sie eine gültige PDF-Datei',
     errorPDF: 'Fehler beim Verarbeiten der PDF. Stellen Sie sicher, dass die Datei gültig ist.',
     errorDownload: 'Fehler beim Erstellen der maskierten PDF.', back: 'Zurück zur Startseite', half: '50% =',
     zoomTitle: 'Vergrößern', zoomHint: 'Klicken Sie auf die Vorschau zum Vergrößern', zoomClose: 'Außerhalb klicken oder Escape drücken zum Schließen',
     zoneLabels: { tl: 'O-L', tr: 'O-R', bl: 'U-L', br: 'U-R' },
+    unitLabel: 'cm', useInches: false,
   },
   it: {
     title: 'Mascheratura PDF', subtitle: 'Nascondi automaticamente le tue etichette',
@@ -94,14 +97,15 @@ const TRANSLATIONS = {
     howStep4: "Attiva l'anteprima per verificare prima del download, o lasciala disattivata per il download automatico.",
     howStep5: 'Trascina il tuo PDF o seleziona una cartella per elaborare più file.',
     detectedFormat: (f) => `📄 Formato ${f} rilevato`, unknownFormat: '📄 Formato non riconosciuto',
-    detectedLandscape: '↔ Orientamento orizzontale rilevato — selettore aggiornato',
-    detectedPortrait: '↕ Orientamento verticale rilevato — selettore aggiornato',
+    detectedLandscape: '↔ Orientamento orizzontale rilevato', detectedPortrait: '↕ Orientamento verticale rilevato',
+    orientationMismatch: "⚠️ Attenzione: l'orientamento rilevato non corrisponde a quello selezionato. La mascheratura potrebbe non funzionare correttamente.",
     noPDFFound: 'Nessun file PDF trovato in questa cartella',
     invalidPDF: 'Seleziona un file PDF valido',
     errorPDF: "Errore durante l'elaborazione del PDF. Assicurati che il file sia valido.",
     errorDownload: 'Errore durante la creazione del PDF mascherato.', back: 'Torna alla home', half: '50% =',
     zoomTitle: 'Ingrandire', zoomHint: "Clicca sull'anteprima per ingrandirla", zoomClose: 'Clicca fuori o premi Escape per chiudere',
     zoneLabels: { tl: 'A-S', tr: 'A-D', bl: 'B-S', br: 'B-D' },
+    unitLabel: 'cm', useInches: false,
   },
   es: {
     title: 'Enmascaramiento PDF', subtitle: 'Oculta automáticamente tus etiquetas',
@@ -119,14 +123,15 @@ const TRANSLATIONS = {
     howStep4: 'Activa la vista previa para comprobar antes de descargar, o desactívala para descarga automática.',
     howStep5: 'Arrastra tu PDF o selecciona una carpeta para procesar varios archivos.',
     detectedFormat: (f) => `📄 Formato ${f} detectado`, unknownFormat: '📄 Formato no reconocido',
-    detectedLandscape: '↔ Orientación horizontal detectada — selector actualizado',
-    detectedPortrait: '↕ Orientación vertical detectada — selector actualizado',
+    detectedLandscape: '↔ Orientación horizontal detectada', detectedPortrait: '↕ Orientación vertical detectada',
+    orientationMismatch: '⚠️ Atención: la orientación detectada no coincide con la orientación seleccionada. El enmascaramiento puede no funcionar correctamente.',
     noPDFFound: 'No se encontraron archivos PDF en esta carpeta',
     invalidPDF: 'Por favor selecciona un archivo PDF válido',
     errorPDF: 'Error al procesar el PDF. Asegúrate de que el archivo es válido.',
     errorDownload: 'Error al crear el PDF enmascarado.', back: 'Volver al inicio', half: '50% =',
     zoomTitle: 'Ampliar', zoomHint: 'Haz clic en la vista previa para ampliarla', zoomClose: 'Haz clic fuera o pulsa Escape para cerrar',
     zoneLabels: { tl: 'S-I', tr: 'S-D', bl: 'I-I', br: 'I-D' },
+    unitLabel: 'cm', useInches: false,
   },
 };
 
@@ -232,11 +237,14 @@ export default function MasquagePDF() {
 
   const getPageDimensions = () =>
     orientation === 'landscape' ? { width: 842, height: 595 } : { width: 595, height: 842 };
-  const ptsToCm = (pts) => Math.round(pts / 28.35 * 100) / 100;
-  const getHalfHeightCm    = () => ptsToCm(getPageDimensions().height / 2);
-  const getHalfWidthCm     = () => ptsToCm(getPageDimensions().width  / 2);
-  const getCurrentHeightCm = () => ptsToCm((maskHeightPercent / 100) * getPageDimensions().height);
-  const getCurrentWidthCm  = () => ptsToCm((maskWidthPercent  / 100) * getPageDimensions().width);
+  // Conversion selon la langue : inches pour EN, cm pour les autres
+  const ptsToUnit = (pts) => t.useInches
+    ? Math.round(pts / 72 * 100) / 100      // points → pouces (72 pts = 1 in)
+    : Math.round(pts / 28.35 * 100) / 100;  // points → centimètres
+  const getHalfHeightUnit    = () => ptsToUnit(getPageDimensions().height / 2);
+  const getHalfWidthUnit     = () => ptsToUnit(getPageDimensions().width  / 2);
+  const getCurrentHeightUnit = () => ptsToUnit((maskHeightPercent / 100) * getPageDimensions().height);
+  const getCurrentWidthUnit  = () => ptsToUnit((maskWidthPercent  / 100) * getPageDimensions().width);
 
   const startEditingHeight = () => { setEditingHeight(true); setTempHeightValue(maskHeightPercent.toString().replace('.', ',')); };
   const confirmHeightEdit  = () => { const v = parseFloat(tempHeightValue.replace(',', '.')); if (!isNaN(v) && v >= 0 && v <= 100) setMaskHeightPercent(Math.round(v * 10) / 10); setEditingHeight(false); };
@@ -265,7 +273,19 @@ export default function MasquagePDF() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  const handleOrientationChange = (o) => { setOrientation(o); setMaskHeightPercent(50); setMaskWidthPercent(50); setPreviewCanvas(null); setOriginalPdfFile(null); };
+  const handleOrientationChange = async (o) => {
+    setOrientation(o);
+    setMaskHeightPercent(50);
+    setMaskWidthPercent(50);
+    // On garde le fichier chargé — on régénère juste l'aperçu si besoin
+    if (previewMode && originalPdfFile) {
+      try {
+        const { PDFDocument } = await import('pdf-lib');
+        const pdfDoc = await PDFDocument.load(await originalPdfFile.arrayBuffer());
+        await generatePreviewCanvas(pdfDoc);
+      } catch (err) { console.error(err); }
+    }
+  };
 
   const handleDragOver  = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
@@ -313,7 +333,9 @@ export default function MasquagePDF() {
           const { width: pw, height: ph } = fp.getSize();
           const det = detectPaperFormat(pw, ph);
           setDetectedFormat(det.format); setDetectedOrientation(det.orientation);
-          setShowFormatBanner(true); setOrientation(det.orientation);
+          setShowFormatBanner(true);
+          // On met à jour l'orientation seulement si aucun fichier n'est déjà chargé
+          if (!originalPdfFile) setOrientation(det.orientation);
         }
       }
       if (previewMode && !autoDownload) { setOriginalPdfFile(file); await generatePreviewCanvas(pdfDoc); }
@@ -394,8 +416,8 @@ export default function MasquagePDF() {
   };
 
   const sliders = [
-    { label: t.heightLabel, val: maskHeightPercent, setVal: setMaskHeightPercent, editing: editingHeight, temp: tempHeightValue, setTemp: setTempHeightValue, inputRef: heightInputRef, startEdit: startEditingHeight, onKeyDown: handleHeightInputKeyPress, center: centerHeight, halfCm: getHalfHeightCm(), currentCm: getCurrentHeightCm() },
-    { label: t.widthLabel,  val: maskWidthPercent,  setVal: setMaskWidthPercent,  editing: editingWidth,  temp: tempWidthValue,  setTemp: setTempWidthValue,  inputRef: widthInputRef,  startEdit: startEditingWidth,  onKeyDown: handleWidthInputKeyPress,  center: centerWidth,  halfCm: getHalfWidthCm(),  currentCm: getCurrentWidthCm() },
+    { label: t.heightLabel, val: maskHeightPercent, setVal: setMaskHeightPercent, editing: editingHeight, temp: tempHeightValue, setTemp: setTempHeightValue, inputRef: heightInputRef, startEdit: startEditingHeight, onKeyDown: handleHeightInputKeyPress, center: centerHeight, halfUnit: getHalfHeightUnit(), currentUnit: getCurrentHeightUnit() },
+    { label: t.widthLabel,  val: maskWidthPercent,  setVal: setMaskWidthPercent,  editing: editingWidth,  temp: tempWidthValue,  setTemp: setTempWidthValue,  inputRef: widthInputRef,  startEdit: startEditingWidth,  onKeyDown: handleWidthInputKeyPress,  center: centerWidth,  halfUnit: getHalfWidthUnit(),  currentUnit: getCurrentWidthUnit() },
   ];
 
   return (
@@ -464,25 +486,37 @@ export default function MasquagePDF() {
 
           {/* Bandeau détection */}
           {showFormatBanner && (
-            <div className={`mt-4 pt-4 border-t flex items-center justify-between gap-3 flex-wrap ${darkMode?'border-gray-700':'border-gray-100'}`}>
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className={`flex-shrink-0 rounded border-2 ${darkMode?'border-orange-400 bg-gray-700':'border-orange-500 bg-orange-50'}`}
-                  style={{width:detectedOrientation==='landscape'?28:20,height:detectedOrientation==='landscape'?20:28}}/>
-                <div>
-                  <p className={`text-sm font-bold leading-tight ${darkMode?'text-gray-100':'text-gray-800'}`}>
-                    {detectedFormat ? t.detectedFormat(detectedFormat) : t.unknownFormat}
-                  </p>
-                  <p className={`text-xs leading-tight ${darkMode?'text-gray-400':'text-gray-500'}`}>
-                    {detectedOrientation==='landscape' ? t.detectedLandscape : t.detectedPortrait}
-                  </p>
+            <div className={`mt-4 pt-4 border-t flex flex-col gap-2 ${darkMode?'border-gray-700':'border-gray-100'}`}>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className={`flex-shrink-0 rounded border-2 ${darkMode?'border-orange-400 bg-gray-700':'border-orange-500 bg-orange-50'}`}
+                    style={{width:detectedOrientation==='landscape'?28:20,height:detectedOrientation==='landscape'?20:28}}/>
+                  <div>
+                    <p className={`text-sm font-bold leading-tight ${darkMode?'text-gray-100':'text-gray-800'}`}>
+                      {detectedFormat ? t.detectedFormat(detectedFormat) : t.unknownFormat}
+                    </p>
+                    <p className={`text-xs leading-tight ${darkMode?'text-gray-400':'text-gray-500'}`}>
+                      {detectedOrientation==='landscape' ? t.detectedLandscape : t.detectedPortrait}
+                    </p>
+                  </div>
                 </div>
+                <button onClick={() => setShowFormatBanner(false)}
+                  className={`flex-shrink-0 p-1 rounded-lg transition-colors ${darkMode?'text-gray-500 hover:text-gray-300 hover:bg-gray-700':'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
               </div>
-              <button onClick={() => setShowFormatBanner(false)}
-                className={`flex-shrink-0 p-1 rounded-lg transition-colors ${darkMode?'text-gray-500 hover:text-gray-300 hover:bg-gray-700':'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
+              {/* Alerte rouge désalignement d'orientation */}
+              {detectedOrientation && detectedOrientation !== orientation && (
+                <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/40">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="flex-shrink-0 mt-0.5 text-red-500">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <p className="text-xs font-medium text-red-500 leading-snug">{t.orientationMismatch}</p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -555,7 +589,7 @@ export default function MasquagePDF() {
             </div>
 
             {/* Sliders hauteur/largeur */}
-            {sliders.map(({label,val,setVal,editing,temp,setTemp,inputRef,startEdit,onKeyDown,center,halfCm,currentCm})=>(
+            {sliders.map(({label,val,setVal,editing,temp,setTemp,inputRef,startEdit,onKeyDown,center,halfUnit,currentUnit})=>(
               <div key={label} className={`${darkMode?'bg-gray-800':'bg-white'} rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 transition-colors duration-300`}>
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <label className={`block text-sm sm:text-base font-semibold ${darkMode?'text-gray-200':'text-gray-700'}`}>
@@ -569,11 +603,11 @@ export default function MasquagePDF() {
                     ):(
                       <span className="text-red-600 dark:text-red-400 cursor-pointer hover:underline" onClick={startEdit}>
                         {fmtPct(val)}%
-                        <span className={`ml-1 font-normal text-xs ${darkMode?'text-gray-400':'text-gray-500'}`}>({fmtCm(currentCm)} cm)</span>
+                        <span className={`ml-1 font-normal text-xs ${darkMode?'text-gray-400':'text-gray-500'}`}>({fmtCm(currentUnit)} {t.unitLabel})</span>
                       </span>
                     )}
                   </label>
-                  <button onClick={center} title={`50% — ${fmtCm(halfCm)} cm`}
+                  <button onClick={center} title={`50% — ${fmtCm(halfUnit)} ${t.unitLabel}`}
                     className="ml-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-lg transition-colors duration-200 whitespace-nowrap">
                     {t.center50}
                   </button>
@@ -582,7 +616,7 @@ export default function MasquagePDF() {
                   className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"/>
                 <div className="flex justify-between text-xs mt-2">
                   <span className={darkMode?'text-gray-400':'text-gray-500'}>0%</span>
-                  <span className={darkMode?'text-gray-400':'text-gray-500'}>{t.half} {fmtCm(halfCm)} cm</span>
+                  <span className={darkMode?'text-gray-400':'text-gray-500'}>{t.half} {fmtCm(halfUnit)} {t.unitLabel}</span>
                   <span className={darkMode?'text-gray-400':'text-gray-500'}>100%</span>
                 </div>
               </div>
