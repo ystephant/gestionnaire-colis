@@ -1667,18 +1667,17 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
                 <Copy size={18} />
               </button>
               {/* Bouton Coller sur cette ligne */}
-              <button
-                onClick={() => handlePasteOnRow(index)}
-                disabled={copiedItem === null}
-                title={copiedItem !== null ? `Coller "${copiedItem}" ici` : 'Rien dans le presse-papiers'}
-                className={`p-2 rounded-lg transition ${
-                  copiedItem === null
-                    ? 'opacity-25 cursor-not-allowed ' + (darkMode ? 'bg-gray-600 text-gray-400' : 'bg-gray-200 text-gray-400')
-                    : darkMode ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'
-                }`}
-              >
-                <ClipboardPaste size={18} />
-              </button>
+              {copiedItem !== null && (
+                <button
+                  onClick={() => handlePasteOnRow(index)}
+                  title={`Coller "${copiedItem}" ici`}
+                  className={`p-2 rounded-lg transition ${
+                    darkMode ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                  }`}
+                >
+                  <ClipboardPaste size={18} />
+                </button>
+              )}
               {/* Bouton Supprimer */}
               <button
                 onClick={() => removeItemField(index)}
