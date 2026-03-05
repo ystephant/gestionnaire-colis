@@ -300,6 +300,7 @@ useEffect(() => {
       if (isLoggedIn && username) {
         console.log('🔄 Page active, rechargement des données...');
         loadParcels();
+        enableWakeLock(); // ✅ Réactiver Wake Lock si libéré
       }
     };
     
@@ -307,6 +308,7 @@ useEffect(() => {
       if (document.visibilityState === 'visible' && isLoggedIn && username) {
         console.log('🔄 Page visible, rechargement des données...');
         loadParcels();
+        enableWakeLock(); // ✅ Réactiver Wake Lock (libéré automatiquement quand la page est cachée)
       }
     };
     
@@ -842,10 +844,11 @@ const setupRealtimeSubscription = () => {
     const now = new Date(); 
     const diffTime = now - added; 
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
-    return Math.max(0, 5 - diffDays); 
+    return 5 - diffDays; // Peut être négatif si le délai est dépassé
   };
 
   const getRemainingDaysText = (remainingDays) => { 
+    if (remainingDays < 0) return '🚫 Date de récupération expirée';
     if (remainingDays === 0) return '⚠️ Dernier jour pour récupérer'; 
     if (remainingDays === 1) return '⏰ Il te reste 1 jour'; 
     return `📅 Il te reste ${remainingDays} jours`; 
@@ -1414,7 +1417,8 @@ const setupRealtimeSubscription = () => {
             <div className="space-y-3">
               {filteredPendingParcels.map(parcel => {
                 const remainingDays = getRemainingDays(parcel.date_added);
-                const isUrgent = remainingDays <= 1;
+                const isExpired = remainingDays < 0;  // rouge — délai dépassé
+                const isUrgent = remainingDays <= 0;
                 const isExpiring = remainingDays === 1; // orange
                 const isWarning = remainingDays === 2;  // jaune
                 
@@ -1466,12 +1470,16 @@ const setupRealtimeSubscription = () => {
                     }}
                     className={`border-2 rounded-xl p-4 cursor-pointer select-none ${
                       darkMode
-                        ? isExpiring
+                        ? isExpired
+                          ? 'border-red-600 bg-red-900 bg-opacity-30 hover:bg-opacity-40'
+                          : isExpiring
                           ? 'border-orange-500 bg-orange-900 bg-opacity-25 hover:bg-opacity-35'
                           : isWarning
                             ? 'border-yellow-500 bg-yellow-900 bg-opacity-20 hover:bg-opacity-30'
                             : 'border-gray-600 bg-gray-700 hover:bg-gray-650'
-                        : isExpiring
+                        : isExpired
+                          ? 'border-red-500 bg-red-50 hover:bg-red-100'
+                          : isExpiring
                           ? 'border-orange-400 bg-orange-50 hover:bg-orange-100'
                           : isWarning
                             ? 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100'
@@ -1564,7 +1572,9 @@ const setupRealtimeSubscription = () => {
                             {formatDate(parcel.date_added)}
                           </span>
                           <span className={`${
-                            isUrgent 
+                            isExpired
+                              ? 'font-bold text-red-600 opacity-100'
+                              : isUrgent 
                               ? 'font-bold text-red-600 opacity-100' 
                               : darkMode 
                                 ? 'text-gray-400 opacity-60' 
