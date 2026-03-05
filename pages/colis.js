@@ -1348,12 +1348,32 @@ const setupRealtimeSubscription = () => {
 
         {/* ⚠️ Bandeau d'alerte délai */}
         {(() => {
-          const oneDayParcels = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) <= 1);
-          const twoDayParcels = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) === 2);
-          if (oneDayParcels.length === 0 && twoDayParcels.length === 0) return null;
+          const expiredParcels = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) < 0);
+          const zeroDayParcels = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) === 0);
+          const oneDayParcels  = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) === 1);
+          const twoDayParcels  = filteredPendingParcels.filter(p => getRemainingDays(p.date_added) === 2);
+          if (expiredParcels.length === 0 && zeroDayParcels.length === 0 && oneDayParcels.length === 0 && twoDayParcels.length === 0) return null;
           return (
             <div className="space-y-2 mb-4">
-              {oneDayParcels.length > 0 && (
+              {/* 🔴 Colis expirés */}
+              {expiredParcels.length > 0 && (
+                <div className={`flex items-start gap-3 rounded-xl px-4 py-3 border ${
+                  darkMode
+                    ? 'bg-red-900 bg-opacity-40 border-red-600 text-red-200'
+                    : 'bg-red-50 border-red-500 text-red-800'
+                }`}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  <span className="font-semibold text-sm">
+                    🚫 La date de récupération est expirée pour {expiredParcels.length === 1 ? 'ce colis' : `ces ${expiredParcels.length} colis`} !
+                  </span>
+                </div>
+              )}
+              {/* 🟠 Dernier jour */}
+              {(zeroDayParcels.length > 0 || oneDayParcels.length > 0) && (
                 <div className={`flex items-start gap-3 rounded-xl px-4 py-3 border ${
                   darkMode
                     ? 'bg-orange-900 bg-opacity-30 border-orange-500 text-orange-200'
@@ -1365,10 +1385,11 @@ const setupRealtimeSubscription = () => {
                     <line x1="12" y1="17" x2="12.01" y2="17"></line>
                   </svg>
                   <span className="font-semibold text-sm">
-                    Attention ! Il ne reste plus que {oneDayParcels[0] && getRemainingDays(oneDayParcels[0].date_added) === 0 ? '0 jour' : '1 jour'} pour aller chercher {oneDayParcels.length === 1 ? 'ce colis' : `ces ${oneDayParcels.length} colis`} !
+                    Attention ! Il ne reste plus que {zeroDayParcels.length > 0 ? '0 jour' : '1 jour'} pour aller chercher {(zeroDayParcels.length + oneDayParcels.length) === 1 ? 'ce colis' : `ces ${zeroDayParcels.length + oneDayParcels.length} colis`} !
                   </span>
                 </div>
               )}
+              {/* 🟡 2 jours */}
               {twoDayParcels.length > 0 && (
                 <div className={`flex items-start gap-3 rounded-xl px-4 py-3 border ${
                   darkMode
