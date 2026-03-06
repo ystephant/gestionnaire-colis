@@ -37,10 +37,6 @@ export default function MenuPrincipal() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
-  const [livraisonActive, setLivraisonActive] = useState(false);
-  const [livraisonDismissed, setLivraisonDismissed] = useState(false);
-  const [livraisonEndDate, setLivraisonEndDate] = useState(null);
-  const [livraisonDisplayText, setLivraisonDisplayText] = useState(null);
 
   const flashStatus = getFlashSaleStatus();
 
@@ -51,41 +47,8 @@ export default function MenuPrincipal() {
   useEffect(() => {
     if (isLoggedIn) {
       loadUrgentParcels();
-      checkLivraisonPromo();
     }
   }, [isLoggedIn]);
-
-  // Vérifie toutes les 2h si une nouvelle promo est disponible
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    const interval = setInterval(checkLivraisonPromo, 2 * 60 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [isLoggedIn]);
-
-  // Surveille l'expiration de la promo en cours (vérifie chaque minute)
-  useEffect(() => {
-    if (!livraisonActive || !livraisonEndDate) return;
-    const interval = setInterval(() => {
-      if (new Date() > new Date(livraisonEndDate)) {
-        setLivraisonActive(false);
-      }
-    }, 60 * 1000);
-    return () => clearInterval(interval);
-  }, [livraisonActive, livraisonEndDate]);
-
-  const checkLivraisonPromo = async () => {
-    try {
-      const res = await fetch('/api/check-livraison');
-      const data = await res.json();
-      setLivraisonActive(data.active);
-      setLivraisonEndDate(data.endDate || null);
-      setLivraisonDisplayText(data.displayText || null);
-      // Si une nouvelle promo apparaît, on réaffiche le bandeau même s'il avait été fermé
-      if (data.active) setLivraisonDismissed(false);
-    } catch (e) {
-      console.error('[checkLivraisonPromo]', e);
-    }
-  };
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
@@ -258,46 +221,6 @@ export default function MenuPrincipal() {
               setBannerDismissed(true);
             }}
             className="absolute right-4 top-1/2 -translate-y-1/2 text-black hover:text-amber-800 transition-colors"
-            title="Fermer"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* 🚚 BANDEAU LIVRAISON 0,99€ LEBONCOIN */}
-      {livraisonActive && !livraisonDismissed && (
-        <div
-          className="relative w-full bg-teal-500 text-white py-3 px-6 flex items-center justify-center cursor-pointer shadow-md"
-          onClick={() => window.open('https://www.leboncoin.fr/service/bons-plans', '_blank')}
-        >
-          <span className="font-semibold text-sm sm:text-base text-center pr-8 flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1" y="3" width="15" height="13" rx="1"></rect>
-              <path d="M16 8h4l3 4v4h-7V8z"></path>
-              <circle cx="5.5" cy="18.5" r="2.5"></circle>
-              <circle cx="18.5" cy="18.5" r="2.5"></circle>
-            </svg>
-            🎉 Livraison à 0,99€ sur LeBonCoin Bons Plans !
-            {livraisonDisplayText && (
-              <span className="opacity-80 text-xs font-normal">— {livraisonDisplayText}</span>
-            )}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1" y="3" width="15" height="13" rx="1"></rect>
-              <path d="M16 8h4l3 4v4h-7V8z"></path>
-              <circle cx="5.5" cy="18.5" r="2.5"></circle>
-              <circle cx="18.5" cy="18.5" r="2.5"></circle>
-            </svg>
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setLivraisonDismissed(true);
-            }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-teal-200 transition-colors"
             title="Fermer"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
