@@ -8,7 +8,6 @@ export async function POST(req) {
 
     const buffer = Buffer.from(imageBase64, "base64");
 
-    // Primary model: AI vs real image classifier
     const response = await fetch(
       "https://api-inference.huggingface.co/models/umm-maybe/AI-image-detector",
       {
@@ -21,17 +20,39 @@ export async function POST(req) {
       }
     );
 
+    // Lire le corps brut d'abord
+    const rawText = await response.text();
+
     if (!response.ok) {
-      const err = await response.text();
-      // Model might be loading (cold start)
       if (response.status === 503) {
-        return Response.json({ error: "MODEL_LOADING", estimated_time: 20 }, { status: 503 });
+        return Response.json(
+          { error: "MODEL_LOADING", estimated_time: 20 },
+          { status: 503 }
+        );
       }
-      return Response.json({ error: err }, { status: response.status });
+      return Response.json(
+        { error: rawText || "Erreur inconnue" },
+        { status: response.status }
+      );
     }
 
-    const data = await response.json();
-    return Response.json(data);
+    // Vérifier que la réponse n'est pas vide avant de parser
+    if (!rawText || rawText.trim() === "") {
+      return Response.json(
+        { error: "Réponse vide du modèle" },
+        { status: 502 }
+      );
+    }
+
+    try {
+      const data = JSON.parse(rawText);
+      return Response.json(data);
+    } catch {
+      return Response.json(
+        { error: `Réponse non-JSON : ${rawText}` },
+        { status: 502 }
+      );
+    }
   } catch (err) {
     console.error("API route error:", err);
     return Response.json({ error: err.message }, { status: 500 });
