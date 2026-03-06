@@ -1696,10 +1696,10 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
           ))}
         </div>
 
-        <div className="flex gap-2 mt-4">
+        <div className="flex flex-col gap-2 mt-4">
           <button
             onClick={addItemField}
-            className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+            className="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
           >
             <Plus size={18} />
             Ajouter un élément
@@ -1708,7 +1708,7 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
           {copiedItem !== null && (
             <button
               onClick={handlePasteAsNew}
-              className={`flex-1 py-2 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
+              className={`w-full py-2 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
                 darkMode
                   ? 'bg-indigo-700 hover:bg-indigo-600 text-white'
                   : 'bg-indigo-500 hover:bg-indigo-600 text-white'
@@ -1860,10 +1860,10 @@ function CreateGameModal({ darkMode, newGameName, setNewGameName, newGameItems, 
               ))}
             </div>
 
-            <div className="flex gap-2 mt-3">
+            <div className="flex flex-col gap-2 mt-3">
               <button
                 onClick={addItemField}
-                className="flex-1 bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
+                className="w-full bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
               >
                 <Plus size={18} />
                 Ajouter un élément
@@ -1871,7 +1871,7 @@ function CreateGameModal({ darkMode, newGameName, setNewGameName, newGameItems, 
               {copiedItem !== null && (
                 <button
                   onClick={handlePasteAsNew}
-                  className={`flex-1 py-2 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
+                  className={`w-full py-2 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
                     darkMode ? 'bg-indigo-700 hover:bg-indigo-600 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'
                   }`}
                   title={`Ajouter une nouvelle ligne avec "${copiedItem}"`}
