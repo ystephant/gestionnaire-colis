@@ -19,9 +19,11 @@ export async function POST(req) {
         body: buffer,
       }
     );
-
+    
     // Lire le corps brut d'abord
     const rawText = await response.text();
+      console.log("HF status:", response.status);
+      console.log("HF raw:", rawText.substring(0, 200));
 
     if (!response.ok) {
       if (response.status === 503) {
