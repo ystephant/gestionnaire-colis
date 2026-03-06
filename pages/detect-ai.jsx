@@ -12,6 +12,45 @@ const loadExifr = () =>
     document.head.appendChild(s);
   });
 
+// ── Compress image before sending to HuggingFace ─────────────────────────────
+function compressImage(dataUrl, maxSizeKb = 700, quality = 0.85) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let { width, height } = img;
+
+      // Scale down if needed
+      const MAX_DIM = 1024;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Try to compress until under maxSizeKb
+      let q = quality;
+      const tryCompress = () => {
+        const result = canvas.toDataURL("image/jpeg", q);
+        const sizeKb = (result.length * 3) / 4 / 1024;
+        if (sizeKb > maxSizeKb && q > 0.3) {
+          q -= 0.1;
+          tryCompress();
+        } else {
+          resolve(result);
+        }
+      };
+      tryCompress();
+    };
+    img.src = dataUrl;
+  });
+}
+
 // ── EXIF helpers ──────────────────────────────────────────────────────────────
 const META_LABELS = {
   Make: "Fabricant", Model: "Modèle", Software: "Logiciel",
@@ -53,7 +92,6 @@ function isSuspectSoftware(sw) {
 
 // ── Score → verdict ───────────────────────────────────────────────────────────
 function buildVerdict(hfResults, metadata) {
-  // hfResults = [{ label: "artificial"|"human", score: 0-1 }, ...]
   const artificial = hfResults.find(r =>
     r.label.toLowerCase().includes("artificial") ||
     r.label.toLowerCase().includes("ai") ||
@@ -67,7 +105,6 @@ function buildVerdict(hfResults, metadata) {
   const aiScore = artificial ? Math.round(artificial.score * 100) : 0;
   const humanScore = human ? Math.round(human.score * 100) : 100 - aiScore;
 
-  // Metadata signals
   const softwareSuspect = isSuspectSoftware(metadata?.Software);
   const noCamera = !metadata?.Make && !metadata?.Model;
   const noExif = metadata === null;
@@ -85,7 +122,6 @@ function buildVerdict(hfResults, metadata) {
   else if (adjustedAI >= 40) { verdict = "uncertain"; confidence = 50; }
   else { verdict = "human"; confidence = adjustedHuman; }
 
-  // Metadata clues
   const clues = [];
   if (softwareSuspect) clues.push(`⚠ Logiciel IA dans les métadonnées : "${metadata.Software}"`);
   if (noExif) clues.push("⚠ Aucune métadonnée EXIF — fréquent pour les images générées par IA");
@@ -241,10 +277,25 @@ export default function Detector() {
     reader.onload = async (e) => {
       const dataUrl = e.target.result;
       setImage(dataUrl);
-      setImageBase64(dataUrl.split(",")[1]);
-      setImageMime(file.type);
       addLog(`Fichier chargé : ${file.name} (${(file.size/1024).toFixed(1)} Ko)`);
 
+      // ── Compress image for API ──────────────────────────────────────────────
+      try {
+        addLog("Compression de l'image pour l'envoi…");
+        const compressed = await compressImage(dataUrl, 700, 0.85);
+        const compressedBase64 = compressed.split(",")[1];
+        const compressedSizeKb = ((compressedBase64.length * 3) / 4 / 1024).toFixed(1);
+        addLog(`Image compressée : ${compressedSizeKb} Ko (JPEG)`);
+        setImageBase64(compressedBase64);
+        setImageMime("image/jpeg");
+      } catch {
+        // Fallback: use original
+        setImageBase64(dataUrl.split(",")[1]);
+        setImageMime(file.type);
+        addLog("Compression échouée — envoi de l'original");
+      }
+
+      // ── EXIF extraction ────────────────────────────────────────────────────
       try {
         addLog("Extraction des métadonnées EXIF…");
         const parse = await loadExifr();
