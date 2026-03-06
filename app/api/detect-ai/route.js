@@ -21,9 +21,9 @@ export async function POST(req) {
     );
     
     // Lire le corps brut d'abord
-    const rawText = await response.text();
-      console.log("HF status:", response.status);
-      console.log("HF raw:", rawText.substring(0, 200));
+  const rawText = await response.text();
+  console.log("🔴 HF STATUS:", response.status);
+  console.log("🔴 HF RESPONSE:", rawText.substring(0, 300));;
 
     if (!response.ok) {
       if (response.status === 503) {
