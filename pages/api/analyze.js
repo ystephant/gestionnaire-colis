@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     const buffer = Buffer.from(imageBase64, "base64");
 
     const response = await fetch(
-      "https://api-inference.huggingface.co/models/umm-maybe/AI-image-detector",
+      "https://router.huggingface.co/hf-inference/models/umm-maybe/AI-image-detector",
       {
         method: "POST",
         headers: {
