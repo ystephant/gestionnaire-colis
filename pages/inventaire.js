@@ -588,6 +588,11 @@ const resetInventory = async () => {
     if (newGameItems.length <= 1) return;
     setNewGameItems(newGameItems.filter((_, i) => i !== index));
   };
+
+  const bulkRemoveItemFields = (indices) => {
+    const indexSet = new Set(indices);
+    setNewGameItems(newGameItems.filter((_, i) => !indexSet.has(i)));
+  };
   
   const updateItemField = (index, value) => {
     const updated = [...newGameItems];
@@ -1022,6 +1027,7 @@ const resetInventory = async () => {
             newGameItems={newGameItems}
             updateItemField={updateItemField}
             removeItemField={removeItemField}
+            bulkRemoveItemFields={bulkRemoveItemFields}
             addItemField={addItemField}
             saveEdit={saveEdit}
             cancelEdit={cancelEdit}
@@ -1552,7 +1558,7 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
 }
 
 // Composant EditGameSection
-function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, editingGameName, setEditingGameName, newGameItems, updateItemField, removeItemField, addItemField, saveEdit, cancelEdit }) {
+function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, editingGameName, setEditingGameName, newGameItems, updateItemField, removeItemField, bulkRemoveItemFields, addItemField, saveEdit, cancelEdit }) {
   const [copiedItem, setCopiedItem] = React.useState(null);
   const [pasteFlash, setPasteFlash] = React.useState(null);
   const [multiDeleteMode, setMultiDeleteMode] = React.useState(false);
@@ -1569,9 +1575,12 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
 
   const handleMultiDelete = () => {
     if (selectedForDelete.size === 0) return;
+    if (selectedForDelete.size >= newGameItems.length) {
+      alert('⚠️ Impossible de supprimer tous les éléments : le jeu doit contenir au moins un élément.');
+      return;
+    }
     if (!confirm(`⚠️ Supprimer ${selectedForDelete.size} élément(s) sélectionné(s) ?`)) return;
-    const indicesToRemove = Array.from(selectedForDelete).sort((a, b) => b - a);
-    indicesToRemove.forEach(i => removeItemField(i));
+    bulkRemoveItemFields(Array.from(selectedForDelete));
     setSelectedForDelete(new Set());
     setMultiDeleteMode(false);
   };
@@ -1707,7 +1716,7 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
         </div>
         <div className="space-y-3">
           {newGameItems.map((item, index) => (
-            <div key={index} className={`flex flex-wrap gap-2 rounded-lg transition-all ${pasteFlash === index ? 'ring-2 ring-blue-400' : ''} ${multiDeleteMode && selectedForDelete.has(index) ? (darkMode ? 'bg-red-900 bg-opacity-20 rounded-lg' : 'bg-red-50 rounded-lg') : ''}`}>
+            <div key={index} className={`flex flex-wrap gap-2 rounded-lg transition-all ${pasteFlash === index ? 'ring-2 ring-blue-400' : ''} ${multiDeleteMode && selectedForDelete.has(index) ? (darkMode ? 'bg-red-900 bg-opacity-20' : 'bg-red-50') : ''}`}>
               {multiDeleteMode && (
                 <div className="flex items-center pl-1">
                   <input
@@ -1732,7 +1741,6 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
               />
               {!multiDeleteMode && (
                 <div className="flex gap-2 flex-shrink-0">
-                  {/* Bouton Copier */}
                   <button
                     onClick={() => handleCopy(index)}
                     title="Copier cet élément"
@@ -1744,7 +1752,6 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
                   >
                     <Copy size={18} />
                   </button>
-                  {/* Bouton Coller sur cette ligne */}
                   {copiedItem !== null && (
                     <button
                       onClick={() => handlePasteOnRow(index)}
@@ -1756,7 +1763,6 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
                       <ClipboardPaste size={18} />
                     </button>
                   )}
-                  {/* Bouton Supprimer */}
                   <button
                     onClick={() => removeItemField(index)}
                     disabled={newGameItems.length <= 1}
