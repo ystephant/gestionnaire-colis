@@ -966,7 +966,7 @@ const resetInventory = async () => {
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
                     <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Inventaire de Jeux</h1>
-                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Avec Cloudinary - Upload ultra rapide ⚡</p>
+                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Ici, vérifie le matos !</p>
                   </div>
                   {selectedGame && !editMode && (
                     <div className="flex items-center gap-2">
