@@ -1081,38 +1081,6 @@ const resetInventory = async () => {
 
 // Composant SearchGameSection
 function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults, searchResults, selectGame, deleteGame, allGames, showAllGamesList, setShowAllGamesList, openCreateModal, evaluations, deleteEvaluation, deleteAllEvaluations }) {
-  const [multiDeleteMode, setMultiDeleteMode] = useState(false);
-  const [selectedForDelete, setSelectedForDelete] = useState(new Set());
-
-  const toggleSelectForDelete = (gameId) => {
-    setSelectedForDelete(prev => {
-      const next = new Set(prev);
-      if (next.has(gameId)) next.delete(gameId);
-      else next.add(gameId);
-      return next;
-    });
-  };
-
-  const handleMultiDelete = async () => {
-    if (selectedForDelete.size === 0) return;
-    if (!confirm(`⚠️ Voulez-vous vraiment supprimer ${selectedForDelete.size} jeu(x) sélectionné(s) ?`)) return;
-    try {
-      for (const gameId of selectedForDelete) {
-        await supabase.from('games').delete().eq('id', gameId);
-      }
-      setSelectedForDelete(new Set());
-      setMultiDeleteMode(false);
-    } catch (error) {
-      console.error('Erreur suppression multiple:', error);
-      alert('❌ Erreur lors de la suppression multiple');
-    }
-  };
-
-  const cancelMultiDelete = () => {
-    setMultiDeleteMode(false);
-    setSelectedForDelete(new Set());
-  };
-
   const formatDate = (isoString) => {
     const date = new Date(isoString);
     return date.toLocaleDateString('fr-FR', { 
@@ -1208,55 +1176,19 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
       </div>
 
       <div className={`mt-6 p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-orange-50'}`}>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center justify-between mb-3">
           <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
             💡 <strong>{allGames.length} jeu{allGames.length > 1 ? 'x' : ''}</strong> dans votre collection
           </p>
-          <div className="flex items-center gap-2 flex-wrap">
-            {multiDeleteMode ? (
-              <>
-                {selectedForDelete.size > 0 && (
-                  <button
-                    onClick={handleMultiDelete}
-                    className="text-sm font-semibold flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
-                  >
-                    <Trash2 size={14} />
-                    Supprimer ({selectedForDelete.size})
-                  </button>
-                )}
-                <button
-                  onClick={cancelMultiDelete}
-                  className={`text-sm font-semibold flex items-center gap-1 px-2 py-1 rounded-lg transition ${
-                    darkMode ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                  }`}
-                >
-                  <X size={14} />
-                  Annuler
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => { setMultiDeleteMode(true); setShowAllGamesList(true); }}
-                className={`text-xs font-medium flex items-center gap-1 px-2 py-1 rounded-lg transition ${
-                  darkMode ? 'bg-gray-600 text-gray-400 hover:bg-gray-500 hover:text-gray-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-500'
-                }`}
-                title="Sélectionner plusieurs jeux à supprimer"
-              >
-                <Trash2 size={12} />
-                <span className="hidden sm:inline">Suppression multiple</span>
-                <span className="sm:hidden">Multi-sup.</span>
-              </button>
-            )}
-            <button
-              onClick={() => setShowAllGamesList(!showAllGamesList)}
-              className={`text-sm font-semibold flex items-center gap-1 ${
-                darkMode ? 'text-orange-400 hover:text-orange-300' : 'text-orange-600 hover:text-orange-700'
-              }`}
-            >
-              <List size={16} />
-              {showAllGamesList ? 'Masquer' : 'Voir la liste'}
-            </button>
-          </div>
+          <button
+            onClick={() => setShowAllGamesList(!showAllGamesList)}
+            className={`text-sm font-semibold flex items-center gap-1 ${
+              darkMode ? 'text-orange-400 hover:text-orange-300' : 'text-orange-600 hover:text-orange-700'
+            }`}
+          >
+            <List size={16} />
+            {showAllGamesList ? 'Masquer' : 'Voir la liste'}
+          </button>
         </div>
 
         {showAllGamesList && allGames.length > 0 && (
@@ -1265,37 +1197,22 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
           }`}>
             {allGames.map(game => (
               <div key={game.id} className="flex items-center justify-between group">
-                {multiDeleteMode && (
-                  <label className="flex items-center pl-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedForDelete.has(game.id)}
-                      onChange={() => toggleSelectForDelete(game.id)}
-                      className="w-4 h-4 accent-red-500 cursor-pointer"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </label>
-                )}
                 <button
-                  onClick={() => { if (!multiDeleteMode) selectGame(game); else toggleSelectForDelete(game.id); }}
+                  onClick={() => selectGame(game)}
                   className={`flex-1 text-left px-3 py-2 text-sm transition ${
-                    multiDeleteMode && selectedForDelete.has(game.id)
-                      ? darkMode ? 'bg-red-900 bg-opacity-30 text-gray-200' : 'bg-red-50 text-gray-800'
-                      : darkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-orange-50 text-gray-800'
+                    darkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-orange-50 text-gray-800'
                   } border-b last:border-b-0 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}
                 >
                   {game.name}
                 </button>
-                {!multiDeleteMode && (
-                  <button
-                    onClick={() => deleteGame(game.id, game.name)}
-                    className={`px-2 py-2 opacity-0 group-hover:opacity-100 transition ${
-                      darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
-                    }`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                <button
+                  onClick={() => deleteGame(game.id, game.name)}
+                  className={`px-2 py-2 opacity-0 group-hover:opacity-100 transition ${
+                    darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
+                  }`}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
           </div>
@@ -1378,6 +1295,40 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
 
 // Composant GameInventorySection avec AGRÉGATION
 function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems }) {
+  const [multiDeleteMode, setMultiDeleteMode] = useState(false);
+  const [selectedItemsForDelete, setSelectedItemsForDelete] = useState(new Set());
+
+  const toggleSelectItem = (index) => {
+    setSelectedItemsForDelete(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const handleMultiDeleteItems = async () => {
+    if (selectedItemsForDelete.size === 0) return;
+    if (!confirm(`⚠️ Voulez-vous vraiment supprimer ${selectedItemsForDelete.size} élément(s) sélectionné(s) ?`)) return;
+    const newItems = selectedGame.items.filter((_, i) => !selectedItemsForDelete.has(i));
+    try {
+      const { error } = await supabase.from('games').update({ items: newItems }).eq('id', selectedGame.id);
+      if (error) throw error;
+      setSyncStatus('✅ Éléments supprimés');
+      setTimeout(() => setSyncStatus(''), 1500);
+      setSelectedItemsForDelete(new Set());
+      setMultiDeleteMode(false);
+    } catch (error) {
+      console.error('Erreur suppression multiple:', error);
+      alert('❌ Erreur lors de la suppression');
+    }
+  };
+
+  const cancelMultiDeleteItems = () => {
+    setMultiDeleteMode(false);
+    setSelectedItemsForDelete(new Set());
+  };
+
   const StarSelector = ({ rating, setRating }) => {
     return (
       <div className="flex gap-1">
@@ -1523,49 +1474,102 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
       )}
         
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-        <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>
-          Contenu de la boîte
-        </h3>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+            Contenu de la boîte
+          </h3>
+          <div className="flex items-center gap-2">
+            {multiDeleteMode ? (
+              <>
+                {selectedItemsForDelete.size > 0 && (
+                  <button
+                    onClick={handleMultiDeleteItems}
+                    className="text-sm font-semibold flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
+                  >
+                    <Trash2 size={14} />
+                    Supprimer ({selectedItemsForDelete.size})
+                  </button>
+                )}
+                <button
+                  onClick={cancelMultiDeleteItems}
+                  className={`text-sm font-semibold flex items-center gap-1 px-2 py-1 rounded-lg transition ${
+                    darkMode ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                  }`}
+                >
+                  <X size={14} />
+                  Annuler
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setMultiDeleteMode(true)}
+                className={`text-xs font-medium flex items-center gap-1 px-2 py-1 rounded-lg transition ${
+                  darkMode ? 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-gray-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-500'
+                }`}
+                title="Sélectionner plusieurs éléments à supprimer"
+              >
+                <Trash2 size={12} />
+                <span className="hidden sm:inline">Suppression multiple</span>
+                <span className="sm:hidden">Multi-sup.</span>
+              </button>
+            )}
+          </div>
+        </div>
         
         <div className="space-y-2">
           {getSortedItems().map(({ item, index }) => {
             const photoCount = getDetailPhotoCount(index);
             return (
               <div key={index} className="flex items-center gap-2">
-                <button
-                  onClick={() => openDetailedView(index, item)}
-                  className={`p-2 rounded-lg transition ${
-                    photoCount > 0
-                      ? darkMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-purple-500 hover:bg-purple-600 text-white'
-                      : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
-                  }`}
-                  title={photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Ajouter des photos'}
-                >
-                  <Grid size={16} />
-                </button>
+                {multiDeleteMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedItemsForDelete.has(index)}
+                    onChange={() => toggleSelectItem(index)}
+                    className="w-4 h-4 accent-red-500 cursor-pointer flex-shrink-0"
+                  />
+                )}
+                {!multiDeleteMode && (
+                  <button
+                    onClick={() => openDetailedView(index, item)}
+                    className={`p-2 rounded-lg transition ${
+                      photoCount > 0
+                        ? darkMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-purple-500 hover:bg-purple-600 text-white'
+                        : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+                    }`}
+                    title={photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Ajouter des photos'}
+                  >
+                    <Grid size={16} />
+                  </button>
+                )}
                 
                 <label
                   className={`flex-1 flex items-start gap-3 p-3 rounded-lg cursor-pointer transition ${
-                    checkedItems[index]
-                      ? darkMode ? 'bg-green-900 bg-opacity-30 border-2 border-green-700' : 'bg-green-50 border-2 border-green-300'
-                      : darkMode ? 'bg-gray-700 hover:bg-gray-650 border-2 border-gray-600' : 'bg-gray-50 hover:bg-gray-100 border-2 border-gray-200'
+                    multiDeleteMode && selectedItemsForDelete.has(index)
+                      ? darkMode ? 'bg-red-900 bg-opacity-30 border-2 border-red-700' : 'bg-red-50 border-2 border-red-300'
+                      : checkedItems[index]
+                        ? darkMode ? 'bg-green-900 bg-opacity-30 border-2 border-green-700' : 'bg-green-50 border-2 border-green-300'
+                        : darkMode ? 'bg-gray-700 hover:bg-gray-650 border-2 border-gray-600' : 'bg-gray-50 hover:bg-gray-100 border-2 border-gray-200'
                   }`}
+                  onClick={multiDeleteMode ? () => toggleSelectItem(index) : undefined}
                 >
-                  <input
-                    type="checkbox"
-                    checked={checkedItems[index] || false}
-                    onChange={() => toggleItem(index)}
-                    className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 mt-0.5 flex-shrink-0"
-                  />
+                  {!multiDeleteMode && (
+                    <input
+                      type="checkbox"
+                      checked={checkedItems[index] || false}
+                      onChange={() => toggleItem(index)}
+                      className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 mt-0.5 flex-shrink-0"
+                    />
+                  )}
                   <div className="flex-1">
                     <span className={`text-sm ${
-                      checkedItems[index]
+                      !multiDeleteMode && checkedItems[index]
                         ? darkMode ? 'text-green-300 line-through' : 'text-green-700 line-through'
                         : darkMode ? 'text-gray-200' : 'text-gray-800'
                     }`}>
                       {item}
                     </span>
-                    {photoCount > 0 && (
+                    {photoCount > 0 && !multiDeleteMode && (
                       <div className={`text-xs mt-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
                         📸 {photoCount} photo{photoCount > 1 ? 's' : ''}
                       </div>
