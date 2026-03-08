@@ -87,6 +87,8 @@ export default function InventaireJeux() {
   const [currentEditingPhotoId, setCurrentEditingPhotoId] = useState(null);
   
   const [syncStatus, setSyncStatus] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const [showResetModal, setShowResetModal] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -403,6 +405,11 @@ const getAggregatedItems = () => {
     setAdditionalComment('');
   };
 
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 2000);
+  };
+
   const deleteGame = async (gameId, gameName) => {
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
     try {
@@ -410,8 +417,7 @@ const getAggregatedItems = () => {
       if (error) throw error;
       if (selectedGame?.id === gameId) setSelectedGame(null);
       setAllGames(prev => prev.filter(g => g.id !== gameId));
-      setSyncStatus('✅ Supprimé');
-      setTimeout(() => setSyncStatus(''), 2000);
+      showToast(`✅ Jeu "${gameName}" supprimé avec succès`);
     } catch (error) {
       console.error('Erreur suppression:', error);
       alert(`❌ Erreur: ${error.message}`);
@@ -516,7 +522,6 @@ const toggleAggregatedType = async (itemType) => {
 // 👆 JUSQU'ICI
 
 const resetInventory = async () => {
-    if (!confirm('Réinitialiser l\'inventaire ?')) return;
     setCheckedItems({});
     setGameRating(0);
     setSenderName('');
@@ -855,8 +860,7 @@ const resetInventory = async () => {
         items: validItems 
       }).eq('id', selectedGame.id);
       if (error) throw error;
-      setSyncStatus('✅ Synchronisé');
-      setTimeout(() => setSyncStatus(''), 2000);
+      showToast(`✅ Jeu "${newGameName.trim()}" édité avec succès`);
       setEditMode(false);
       setEditingGameName(false);
       setCheckedItems({});
@@ -887,6 +891,12 @@ const resetInventory = async () => {
         {syncStatus && (
           <div className="fixed top-4 right-4 bg-green-100 text-green-800 px-4 py-2 rounded-lg shadow-lg z-50 text-sm">
             {syncStatus}
+          </div>
+        )}
+
+        {toastMessage && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl z-50 text-sm font-semibold max-w-xs w-11/12 text-center">
+            {toastMessage}
           </div>
         )}
 
@@ -992,6 +1002,8 @@ const resetInventory = async () => {
             deleteGame={deleteGame}
             getProgress={getProgress}
             resetInventory={resetInventory}
+            showResetModal={showResetModal}
+            setShowResetModal={setShowResetModal}
             getAggregatedItems={getAggregatedItems}
             getAggregatedProgress={getAggregatedProgress}
             checkedItems={checkedItems}
@@ -1164,17 +1176,17 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
           <div className={`absolute w-full mt-2 rounded-xl shadow-xl border-2 p-4 ${
             darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
           }`}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <AlertCircle size={20} className="text-orange-500" />
                 <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Jeu introuvable</span>
               </div>
               <button
                 onClick={openCreateModal}
-                className="bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center gap-2"
+                className="bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2 w-full"
               >
                 <Plus size={18} />
-                Créer ce jeu
+                + Créer ce jeu
               </button>
             </div>
           </div>
@@ -1300,7 +1312,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
 }
 
 // Composant GameInventorySection avec AGRÉGATION
-function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems }) {
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, showResetModal, setShowResetModal, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems }) {
   const StarSelector = ({ rating, setRating }) => {
     return (
       <div className="flex gap-1">
@@ -1408,12 +1420,48 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
         </div>
         
         <button
-          onClick={resetInventory}
+          onClick={() => setShowResetModal(true)}
           className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2"
         >
           <RotateCcw size={20} />
           Réinitialiser l'inventaire
         </button>
+
+        {/* Modal de confirmation de réinitialisation */}
+        {showResetModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 px-4">
+            <div className={`${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'} rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-orange-500`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="bg-orange-100 p-2 rounded-xl">
+                  <RotateCcw size={24} className="text-orange-600" />
+                </div>
+                <h3 className="text-lg font-bold leading-snug">
+                  Veux-tu vraiment réinitialiser l'inventaire de ce jeu ?
+                </h3>
+              </div>
+              <p className={`text-sm mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Toutes les cases cochées seront remises à zéro.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowResetModal(false);
+                    resetInventory();
+                  }}
+                  className="flex-1 bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 transition text-lg"
+                >
+                  Oui
+                </button>
+                <button
+                  onClick={() => setShowResetModal(false)}
+                  className={`flex-1 py-3 rounded-xl font-bold transition text-lg ${darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  Non
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 🆕 BLOC D'AGRÉGATION AUTOMATIQUE - Version compacte cliquable */}
