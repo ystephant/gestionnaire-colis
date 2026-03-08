@@ -1680,6 +1680,20 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
           <div className="flex items-center gap-2">
             {multiDeleteMode ? (
               <>
+                <button
+                  onClick={() => {
+                    if (selectedForDelete.size === newGameItems.length) {
+                      setSelectedForDelete(new Set());
+                    } else {
+                      setSelectedForDelete(new Set(newGameItems.map((_, i) => i)));
+                    }
+                  }}
+                  className={`text-xs font-medium flex items-center gap-1 px-2 py-1 rounded-lg transition ${
+                    darkMode ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                  }`}
+                >
+                  {selectedForDelete.size === newGameItems.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                </button>
                 {selectedForDelete.size > 0 && (
                   <button
                     onClick={handleMultiDelete}
@@ -1781,27 +1795,31 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
         </div>
 
         <div className="flex flex-col gap-2 mt-4">
-          <button
-            onClick={addItemField}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
-          >
-            <Plus size={18} />
-            Ajouter un élément
-          </button>
+          {!multiDeleteMode && (
+            <>
+              <button
+                onClick={addItemField}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+              >
+                <Plus size={18} />
+                Ajouter un élément
+              </button>
 
-          {copiedItem !== null && (
-            <button
-              onClick={handlePasteAsNew}
-              className={`w-full py-2 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
-                darkMode
-                  ? 'bg-indigo-700 hover:bg-indigo-600 text-white'
-                  : 'bg-indigo-500 hover:bg-indigo-600 text-white'
-              }`}
-              title={`Ajouter une nouvelle ligne avec "${copiedItem}"`}
-            >
-              <ClipboardPaste size={18} />
-              Coller un nouvel élément
-            </button>
+              {copiedItem !== null && (
+                <button
+                  onClick={handlePasteAsNew}
+                  className={`w-full py-2 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
+                    darkMode
+                      ? 'bg-indigo-700 hover:bg-indigo-600 text-white'
+                      : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                  }`}
+                  title={`Ajouter une nouvelle ligne avec "${copiedItem}"`}
+                >
+                  <ClipboardPaste size={18} />
+                  Coller un nouvel élément
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
