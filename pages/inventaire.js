@@ -88,7 +88,10 @@ export default function InventaireJeux() {
   
   const [syncStatus, setSyncStatus] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('default');
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [pendingDeleteGame, setPendingDeleteGame] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -405,19 +408,28 @@ const getAggregatedItems = () => {
     setAdditionalComment('');
   };
 
-  const showToast = (msg) => {
+  const showToast = (msg, type = 'default') => {
     setToastMessage(msg);
+    setToastType(type);
     setTimeout(() => setToastMessage(''), 2000);
   };
 
-  const deleteGame = async (gameId, gameName) => {
-    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${gameName}" ?`)) return;
+  const deleteGame = (gameId, gameName) => {
+    setPendingDeleteGame({ id: gameId, name: gameName });
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteGame = async () => {
+    if (!pendingDeleteGame) return;
+    const { id: gameId, name: gameName } = pendingDeleteGame;
+    setShowDeleteModal(false);
+    setPendingDeleteGame(null);
     try {
       const { error } = await supabase.from('games').delete().eq('id', gameId);
       if (error) throw error;
       if (selectedGame?.id === gameId) setSelectedGame(null);
       setAllGames(prev => prev.filter(g => g.id !== gameId));
-      showToast(`✅ Jeu "${gameName}" supprimé avec succès`);
+      showToast(`🗑️ Jeu "${gameName}" supprimé avec succès`, 'danger');
     } catch (error) {
       console.error('Erreur suppression:', error);
       alert(`❌ Erreur: ${error.message}`);
@@ -860,7 +872,7 @@ const resetInventory = async () => {
         items: validItems 
       }).eq('id', selectedGame.id);
       if (error) throw error;
-      showToast(`✅ Jeu "${newGameName.trim()}" édité avec succès`);
+      showToast(`✅ Jeu "${newGameName.trim()}" édité avec succès`, 'success');
       setEditMode(false);
       setEditingGameName(false);
       setCheckedItems({});
@@ -895,8 +907,41 @@ const resetInventory = async () => {
         )}
 
         {toastMessage && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl z-50 text-sm font-semibold max-w-xs w-11/12 text-center">
+          <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl shadow-2xl z-50 text-sm font-semibold max-w-xs w-11/12 text-center ${
+            toastType === 'success' ? 'bg-green-600 text-white' : toastType === 'danger' ? 'bg-red-600 text-white' : 'bg-gray-900 text-white'
+          }`}>
             {toastMessage}
+          </div>
+        )}
+
+        {showDeleteModal && pendingDeleteGame && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 px-4">
+            <div className={`${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'} rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-red-500`}>
+              <div className="flex items-center gap-3 mb-4">
+                <Trash2 size={24} className="text-red-500" />
+                <h3 className="text-lg font-bold leading-snug">
+                  Supprimer définitivement le jeu
+                </h3>
+              </div>
+              <p className={`text-sm mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Veux-tu vraiment supprimer <strong>"{pendingDeleteGame.name}"</strong> ?<br />
+                Cette action est irréversible.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowDeleteModal(false); setPendingDeleteGame(null); }}
+                  className={`flex-1 py-3 rounded-xl font-bold transition text-lg ${darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                >
+                  Non
+                </button>
+                <button
+                  onClick={confirmDeleteGame}
+                  className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition text-lg"
+                >
+                  Oui
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
