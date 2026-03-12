@@ -81,7 +81,7 @@ const makeFilename = (photo, index, ext) => {
 // ─────────────────────────────────────────────────────────────
 const PhotoCard = ({
   photo, columnId, siblingPhotos,
-  selectMode, isSelected, isDragged, isOverItem,
+  selectMode, isSelected, isDragged, isOverItem, inFolder,
   onDragStart, onDragEnd, onDragOver,
   onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto, onCopyUrl,
 }) => {
@@ -158,8 +158,8 @@ const PhotoCard = ({
         </div>
       )}
 
-      {/* Selection overlay */}
-      {selectMode && (
+      {/* Selection overlay — masqué dans les dossiers (la coche est sur le dossier) */}
+      {selectMode && !inFolder && (
         <div className={`absolute inset-0 transition-colors ${isSelected ? 'bg-blue-500/30' : 'bg-black/0 group-hover:bg-black/10'}`}>
           <div className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm
             ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white/80 border-white'}`}>
@@ -768,7 +768,25 @@ export default function PhotosManager() {
     downloadMultiple(all);
   };
 
-  const filteredGames = gamesList.filter(g => g.toLowerCase().includes(tagSearch.toLowerCase()));
+  const removeTag = async () => {
+    if (totalSelected === 0) return;
+    const updates = Object.entries(selectedPhotos)
+      .filter(([, s]) => s && s.size > 0)
+      .map(([colId, s]) => ({ colId, ids: [...s] }));
+    setPhotos(prev => {
+      const next = { ...prev };
+      updates.forEach(({ colId, ids }) => {
+        next[colId] = (prev[colId] || []).map(p => ids.includes(p.id) ? { ...p, game_tag: null } : p);
+      });
+      return next;
+    });
+    setSelectedPhotos({});
+    try {
+      const allIds = updates.flatMap(u => u.ids);
+      await supabase.from('sale_photos').update({ game_tag: null, updated_at: new Date().toISOString() }).in('id', allIds);
+      showToast('Tag retiré', 'success');
+    } catch { showToast('Erreur retrait tag', 'error'); }
+  };
   const handleLogout  = () => { localStorage.removeItem('username'); localStorage.removeItem('password'); router.push('/'); };
 
   // ── Rendu ────────────────────────────────────────────────────
@@ -804,7 +822,7 @@ export default function PhotosManager() {
     onCopyUrl:        handleCopyUrl,
   };
 
-  const renderCard = (colId, photo, sibs) => (
+  const renderCard = (colId, photo, sibs, inFolder = false) => (
     <PhotoCard
       key={photo.id}
       photo={photo}
@@ -813,6 +831,7 @@ export default function PhotosManager() {
       isSelected={!!selectedPhotos[colId]?.has(photo.id)}
       isDragged={!!draggingPhoto?.photos?.some(p => p.id === photo.id)}
       isOverItem={dragOverPhotoId === photo.id}
+      inFolder={inFolder}
       {...cardProps}
     />
   );
@@ -877,6 +896,14 @@ export default function PhotosManager() {
               <Trash2 className="w-3.5 h-3.5" /> Supprimer
             </button>
             <div className={`w-px h-4 ${divider}`} />
+            {/* Retirer le tag */}
+            <button
+              onClick={removeTag}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
+              title="Retirer le tag des photos sélectionnées"
+            >
+              <X className="w-3.5 h-3.5" /> Retirer tag
+            </button>
             {/* Dropdown tag */}
             <div className="relative">
               <button
@@ -1169,28 +1196,6 @@ export default function PhotosManager() {
                                 {ts && <p className={`text-[10px] ${subtext} truncate`}>{ts}</p>}
                               </div>
                               <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  setSelectMode(true);
-                                  const allSelected = gPhotos.every(p => selectedPhotos[col.id]?.has(p.id));
-                                  setSelectedPhotos(prev => {
-                                    const s = new Set(prev[col.id] || []);
-                                    if (allSelected) gPhotos.forEach(p => s.delete(p.id));
-                                    else gPhotos.forEach(p => s.add(p.id));
-                                    return { ...prev, [col.id]: s };
-                                  });
-                                }}
-                                title={gPhotos.every(p => selectedPhotos[col.id]?.has(p.id)) ? 'Désélectionner le dossier' : 'Sélectionner le dossier'}
-                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors
-                                  ${gPhotos.every(p => selectedPhotos[col.id]?.has(p.id))
-                                    ? 'bg-blue-500 border-blue-500'
-                                    : gPhotos.some(p => selectedPhotos[col.id]?.has(p.id))
-                                      ? 'bg-blue-300 border-blue-400'
-                                      : darkMode ? 'border-gray-500 hover:border-blue-400' : 'border-gray-300 hover:border-blue-400'}`}
-                              >
-                                {gPhotos.some(p => selectedPhotos[col.id]?.has(p.id)) && <Check className="w-3 h-3 text-white" />}
-                              </button>
-                              <button
                                 onClick={e => { e.stopPropagation(); downloadMultiple(gPhotos); }}
                                 disabled={downloading}
                                 className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
@@ -1204,7 +1209,7 @@ export default function PhotosManager() {
                             </div>
                             {!isCollapsed && (
                               <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
-                                {gPhotos.map(photo => renderCard(col.id, photo, gPhotos))}
+                                {gPhotos.map(photo => renderCard(col.id, photo, gPhotos, true))}
                               </div>
                             )}
                           </div>
