@@ -85,13 +85,46 @@ const PhotoCard = ({
   onDragStart, onDragEnd, onDragOver,
   onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto,
 }) => {
-  const rot = photo.rotation || 0;
+  const rot        = photo.rotation || 0;
+  const blobCache  = React.useRef(null); // { url, file } — pré-chargé au survol
+
+  // Pré-charger le blob dès le survol pour l'avoir prêt au dragstart
+  const handleMouseEnter = async () => {
+    if (blobCache.current?.url === photo.image_url) return;
+    try {
+      const res  = await fetch(photo.image_url);
+      const blob = await res.blob();
+      const ext  = blob.type.includes('png') ? 'png' : 'jpg';
+      const name = makeFilename(photo, 1, ext);
+      blobCache.current = { url: photo.image_url, file: new File([blob], name, { type: blob.type }) };
+    } catch { /* ignore */ }
+  };
+
+  const handleDragStart = (e) => {
+    // Si le blob est prêt, on l'injecte comme vrai fichier — LeBonCoin/Vinted le reconnaît
+    if (blobCache.current?.file) {
+      try { e.dataTransfer.items.add(blobCache.current.file); } catch { /* ignore */ }
+    }
+    // Fallbacks
+    try {
+      const ext  = photo.image_url.includes('.png') ? 'png' : 'jpg';
+      const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+      const name = makeFilename(photo, 1, ext);
+      e.dataTransfer.setData('DownloadURL', `${mime}:${name}:${photo.image_url}`);
+      e.dataTransfer.setData('text/uri-list', photo.image_url);
+      e.dataTransfer.setData('text/plain', photo.image_url);
+    } catch { /* ignore */ }
+    e.dataTransfer.effectAllowed = 'copyMove';
+    onDragStart(e, photo, columnId);
+  };
+
   return (
     <div
       data-photoid={photo.id}
       data-colid={columnId}
       draggable
-      onDragStart={e => onDragStart(e, photo, columnId)}
+      onMouseEnter={handleMouseEnter}
+      onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       onDragOver={e => onDragOver(e, photo.id)}
       onClick={e => {
@@ -223,7 +256,8 @@ export default function PhotosManager() {
     COLUMNS.forEach(c => { z[c.id] = 2; });
     return z;
   });
-  const colRefs   = useRef({});
+  const colRefs    = useRef({});
+  const headerRefs = useRef({}); // wheel uniquement sur le header
   const photosRef = useRef({});   // miroir de photos pour les handlers globaux
   const lassoRef  = useRef(null); // miroir de lasso pour les handlers globaux
 
@@ -343,12 +377,12 @@ export default function PhotosManager() {
     }
   }, []);
 
-  // Wheel non-passif — isLoggedIn en dep pour attendre que les colonnes soient rendues
+  // Wheel non-passif sur le header uniquement — scroll page libre partout ailleurs
   useEffect(() => {
     if (!isLoggedIn) return;
     const handlers = {};
     COLUMNS.forEach(col => {
-      const el = colRefs.current[col.id];
+      const el = headerRefs.current[col.id];
       if (!el) return;
       const h = (e) => onColWheel(e, col.id);
       handlers[col.id] = h;
@@ -356,7 +390,7 @@ export default function PhotosManager() {
     });
     return () => {
       COLUMNS.forEach(col => {
-        const el = colRefs.current[col.id];
+        const el = headerRefs.current[col.id];
         if (el && handlers[col.id]) el.removeEventListener('wheel', handlers[col.id]);
       });
     };
@@ -463,19 +497,6 @@ export default function PhotosManager() {
       : [photo];
     if (!ptm.length) ptm = [photo];
     setDraggingPhoto({ photos: ptm });
-
-    // DownloadURL : permet à Chrome/Edge de traiter le drag comme un vrai fichier
-    // vers les zones de dépôt externes (LeBonCoin, Vinted, etc.)
-    const primary = ptm[0];
-    const ext  = primary.image_url.includes('.png') ? 'png' : 'jpg';
-    const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-    const fname = makeFilename(primary, 1, ext);
-    try {
-      e.dataTransfer.setData('DownloadURL', `${mime}:${fname}:${primary.image_url}`);
-      e.dataTransfer.setData('text/uri-list', primary.image_url);
-      e.dataTransfer.setData('text/plain', primary.image_url);
-    } catch { /* ignore si le navigateur ne supporte pas */ }
-
     e.dataTransfer.effectAllowed = 'copyMove';
   }, [selectMode, selectedPhotos, photos]);
 
@@ -989,6 +1010,7 @@ export default function PhotosManager() {
               >
                 {/* En-tête de colonne */}
                 <div
+                  ref={el => { headerRefs.current[col.id] = el; }}
                   className={`px-3 py-2.5 rounded-t-2xl border-b ${darkMode ? 'border-white/10' : col.lightBorder} ${!darkMode ? col.lightHeader : ''}`}
                   style={darkMode ? headerStyle : {}}
                 >
