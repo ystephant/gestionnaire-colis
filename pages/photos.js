@@ -768,6 +768,8 @@ export default function PhotosManager() {
       showToast('Impossible de copier (autorisations navigateur requises)', 'error');
     }
   }, [showToast]);
+
+  const downloadSingle = useCallback(async (photo) => {
     try {
       const res  = await fetch(photo.image_url);
       const blob = await res.blob();
