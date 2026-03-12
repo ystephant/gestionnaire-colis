@@ -147,7 +147,7 @@ const PhotoCard = ({
       {/* Selection overlay — masqué dans les dossiers (la coche est sur le dossier) */}
       {!inFolder && (
         <div className={`absolute inset-0 transition-colors ${isSelected ? 'bg-blue-500/30' : 'bg-black/0 group-hover:bg-black/10'}`}>
-          <div className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm
+          <div className={`absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm
             ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white/80 border-white'}`}>
             {isSelected && <Check className="w-3 h-3 text-white" />}
           </div>
