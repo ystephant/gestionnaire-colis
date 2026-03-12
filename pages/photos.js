@@ -5,8 +5,8 @@ import { useTheme } from '../lib/ThemeContext';
 import {
   Upload, Tag, Trash2, X, Check, ChevronDown, ChevronRight,
   Image as ImageIcon, Loader2, Sun, Moon, LogOut, ArrowLeft,
-  Folder, FolderOpen, Layers, Download, ZoomIn,
-  RotateCcw, RotateCw, ChevronLeft, Copy,
+  Folder, FolderOpen, Download, ZoomIn,
+  RotateCcw, RotateCw, ChevronLeft,
 } from 'lucide-react';
 
 const supabase = createClient(
@@ -81,9 +81,9 @@ const makeFilename = (photo, index, ext) => {
 // ─────────────────────────────────────────────────────────────
 const PhotoCard = ({
   photo, columnId, siblingPhotos,
-  selectMode, isSelected, isDragged, isOverItem, inFolder,
+  isSelected, isDragged, isOverItem, inFolder,
   onDragStart, onDragEnd, onDragOver,
-  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto, onCopyUrl,
+  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto,
 }) => {
   const rot = photo.rotation || 0;
   return (
@@ -96,14 +96,13 @@ const PhotoCard = ({
       onDragOver={e => onDragOver(e, photo.id)}
       onClick={e => {
         if (e.ctrlKey || e.metaKey) { e.stopPropagation(); onCtrlSelect(columnId, photo.id); return; }
-        if (selectMode) onToggleSelect(columnId, photo.id);
+        onToggleSelect(columnId, photo.id);
       }}
       className={[
-        'relative rounded-xl overflow-hidden transition-all duration-150 group',
+        'relative rounded-xl overflow-hidden transition-all duration-150 group cursor-pointer',
         isDragged  ? 'opacity-30 scale-95'               : 'opacity-100',
         isOverItem ? 'ring-2 ring-blue-400'               : '',
         isSelected ? 'ring-2 ring-blue-500 scale-[0.96]' : '',
-        selectMode ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
       ].join(' ')}
       style={{ aspectRatio: '1/1' }}
     >
@@ -118,48 +117,35 @@ const PhotoCard = ({
         />
       </div>
 
-      {/* Hover actions */}
-      {!selectMode && (
-        <div className="absolute top-1.5 left-1.5 right-1.5 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-          {/* Zoom */}
+      {/* Hover actions — toujours visibles au survol */}
+      <div className="absolute top-1.5 left-1.5 right-1.5 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
+        <button
+          onClick={e => { e.stopPropagation(); onOpenLightbox(photo, siblingPhotos || [photo]); }}
+          className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+          title="Agrandir"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+        <div className="flex gap-1">
           <button
-            onClick={e => { e.stopPropagation(); onOpenLightbox(photo, siblingPhotos || [photo]); }}
+            onClick={e => { e.stopPropagation(); onDownloadSingle(photo); }}
             className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-            title="Agrandir"
+            title="Telecharger"
           >
-            <ZoomIn className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5" />
           </button>
-          <div className="flex gap-1">
-            {/* Copier URL — pour coller dans Vinted / LBC */}
-            <button
-              onClick={e => { e.stopPropagation(); onCopyUrl(photo.image_url); }}
-              className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-              title="Copier l'URL image (coller dans Vinted / LBC)"
-            >
-              <Copy className="w-3 h-3" />
-            </button>
-            {/* Download */}
-            <button
-              onClick={e => { e.stopPropagation(); onDownloadSingle(photo); }}
-              className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-              title="Telecharger"
-            >
-              <Download className="w-3.5 h-3.5" />
-            </button>
-            {/* Delete */}
-            <button
-              onClick={e => { e.stopPropagation(); onDeletePhoto(photo); }}
-              className="w-7 h-7 rounded-lg bg-red-500/80 hover:bg-red-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-              title="Supprimer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <button
+            onClick={e => { e.stopPropagation(); onDeletePhoto(photo); }}
+            className="w-7 h-7 rounded-lg bg-red-500/80 hover:bg-red-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+            title="Supprimer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Selection overlay — masqué dans les dossiers (la coche est sur le dossier) */}
-      {selectMode && !inFolder && (
+      {!inFolder && (
         <div className={`absolute inset-0 transition-colors ${isSelected ? 'bg-blue-500/30' : 'bg-black/0 group-hover:bg-black/10'}`}>
           <div className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm
             ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white/80 border-white'}`}>
@@ -168,7 +154,7 @@ const PhotoCard = ({
         </div>
       )}
 
-      {/* Tag badge — NOM du jeu uniquement, timestamp en sous-texte */}
+      {/* Tag badge */}
       {photo.game_tag && (() => {
         const [name, ts] = photo.game_tag.split(' \u2022 ');
         return (
@@ -213,7 +199,7 @@ export default function PhotosManager() {
   const [dragOverFolderCol, setDragOverFolderCol] = useState(null);
 
   // Sélection multiple
-  const [selectMode, setSelectMode]         = useState(false);
+  const [selectMode, setSelectMode]         = useState(true);
   const [selectedPhotos, setSelectedPhotos] = useState({});
 
   // Tagging
@@ -292,7 +278,6 @@ export default function PhotosManager() {
           });
 
           if (hitPhotoIds.length > 0) {
-            setSelectMode(true);
             setSelectedPhotos(prev => {
               const s = new Set(prev[l.colId] || []);
               hitPhotoIds.forEach(id => s.add(id));
@@ -346,15 +331,14 @@ export default function PhotosManager() {
   const onColWheel = useCallback((e, colId) => {
     e.preventDefault();
     e.stopPropagation();
-    // Uniquement en vue dossiers
     if (!folderModeRef.current.has(colId)) return;
-    const folderKeys = Object.keys(groupsRef.current[colId] || {});
-    if (!folderKeys.length) return;
+    const taggedKeys = Object.keys(groupsRef.current[colId] || {});
+    const hasUngrouped = (photosRef.current[colId] || []).some(p => !p.game_tag);
+    const allKeys = [...taggedKeys, ...(hasUngrouped ? ['__ungrouped__'] : [])];
+    if (!allKeys.length) return;
     if (e.deltaY > 0) {
-      // Scroll bas → replier tous les dossiers de cette colonne
-      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set(folderKeys) }));
+      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set(allKeys) }));
     } else {
-      // Scroll haut → déplier tous les dossiers de cette colonne
       setCollapsedFolders(prev => ({ ...prev, [colId]: new Set() }));
     }
   }, []);
@@ -594,17 +578,7 @@ export default function PhotosManager() {
     if (all.length) setPendingDelete({ photos: all });
   };
 
-  // ── Copier URL (pour Vinted / LBC) ───────────────────────────
-  const handleCopyUrl = useCallback((url) => {
-    navigator.clipboard.writeText(url).then(() => {
-      showToast('URL copiée ! Colle-la dans le champ image de Vinted / LBC', 'success');
-    }).catch(() => {
-      showToast('Impossible de copier (HTTPS requis)', 'error');
-    });
-  }, [showToast]);
-
   // ── Sélection multiple ───────────────────────────────────────
-  const toggleSelectMode  = () => { setSelectMode(p => !p); setSelectedPhotos({}); setShowTagDropdown(false); };
   const toggleSelectPhoto = useCallback((colId, photoId) => {
     setSelectedPhotos(prev => {
       const s = new Set(prev[colId] || []);
@@ -612,9 +586,7 @@ export default function PhotosManager() {
       return { ...prev, [colId]: s };
     });
   }, []);
-  // Ctrl+clic : sélectionne sans avoir besoin d'activer le mode sélection
   const onCtrlSelect = useCallback((colId, photoId) => {
-    setSelectMode(true);
     setSelectedPhotos(prev => {
       const s = new Set(prev[colId] || []);
       if (s.has(photoId)) s.delete(photoId); else s.add(photoId);
@@ -624,7 +596,6 @@ export default function PhotosManager() {
 
   // Coche sur un dossier : sélectionne TOUTES ses photos (ou désélectionne si tout est déjà sélectionné)
   const toggleFolderSelection = useCallback((colId, folderPhotos) => {
-    setSelectMode(true);
     setSelectedPhotos(prev => {
       const s      = new Set(prev[colId] || []);
       const allIds = folderPhotos.map(p => p.id);
@@ -810,7 +781,6 @@ export default function PhotosManager() {
 
   // Props partagés pour tous les PhotoCards — stables entre renders
   const cardProps = {
-    selectMode,
     onDragStart:      onPhotoDragStart,
     onDragEnd:        onPhotoDragEnd,
     onDragOver:       onPhotoDragOverItem,
@@ -819,7 +789,6 @@ export default function PhotosManager() {
     onOpenLightbox:   openLightbox,
     onDownloadSingle: downloadSingle,
     onDeletePhoto:    handleDeletePhoto,
-    onCopyUrl:        handleCopyUrl,
   };
 
   const renderCard = (colId, photo, sibs, inFolder = false) => (
@@ -855,14 +824,6 @@ export default function PhotosManager() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={toggleSelectMode}
-              className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors
-                ${selectMode ? 'bg-blue-500 text-white' : btnGhost}`}
-            >
-              <Layers className="w-4 h-4" />
-              {selectMode ? `Selection (${totalSelected})` : 'Selectionner'}
-            </button>
             <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
@@ -1142,8 +1103,7 @@ export default function PhotosManager() {
                             >
                               {/* Checkbox dossier — sélectionne/désélectionne toutes les photos */}
                               <button
-                                onClick={e => { e.stopPropagation(); toggleFolderSelection(col.id, gPhotos); }}
-                                title={allSelected ? 'Désélectionner le dossier' : 'Sélectionner le dossier'}
+                                onClick={e => { e.stopPropagation(); toggleFolderSelection(col.id, gPhotos); }}                                title={allSelected ? 'Désélectionner le dossier' : 'Sélectionner le dossier'}
                                 className={[
                                   'flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
                                   allSelected
@@ -1277,13 +1237,6 @@ export default function PhotosManager() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={e => { e.stopPropagation(); handleCopyUrl(lightbox.photo.image_url); }}
-                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-                title="Copier l'URL"
-              >
-                <Copy className="w-4 h-4" />
-              </button>
               <button
                 onClick={e => { e.stopPropagation(); downloadSingle(lightbox.photo); }}
                 className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
