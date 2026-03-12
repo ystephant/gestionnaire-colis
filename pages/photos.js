@@ -463,7 +463,20 @@ export default function PhotosManager() {
       : [photo];
     if (!ptm.length) ptm = [photo];
     setDraggingPhoto({ photos: ptm });
-    e.dataTransfer.effectAllowed = 'move';
+
+    // DownloadURL : permet à Chrome/Edge de traiter le drag comme un vrai fichier
+    // vers les zones de dépôt externes (LeBonCoin, Vinted, etc.)
+    const primary = ptm[0];
+    const ext  = primary.image_url.includes('.png') ? 'png' : 'jpg';
+    const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+    const fname = makeFilename(primary, 1, ext);
+    try {
+      e.dataTransfer.setData('DownloadURL', `${mime}:${fname}:${primary.image_url}`);
+      e.dataTransfer.setData('text/uri-list', primary.image_url);
+      e.dataTransfer.setData('text/plain', primary.image_url);
+    } catch { /* ignore si le navigateur ne supporte pas */ }
+
+    e.dataTransfer.effectAllowed = 'copyMove';
   }, [selectMode, selectedPhotos, photos]);
 
   const onPhotoDragEnd = useCallback(() => {
