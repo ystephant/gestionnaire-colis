@@ -300,32 +300,68 @@ export default function PhotosManager() {
             });
           }
         }
+      } else {
+        // Clic simple sur le fond → désélectionner tout
+        setSelectedPhotos({});
       }
       setLasso(null);
     };
 
+    // Clic hors de toute colonne → désélectionner
+    const onGlobalDown = (e) => {
+      if (e.target.closest('[data-photoid],[data-folderid],button,a,input,[role="dialog"],[data-noclr]')) return;
+      setSelectedPhotos({});
+    };
+
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
+    document.addEventListener('mousedown', onGlobalDown);
     return () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mousedown', onGlobalDown);
     };
   }, []); // stable — utilise les refs
+
+  // ── Molette : replier/déplier les dossiers de la colonne ───
+  // Ref vers collapsedFolders + folderMode + photos pour les handlers non-passifs
+  const collapsedFoldersRef = useRef({});
+  const folderModeRef       = useRef(new Set());
+  const groupsRef           = useRef({});
+
+  useEffect(() => { collapsedFoldersRef.current = collapsedFolders; }, [collapsedFolders]);
+  useEffect(() => { folderModeRef.current       = folderMode;       }, [folderMode]);
+  // groupsRef mis à jour dans le render — on le met ici via photos
+  useEffect(() => {
+    const g = {};
+    COLUMNS.forEach(col => {
+      const colPhotos = photos[col.id] || [];
+      const grp = {};
+      colPhotos.forEach(p => { if (p.game_tag) { if (!grp[p.game_tag]) grp[p.game_tag] = []; grp[p.game_tag].push(p); } });
+      g[col.id] = grp;
+    });
+    groupsRef.current = g;
+  }, [photos]);
 
   const onColWheel = useCallback((e, colId) => {
     e.preventDefault();
     e.stopPropagation();
-    setColZoom(prev => {
-      const cur  = prev[colId] ?? 2;
-      const next = e.deltaY > 0
-        ? Math.min(cur + 1, 4)
-        : Math.max(cur - 1, 1);
-      return { ...prev, [colId]: next };
-    });
+    // Uniquement en vue dossiers
+    if (!folderModeRef.current.has(colId)) return;
+    const folderKeys = Object.keys(groupsRef.current[colId] || {});
+    if (!folderKeys.length) return;
+    if (e.deltaY > 0) {
+      // Scroll bas → replier tous les dossiers de cette colonne
+      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set(folderKeys) }));
+    } else {
+      // Scroll haut → déplier tous les dossiers de cette colonne
+      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set() }));
+    }
   }, []);
 
-  // Wheel non-passif — indispensable pour que preventDefault() bloque le scroll page
+  // Wheel non-passif — isLoggedIn en dep pour attendre que les colonnes soient rendues
   useEffect(() => {
+    if (!isLoggedIn) return;
     const handlers = {};
     COLUMNS.forEach(col => {
       const el = colRefs.current[col.id];
@@ -340,7 +376,7 @@ export default function PhotosManager() {
         if (el && handlers[col.id]) el.removeEventListener('wheel', handlers[col.id]);
       });
     };
-  }, [onColWheel]);
+  }, [onColWheel, isLoggedIn]);
 
   // Modale suppression / toast
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -586,11 +622,25 @@ export default function PhotosManager() {
     });
   }, []);
 
-  // Démarrage du lasso — mousedown sur le fond de la colonne (pas sur une photo/bouton)
+  // Coche sur un dossier : sélectionne TOUTES ses photos (ou désélectionne si tout est déjà sélectionné)
+  const toggleFolderSelection = useCallback((colId, folderPhotos) => {
+    setSelectMode(true);
+    setSelectedPhotos(prev => {
+      const s      = new Set(prev[colId] || []);
+      const allIds = folderPhotos.map(p => p.id);
+      const allSel = allIds.every(id => s.has(id));
+      if (allSel) { allIds.forEach(id => s.delete(id)); }  // tout coché → tout décocher
+      else        { allIds.forEach(id => s.add(id));    }  // partiel/vide → tout cocher
+      return { ...prev, [colId]: s };
+    });
+  }, []);
+
+  // Clic sur le fond (hors photo/dossier/bouton) → désélectionner tout
   const onZoneMouseDown = useCallback((e, colId) => {
     if (e.button !== 0) return;
     if (e.target.closest('[data-photoid],[data-folderid],button,a,input')) return;
     e.preventDefault();
+    setSelectedPhotos({});
     setLasso({ colId, startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY });
   }, []);
 
@@ -922,6 +972,7 @@ export default function PhotosManager() {
             return (
               <div
                 key={col.id}
+                data-kanban-col={col.id}
                 ref={el => { colRefs.current[col.id] = el; }}
                 onDragOver={e => onColumnDragOver(e, col.id)}
                 onDrop={e => onColumnDrop(e, col.id)}
@@ -980,15 +1031,6 @@ export default function PhotosManager() {
                           {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                         </button>
                       )}
-                      {selectMode && colPhotos.length > 0 && (
-                        <button
-                          onClick={() => selectAllInColumn(col.id)}
-                          title="Tout selectionner"
-                          className={`p-1 rounded-lg transition-colors ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white text-gray-500'}`}
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                      )}
                       {/* Bouton vue dossiers — toujours visible */}
                       <button
                         onClick={() => toggleFolderMode(col.id)}
@@ -1045,6 +1087,8 @@ export default function PhotosManager() {
                         const isFolderBeingDragged = draggingFolder?.tagLabel === tagLabel && draggingFolder?.fromColId === col.id;
                         const [bName, ts]    = tagLabel.split(' \u2022 ');
                         const gSel           = gPhotos.filter(p => selectedPhotos[col.id]?.has(p.id)).length;
+                        const allSelected    = gPhotos.length > 0 && gSel === gPhotos.length;
+                        const someSelected   = gSel > 0 && !allSelected;
                         const coverPhotos    = gPhotos.slice(0, 3);
 
                         return (
@@ -1069,6 +1113,22 @@ export default function PhotosManager() {
                               ].join(' ')}
                               onClick={() => toggleFolder(col.id, tagLabel)}
                             >
+                              {/* Checkbox dossier — sélectionne/désélectionne toutes les photos */}
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleFolderSelection(col.id, gPhotos); }}
+                                title={allSelected ? 'Désélectionner le dossier' : 'Sélectionner le dossier'}
+                                className={[
+                                  'flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
+                                  allSelected
+                                    ? 'bg-blue-500 border-blue-500'
+                                    : someSelected
+                                      ? 'bg-blue-200 border-blue-400'
+                                      : darkMode ? 'border-gray-500 bg-transparent hover:border-blue-400' : 'border-gray-300 bg-white hover:border-blue-400',
+                                ].join(' ')}
+                              >
+                                {allSelected && <Check className="w-3 h-3 text-white" />}
+                                {someSelected && <div className="w-2 h-0.5 bg-blue-500 rounded" />}
+                              </button>
                               {/* Poignée de drag */}
                               <div className="flex-shrink-0 flex flex-col gap-[3px] opacity-40 mr-0.5">
                                 <div className="flex gap-[3px]">
@@ -1108,6 +1168,28 @@ export default function PhotosManager() {
                                 <p className="text-xs font-bold truncate">{bName}</p>
                                 {ts && <p className={`text-[10px] ${subtext} truncate`}>{ts}</p>}
                               </div>
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setSelectMode(true);
+                                  const allSelected = gPhotos.every(p => selectedPhotos[col.id]?.has(p.id));
+                                  setSelectedPhotos(prev => {
+                                    const s = new Set(prev[col.id] || []);
+                                    if (allSelected) gPhotos.forEach(p => s.delete(p.id));
+                                    else gPhotos.forEach(p => s.add(p.id));
+                                    return { ...prev, [col.id]: s };
+                                  });
+                                }}
+                                title={gPhotos.every(p => selectedPhotos[col.id]?.has(p.id)) ? 'Désélectionner le dossier' : 'Sélectionner le dossier'}
+                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors
+                                  ${gPhotos.every(p => selectedPhotos[col.id]?.has(p.id))
+                                    ? 'bg-blue-500 border-blue-500'
+                                    : gPhotos.some(p => selectedPhotos[col.id]?.has(p.id))
+                                      ? 'bg-blue-300 border-blue-400'
+                                      : darkMode ? 'border-gray-500 hover:border-blue-400' : 'border-gray-300 hover:border-blue-400'}`}
+                              >
+                                {gPhotos.some(p => selectedPhotos[col.id]?.has(p.id)) && <Check className="w-3 h-3 text-white" />}
+                              </button>
                               <button
                                 onClick={e => { e.stopPropagation(); downloadMultiple(gPhotos); }}
                                 disabled={downloading}
