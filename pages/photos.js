@@ -6,7 +6,7 @@ import {
   Upload, Tag, Trash2, X, Check, ChevronDown, ChevronRight,
   Image as ImageIcon, Loader2, Sun, Moon, LogOut, ArrowLeft,
   Folder, FolderOpen, Layers, Download, ZoomIn,
-  RotateCcw, RotateCw, ChevronLeft,
+  RotateCcw, RotateCw, ChevronLeft, Copy,
 } from 'lucide-react';
 
 const supabase = createClient(
@@ -56,28 +56,52 @@ const formatTagTimestamp = () => {
 };
 const baseGameName = (tag) => (tag ? tag.split(' \u2022 ')[0] : '');
 
+// Horodatage court depuis le tag : "11/03 14:32" → "1103-1432"
+const shortTs = (tag) => {
+  if (!tag) return '';
+  const ts = tag.split(' \u2022 ')[1]; // "11/03 14:32"
+  if (!ts) return '';
+  return ts.replace('/', '').replace(' ', '-').replace(':', ''); // "1103-1432"
+};
+
+// Nom de fichier propre : Catan_1103-1432_1.jpg
+const makeFilename = (photo, index, ext) => {
+  if (photo.game_tag) {
+    const name = baseGameName(photo.game_tag).replace(/\s+/g, '_');
+    const ts   = shortTs(photo.game_tag);
+    return `${name}_${ts}_${index}.${ext}`;
+  }
+  return `photo_${index}.${ext}`;
+};
+
 // ─────────────────────────────────────────────────────────────
-// PhotoCard — defined OUTSIDE the main component so it is never
-// remounted on re-render (fixes all drag/lightbox/event bugs)
+// PhotoCard défini EN DEHORS du composant principal — ne jamais
+// redéfinir dans le render, sinon React démonte/remonte à chaque
+// render et casse le drag, la lightbox, etc.
 // ─────────────────────────────────────────────────────────────
 const PhotoCard = ({
   photo, columnId, siblingPhotos,
   selectMode, isSelected, isDragged, isOverItem,
   onDragStart, onDragEnd, onDragOver,
-  onToggleSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto,
+  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto, onCopyUrl,
 }) => {
   const rot = photo.rotation || 0;
   return (
     <div
+      data-photoid={photo.id}
+      data-colid={columnId}
       draggable
       onDragStart={e => onDragStart(e, photo, columnId)}
       onDragEnd={onDragEnd}
       onDragOver={e => onDragOver(e, photo.id)}
-      onClick={() => selectMode && onToggleSelect(columnId, photo.id)}
+      onClick={e => {
+        if (e.ctrlKey || e.metaKey) { e.stopPropagation(); onCtrlSelect(columnId, photo.id); return; }
+        if (selectMode) onToggleSelect(columnId, photo.id);
+      }}
       className={[
         'relative rounded-xl overflow-hidden transition-all duration-150 group',
-        isDragged  ? 'opacity-30 scale-95'          : 'opacity-100',
-        isOverItem ? 'ring-2 ring-blue-400'          : '',
+        isDragged  ? 'opacity-30 scale-95'               : 'opacity-100',
+        isOverItem ? 'ring-2 ring-blue-400'               : '',
         isSelected ? 'ring-2 ring-blue-500 scale-[0.96]' : '',
         selectMode ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
       ].join(' ')}
@@ -94,9 +118,10 @@ const PhotoCard = ({
         />
       </div>
 
-      {/* Hover actions — zoom, download, delete */}
+      {/* Hover actions */}
       {!selectMode && (
         <div className="absolute top-1.5 left-1.5 right-1.5 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+          {/* Zoom */}
           <button
             onClick={e => { e.stopPropagation(); onOpenLightbox(photo, siblingPhotos || [photo]); }}
             className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
@@ -105,6 +130,15 @@ const PhotoCard = ({
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
           <div className="flex gap-1">
+            {/* Copier URL — pour coller dans Vinted / LBC */}
+            <button
+              onClick={e => { e.stopPropagation(); onCopyUrl(photo.image_url); }}
+              className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+              title="Copier l'URL image (coller dans Vinted / LBC)"
+            >
+              <Copy className="w-3 h-3" />
+            </button>
+            {/* Download */}
             <button
               onClick={e => { e.stopPropagation(); onDownloadSingle(photo); }}
               className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
@@ -112,6 +146,7 @@ const PhotoCard = ({
             >
               <Download className="w-3.5 h-3.5" />
             </button>
+            {/* Delete */}
             <button
               onClick={e => { e.stopPropagation(); onDeletePhoto(photo); }}
               className="w-7 h-7 rounded-lg bg-red-500/80 hover:bg-red-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
@@ -133,18 +168,22 @@ const PhotoCard = ({
         </div>
       )}
 
-      {/* Tag badge */}
-      {photo.game_tag && (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm px-1.5 py-1">
-          <p className="text-white text-xs font-medium truncate">{photo.game_tag}</p>
-        </div>
-      )}
+      {/* Tag badge — NOM du jeu uniquement, timestamp en sous-texte */}
+      {photo.game_tag && (() => {
+        const [name, ts] = photo.game_tag.split(' \u2022 ');
+        return (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-1.5 pt-4 pb-1">
+            <p className="text-white text-xs font-semibold truncate leading-tight">{name}</p>
+            {ts && <p className="text-white/60 text-[9px] truncate leading-tight">{ts}</p>}
+          </div>
+        );
+      })()}
     </div>
   );
 };
 
 // ─────────────────────────────────────────────────────────────
-// Main component
+// Composant principal
 // ─────────────────────────────────────────────────────────────
 export default function PhotosManager() {
   const router = useRouter();
@@ -158,41 +197,156 @@ export default function PhotosManager() {
     en_vente: [], en_attente_reception: [], vendu: [],
   });
 
-  // Upload
+  // Upload depuis le bureau
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [uploading, setUploading]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef(null);
 
-  // Drag between columns
+  // Drag de photos entre colonnes
   const [draggingPhoto, setDraggingPhoto]     = useState(null);
   const [dragOverColumn, setDragOverColumn]   = useState(null);
   const [dragOverPhotoId, setDragOverPhotoId] = useState(null);
 
-  // Global multi-select
+  // Drag de dossier entier entre colonnes
+  const [draggingFolder, setDraggingFolder] = useState(null); // { tagLabel, fromColId, folderPhotos }
+  const [dragOverFolderCol, setDragOverFolderCol] = useState(null);
+
+  // Sélection multiple
   const [selectMode, setSelectMode]         = useState(false);
   const [selectedPhotos, setSelectedPhotos] = useState({});
 
-  // Tag
+  // Tagging
   const [gamesList, setGamesList]             = useState([]);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [tagSearch, setTagSearch]             = useState('');
 
-  // Folder mode
-  const [folderMode, setFolderMode]             = useState(new Set());
+  // Vue dossiers — active par défaut sur toutes les colonnes
+  const [folderMode, setFolderMode]             = useState(new Set(COLUMNS.map(c => c.id)));
   const [collapsedFolders, setCollapsedFolders] = useState({});
 
   // Lightbox
   const [lightbox, setLightbox] = useState(null);
 
-  // Download state (for button feedback only)
+  // Download
   const [downloading, setDownloading] = useState(false);
 
-  // Confirm delete / toast
-  const [pendingDelete, setPendingDelete] = useState(null); // { photos: [] }
+  // Zoom molette par colonne — 1=très grand, 4=très petit
+  const [colZoom, setColZoom] = useState(() => {
+    const z = {};
+    COLUMNS.forEach(c => { z[c.id] = 2; });
+    return z;
+  });
+  const colRefs   = useRef({});
+  const photosRef = useRef({});   // miroir de photos pour les handlers globaux
+  const lassoRef  = useRef(null); // miroir de lasso pour les handlers globaux
+
+  // Lasso — rectangle de sélection dessiné à la souris
+  const [lasso, setLasso] = useState(null);
+  // { colId, startX, startY, curX, curY }
+
+  // Sync refs
+  useEffect(() => { photosRef.current = photos; }, [photos]);
+  useEffect(() => { lassoRef.current  = lasso;  }, [lasso]);
+
+  // Handlers globaux mousemove / mouseup pour le lasso
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!lassoRef.current) return;
+      setLasso(prev => prev ? { ...prev, curX: e.clientX, curY: e.clientY } : null);
+    };
+
+    const onUp = () => {
+      const l = lassoRef.current;
+      if (!l) return;
+
+      const minX = Math.min(l.startX, l.curX);
+      const maxX = Math.max(l.startX, l.curX);
+      const minY = Math.min(l.startY, l.curY);
+      const maxY = Math.max(l.startY, l.curY);
+
+      // Seuil minimum pour ne pas déclencher sur un simple clic
+      if (maxX - minX > 6 || maxY - minY > 6) {
+        const colEl = colRefs.current[l.colId];
+        if (colEl) {
+          const hitPhotoIds = [];
+          colEl.querySelectorAll('[data-photoid]').forEach(el => {
+            const r = el.getBoundingClientRect();
+            if (r.left < maxX && r.right > minX && r.top < maxY && r.bottom > minY) {
+              hitPhotoIds.push(el.dataset.photoid);
+            }
+          });
+
+          // En vue dossiers : sélectionner aussi les dossiers entiers
+          const hitFolderTags = [];
+          colEl.querySelectorAll('[data-folderid]').forEach(el => {
+            const r = el.getBoundingClientRect();
+            if (r.left < maxX && r.right > minX && r.top < maxY && r.bottom > minY) {
+              hitFolderTags.push(el.dataset.folderid);
+            }
+          });
+
+          const colPhotos = photosRef.current[l.colId] || [];
+          hitFolderTags.forEach(tag => {
+            colPhotos.filter(p => p.game_tag === tag).forEach(p => hitPhotoIds.push(p.id));
+          });
+
+          if (hitPhotoIds.length > 0) {
+            setSelectMode(true);
+            setSelectedPhotos(prev => {
+              const s = new Set(prev[l.colId] || []);
+              hitPhotoIds.forEach(id => s.add(id));
+              return { ...prev, [l.colId]: s };
+            });
+          }
+        }
+      }
+      setLasso(null);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, []); // stable — utilise les refs
+
+  const onColWheel = useCallback((e, colId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setColZoom(prev => {
+      const cur  = prev[colId] ?? 2;
+      const next = e.deltaY > 0
+        ? Math.min(cur + 1, 4)
+        : Math.max(cur - 1, 1);
+      return { ...prev, [colId]: next };
+    });
+  }, []);
+
+  // Wheel non-passif — indispensable pour que preventDefault() bloque le scroll page
+  useEffect(() => {
+    const handlers = {};
+    COLUMNS.forEach(col => {
+      const el = colRefs.current[col.id];
+      if (!el) return;
+      const h = (e) => onColWheel(e, col.id);
+      handlers[col.id] = h;
+      el.addEventListener('wheel', h, { passive: false });
+    });
+    return () => {
+      COLUMNS.forEach(col => {
+        const el = colRefs.current[col.id];
+        if (el && handlers[col.id]) el.removeEventListener('wheel', handlers[col.id]);
+      });
+    };
+  }, [onColWheel]);
+
+  // Modale suppression / toast
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [toast, setToast]                 = useState(null);
 
-  // ── Auth ──────────────────────────────────────────────────
+  // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
     const u = localStorage.getItem('username');
     const p = localStorage.getItem('password');
@@ -228,12 +382,12 @@ export default function PhotosManager() {
     } catch (e) { console.error(e); }
   };
 
-  const showToast = (message, type = 'default') => {
+  const showToast = useCallback((message, type = 'default') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
-  };
+  }, []);
 
-  // ── Upload ────────────────────────────────────────────────
+  // ── Upload ───────────────────────────────────────────────────
   const uploadToCloudinary = async (file) => {
     const fd = new FormData();
     fd.append('file', file);
@@ -272,10 +426,16 @@ export default function PhotosManager() {
 
   const onDropZoneDragOver  = (e) => { e.preventDefault(); setIsDraggingFile(true); };
   const onDropZoneDragLeave = ()  => setIsDraggingFile(false);
-  const onDropZoneDrop      = (e) => { e.preventDefault(); setIsDraggingFile(false); handleFileDrop(e.dataTransfer.files); };
+  const onDropZoneDrop      = (e) => {
+    e.preventDefault(); setIsDraggingFile(false);
+    // Ne pas déclencher si c'est un drag interne (photo ou dossier)
+    if (draggingPhoto || draggingFolder) return;
+    handleFileDrop(e.dataTransfer.files);
+  };
 
-  // ── Drag between columns ──────────────────────────────────
+  // ── Drag de photos entre colonnes ───────────────────────────
   const onPhotoDragStart = useCallback((e, photo, fromColumn) => {
+    e.stopPropagation();
     const sel = selectedPhotos[fromColumn];
     const isInSel = sel && sel.size > 0 && sel.has(photo.id);
     let ptm = (selectMode && isInSel)
@@ -290,16 +450,48 @@ export default function PhotosManager() {
     setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
   }, []);
 
-  const onColumnDragOver    = (e, colId)   => { e.preventDefault(); setDragOverColumn(colId); };
-  const onPhotoDragOverItem = useCallback((e, photoId) => { e.preventDefault(); setDragOverPhotoId(photoId); }, []);
+  const onPhotoDragOverItem = useCallback((e, photoId) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragOverPhotoId(photoId);
+  }, []);
+
+  // ── Drag de DOSSIER entier entre colonnes ───────────────────
+  const onFolderDragStart = useCallback((e, tagLabel, fromColId, folderPhotos) => {
+    e.stopPropagation();
+    setDraggingFolder({ tagLabel, fromColId, folderPhotos });
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const onFolderDragEnd = useCallback(() => {
+    setDraggingFolder(null); setDragOverFolderCol(null);
+  }, []);
+
+  // ── Drop sur une colonne (photo OU dossier) ─────────────────
+  const onColumnDragOver = (e, colId) => {
+    e.preventDefault();
+    if (draggingFolder) setDragOverFolderCol(colId);
+    else setDragOverColumn(colId);
+  };
 
   const onColumnDrop = async (e, toColumn) => {
     e.preventDefault();
+
+    // Priorité : drag de dossier
+    if (draggingFolder) {
+      const { tagLabel, fromColId, folderPhotos } = draggingFolder;
+      setDraggingFolder(null); setDragOverFolderCol(null);
+      if (fromColId === toColumn) return;
+      if (toColumn === 'vendu') { setPendingDelete({ photos: folderPhotos }); return; }
+      await movePhotos(folderPhotos, toColumn, null);
+      showToast(`Dossier "${baseGameName(tagLabel)}" déplacé`, 'success');
+      return;
+    }
+
+    // Drag de photo(s)
     if (!draggingPhoto) return;
     const { photos: ptm } = draggingPhoto;
     const capturedBeforeId = dragOverPhotoId;
     setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
-    // Dropping into "vendu" = delete confirmation
     if (toColumn === 'vendu') { setPendingDelete({ photos: ptm }); return; }
     await movePhotos(ptm, toColumn, capturedBeforeId);
   };
@@ -325,11 +517,10 @@ export default function PhotosManager() {
       await supabase.from('sale_photos')
         .update({ status: toColumn, updated_at: new Date().toISOString() })
         .in('id', ids);
-      if (ids.length > 1) showToast(`${ids.length} photos deplacees`, 'success');
     } catch { showToast('Erreur deplacement', 'error'); loadPhotos(); }
   };
 
-  // ── Delete (from any column) ──────────────────────────────
+  // ── Suppression ──────────────────────────────────────────────
   const handleDeletePhoto = useCallback((photo) => {
     setPendingDelete({ photos: [photo] });
   }, []);
@@ -345,7 +536,6 @@ export default function PhotosManager() {
       return next;
     });
     setSelectedPhotos({});
-    // Close lightbox if deleted photo was open
     if (lightbox && ids.includes(lightbox.photo.id)) setLightbox(null);
     try {
       await Promise.all(toDelete.map(ph =>
@@ -357,21 +547,27 @@ export default function PhotosManager() {
       ));
       await supabase.from('sale_photos').delete().in('id', ids);
       showToast(
-        ids.length > 1
-          ? `${ids.length} photos supprimees definitivement`
-          : 'Photo supprimee definitivement',
+        ids.length > 1 ? `${ids.length} photos supprimees` : 'Photo supprimee',
         'success'
       );
     } catch { showToast('Erreur suppression', 'error'); loadPhotos(); }
   };
 
-  // Delete selected (bulk)
   const deleteSelected = () => {
     const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
     if (all.length) setPendingDelete({ photos: all });
   };
 
-  // ── Global select helpers ─────────────────────────────────
+  // ── Copier URL (pour Vinted / LBC) ───────────────────────────
+  const handleCopyUrl = useCallback((url) => {
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('URL copiée ! Colle-la dans le champ image de Vinted / LBC', 'success');
+    }).catch(() => {
+      showToast('Impossible de copier (HTTPS requis)', 'error');
+    });
+  }, [showToast]);
+
+  // ── Sélection multiple ───────────────────────────────────────
   const toggleSelectMode  = () => { setSelectMode(p => !p); setSelectedPhotos({}); setShowTagDropdown(false); };
   const toggleSelectPhoto = useCallback((colId, photoId) => {
     setSelectedPhotos(prev => {
@@ -380,7 +576,27 @@ export default function PhotosManager() {
       return { ...prev, [colId]: s };
     });
   }, []);
-  const selectAllInColumn = (colId) => setSelectedPhotos(prev => ({ ...prev, [colId]: new Set((photos[colId] || []).map(p => p.id)) }));
+  // Ctrl+clic : sélectionne sans avoir besoin d'activer le mode sélection
+  const onCtrlSelect = useCallback((colId, photoId) => {
+    setSelectMode(true);
+    setSelectedPhotos(prev => {
+      const s = new Set(prev[colId] || []);
+      if (s.has(photoId)) s.delete(photoId); else s.add(photoId);
+      return { ...prev, [colId]: s };
+    });
+  }, []);
+
+  // Démarrage du lasso — mousedown sur le fond de la colonne (pas sur une photo/bouton)
+  const onZoneMouseDown = useCallback((e, colId) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('[data-photoid],[data-folderid],button,a,input')) return;
+    e.preventDefault();
+    setLasso({ colId, startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY });
+  }, []);
+
+  const selectAllInColumn = (colId) => setSelectedPhotos(prev => ({
+    ...prev, [colId]: new Set((photos[colId] || []).map(p => p.id))
+  }));
   const selectAll = () => {
     const n = {};
     COLUMNS.forEach(col => { n[col.id] = new Set((photos[col.id] || []).map(p => p.id)); });
@@ -388,7 +604,7 @@ export default function PhotosManager() {
   };
   const totalSelected = Object.values(selectedPhotos).reduce((acc, s) => acc + (s?.size || 0), 0);
 
-  // ── Assign tag ────────────────────────────────────────────
+  // ── Tagging ──────────────────────────────────────────────────
   const assignTag = async (gameName) => {
     if (totalSelected === 0) return;
     const tagLabel = `${gameName} \u2022 ${formatTagTimestamp()}`;
@@ -409,16 +625,19 @@ export default function PhotosManager() {
       await supabase.from('sale_photos')
         .update({ game_tag: tagLabel, updated_at: new Date().toISOString() })
         .in('id', allIds);
-      showToast(`Tag "${gameName}" applique a ${allIds.length} photo${allIds.length > 1 ? 's' : ''}`, 'success');
+      showToast(`"${gameName}" taggué sur ${allIds.length} photo${allIds.length > 1 ? 's' : ''}`, 'success');
     } catch { showToast('Erreur tag', 'error'); loadPhotos(); }
   };
 
-  // ── Folder helpers ────────────────────────────────────────
+  // ── Dossiers ─────────────────────────────────────────────────
   const toggleFolderMode = (colId) => setFolderMode(prev => {
-    const n = new Set(prev); if (n.has(colId)) n.delete(colId); else n.add(colId); return n;
+    const n = new Set(prev);
+    if (n.has(colId)) n.delete(colId); else n.add(colId);
+    return n;
   });
   const toggleFolder = (colId, tagLabel) => setCollapsedFolders(prev => {
-    const s = new Set(prev[colId] || []); if (s.has(tagLabel)) s.delete(tagLabel); else s.add(tagLabel);
+    const s = new Set(prev[colId] || []);
+    if (s.has(tagLabel)) s.delete(tagLabel); else s.add(tagLabel);
     return { ...prev, [colId]: s };
   });
   const groupByTag = (colPhotos) => {
@@ -430,21 +649,18 @@ export default function PhotosManager() {
     return { groups, ungrouped };
   };
 
-  // ── Lightbox ──────────────────────────────────────────────
+  // ── Lightbox ─────────────────────────────────────────────────
   const openLightbox = useCallback((photo, siblingPhotos) => {
     const index = siblingPhotos.findIndex(p => p.id === photo.id);
     setLightbox({ photo, rotation: photo.rotation || 0, siblingPhotos, index });
   }, []);
-
   const closeLightbox = () => setLightbox(null);
-
   const lightboxNav = (dir) => {
     if (!lightbox) return;
     const idx = (lightbox.index + dir + lightbox.siblingPhotos.length) % lightbox.siblingPhotos.length;
-    const ph  = lightbox.siblingPhotos[idx];
+    const ph = lightbox.siblingPhotos[idx];
     setLightbox(prev => ({ ...prev, photo: ph, rotation: ph.rotation || 0, index: idx }));
   };
-
   const rotateLightbox = async (dir) => {
     const newRot = ((lightbox.rotation + dir) + 360) % 360;
     setLightbox(prev => ({ ...prev, rotation: newRot }));
@@ -460,7 +676,7 @@ export default function PhotosManager() {
     } catch { showToast('Erreur rotation', 'error'); }
   };
 
-  // ── Download (no JSZip — sequential individual downloads) ──
+  // ── Téléchargement ───────────────────────────────────────────
   const triggerDownload = (url, filename) => {
     const a = document.createElement('a');
     a.href = url; a.download = filename;
@@ -472,49 +688,40 @@ export default function PhotosManager() {
       const res  = await fetch(photo.image_url);
       const blob = await res.blob();
       const ext  = blob.type.includes('png') ? 'png' : 'jpg';
-      const name = photo.game_tag
-        ? `${baseGameName(photo.game_tag)}_${photo.id}.${ext}`
-        : `photo_${photo.id}.${ext}`;
-      const url = URL.createObjectURL(blob);
-      triggerDownload(url, name);
+      const url  = URL.createObjectURL(blob);
+      triggerDownload(url, makeFilename(photo, 1, ext));
       URL.revokeObjectURL(url);
     } catch { showToast('Erreur telechargement', 'error'); }
   }, []);
 
-  // Download multiple = sequential individual downloads with a small delay
-  const downloadMultiple = async (photosToDownload, label) => {
-    if (!photosToDownload.length) return;
-    if (photosToDownload.length === 1) { await downloadSingle(photosToDownload[0]); return; }
+  const downloadMultiple = async (photosArr) => {
+    if (!photosArr.length) return;
+    if (photosArr.length === 1) { await downloadSingle(photosArr[0]); return; }
     setDownloading(true);
-    let count = 0;
-    for (const ph of photosToDownload) {
+    for (let i = 0; i < photosArr.length; i++) {
+      const ph = photosArr[i];
       try {
         const res  = await fetch(ph.image_url);
         const blob = await res.blob();
         const ext  = blob.type.includes('png') ? 'png' : 'jpg';
-        const name = ph.game_tag
-          ? `${baseGameName(ph.game_tag)}_${++count}.${ext}`
-          : `${label}_${++count}.${ext}`;
-        const url = URL.createObjectURL(blob);
-        triggerDownload(url, name);
+        const url  = URL.createObjectURL(blob);
+        triggerDownload(url, makeFilename(ph, i + 1, ext));
         URL.revokeObjectURL(url);
-        // Small delay so browsers don't block multiple rapid downloads
         await new Promise(r => setTimeout(r, 300));
-      } catch { /* skip failed */ }
+      } catch { /* skip */ }
     }
     setDownloading(false);
-    showToast(`${photosToDownload.length} photos telechargees`, 'success');
+    showToast(`${photosArr.length} photos telechargees`, 'success');
   };
-
   const downloadSelected = () => {
     const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
-    downloadMultiple(all, 'selection');
+    downloadMultiple(all);
   };
 
   const filteredGames = gamesList.filter(g => g.toLowerCase().includes(tagSearch.toLowerCase()));
   const handleLogout  = () => { localStorage.removeItem('username'); localStorage.removeItem('password'); router.push('/'); };
 
-  // ── Render ────────────────────────────────────────────────
+  // ── Rendu ────────────────────────────────────────────────────
   if (loading) return (
     <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
       <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -531,7 +738,37 @@ export default function PhotosManager() {
   const btnGhost = darkMode
     ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
     : 'bg-gray-100 hover:bg-gray-200 text-gray-700';
-  const divider  = darkMode ? 'bg-gray-600' : 'bg-gray-300';
+  const divider = darkMode ? 'bg-gray-600' : 'bg-gray-300';
+
+  // Props partagés pour tous les PhotoCards — stables entre renders
+  const cardProps = {
+    selectMode,
+    onDragStart:      onPhotoDragStart,
+    onDragEnd:        onPhotoDragEnd,
+    onDragOver:       onPhotoDragOverItem,
+    onToggleSelect:   toggleSelectPhoto,
+    onCtrlSelect:     onCtrlSelect,
+    onOpenLightbox:   openLightbox,
+    onDownloadSingle: downloadSingle,
+    onDeletePhoto:    handleDeletePhoto,
+    onCopyUrl:        handleCopyUrl,
+  };
+
+  const renderCard = (colId, photo, sibs) => (
+    <PhotoCard
+      key={photo.id}
+      photo={photo}
+      columnId={colId}
+      siblingPhotos={sibs}
+      isSelected={!!selectedPhotos[colId]?.has(photo.id)}
+      isDragged={!!draggingPhoto?.photos?.some(p => p.id === photo.id)}
+      isOverItem={dragOverPhotoId === photo.id}
+      {...cardProps}
+    />
+  );
+
+  // grid-cols selon zoom (1–4)
+  const zoomGridCls = (z) => ['grid-cols-1','grid-cols-2','grid-cols-3','grid-cols-4'][z - 1] || 'grid-cols-2';
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-800'}`}>
@@ -567,13 +804,13 @@ export default function PhotosManager() {
         </div>
       </div>
 
-      {/* ── Floating selection toolbar ── */}
+      {/* ── Barre flottante de sélection ── */}
       {selectMode && totalSelected > 0 && (
         <div className="sticky top-[57px] z-20 flex justify-center px-4 py-2 pointer-events-none">
           <div className={`pointer-events-auto flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-2xl shadow-2xl border ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
             <span className={`text-sm font-medium ${subtext}`}>{totalSelected} photo{totalSelected > 1 ? 's' : ''}</span>
             <div className={`w-px h-4 ${divider}`} />
-            <button onClick={selectAll}   className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Tout</button>
+            <button onClick={selectAll}              className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Tout</button>
             <button onClick={() => setSelectedPhotos({})} className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Aucun</button>
             <div className={`w-px h-4 ${divider}`} />
             <button
@@ -590,43 +827,33 @@ export default function PhotosManager() {
               <Trash2 className="w-3.5 h-3.5" /> Supprimer
             </button>
             <div className={`w-px h-4 ${divider}`} />
-            {/* Tag dropdown */}
+            {/* Dropdown tag */}
             <div className="relative">
               <button
                 onClick={() => setShowTagDropdown(p => !p)}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
               >
-                <Tag className="w-3.5 h-3.5" />
-                Tagger
-                <ChevronDown className="w-3 h-3" />
+                <Tag className="w-3.5 h-3.5" /> Tagger <ChevronDown className="w-3 h-3" />
               </button>
               {showTagDropdown && (
                 <div className={`absolute top-full mt-1 right-0 w-64 rounded-xl border shadow-2xl overflow-hidden z-50 ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div className={`p-2 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
                     <input
-                      autoFocus
-                      type="text"
-                      placeholder="Rechercher un jeu..."
-                      value={tagSearch}
-                      onChange={e => setTagSearch(e.target.value)}
+                      autoFocus type="text" placeholder="Rechercher un jeu..."
+                      value={tagSearch} onChange={e => setTagSearch(e.target.value)}
                       className={`w-full text-sm px-3 py-1.5 rounded-lg border outline-none ${inputCls}`}
                     />
                   </div>
                   <div className="max-h-52 overflow-y-auto">
-                    {gamesList.length === 0 && (
-                      <p className={`text-sm px-4 py-3 ${subtext}`}>Chargement des jeux...</p>
-                    )}
-                    {gamesList.length > 0 && filteredGames.length === 0 && (
-                      <p className={`text-sm px-4 py-3 ${subtext}`}>Aucun jeu trouve</p>
-                    )}
+                    {gamesList.length === 0 && <p className={`text-sm px-4 py-3 ${subtext}`}>Chargement des jeux...</p>}
+                    {gamesList.length > 0 && filteredGames.length === 0 && <p className={`text-sm px-4 py-3 ${subtext}`}>Aucun jeu trouve</p>}
                     {filteredGames.map(game => (
                       <button
-                        key={game}
-                        onClick={() => assignTag(game)}
-                        className={`w-full text-left text-sm px-4 py-2 transition-colors ${darkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-blue-50 text-gray-700'}`}
+                        key={game} onClick={() => assignTag(game)}
+                        className={`w-full text-left text-sm px-4 py-2.5 transition-colors border-b last:border-0 ${darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-blue-50 text-gray-700 border-gray-100'}`}
                       >
-                        <span className="font-medium">{game}</span>
-                        <span className={`ml-2 text-xs ${subtext}`}>\u2022 {formatTagTimestamp()}</span>
+                        <span className="font-semibold">{game}</span>
+                        <span className={`block text-xs mt-0.5 ${subtext}`}>{formatTagTimestamp()}</span>
                       </button>
                     ))}
                   </div>
@@ -639,35 +866,34 @@ export default function PhotosManager() {
 
       <div className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
 
-        {/* ── Upload zone ── */}
+        {/* ── Zone d'upload ── */}
         <div
           onDragOver={onDropZoneDragOver}
           onDragLeave={onDropZoneDragLeave}
           onDrop={onDropZoneDrop}
           onClick={() => !uploading && fileInputRef.current?.click()}
           className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200
-            ${isDraggingFile
+            ${isDraggingFile && !draggingPhoto && !draggingFolder
               ? 'border-blue-400 bg-blue-50 scale-[1.01]'
               : darkMode
                 ? 'border-gray-600 hover:border-blue-500 hover:bg-gray-800/50'
                 : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/30'
             }`}
         >
-          <input ref={fileInputRef} type="file" multiple accept="image/*" className="hidden" onChange={e => handleFileDrop(e.target.files)} />
+          <input ref={fileInputRef} type="file" multiple accept="image/*" className="hidden"
+            onChange={e => handleFileDrop(e.target.files)} />
           {uploading ? (
             <div className="space-y-3">
               <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto" />
-              <p className={`text-sm font-medium ${subtext}`}>Upload en cours... {uploadProgress}%</p>
+              <p className={`text-sm font-medium ${subtext}`}>Upload en cours… {uploadProgress}%</p>
               <div className={`w-64 mx-auto rounded-full h-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
                 <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
               </div>
             </div>
           ) : (
             <div className="space-y-2">
-              <Upload className={`w-10 h-10 mx-auto ${isDraggingFile ? 'text-blue-500' : subtext}`} />
-              <p className={`font-semibold ${isDraggingFile ? 'text-blue-500' : textMain}`}>
-                {isDraggingFile ? 'Relacher pour uploader' : 'Glisser vos photos ici'}
-              </p>
+              <Upload className={`w-10 h-10 mx-auto ${subtext}`} />
+              <p className={`font-semibold ${textMain}`}>Glisser vos photos depuis le bureau ici</p>
               <p className={`text-sm ${subtext}`}>ou cliquer pour selectionner — JPG, PNG, WEBP</p>
             </div>
           )}
@@ -676,59 +902,41 @@ export default function PhotosManager() {
         {/* ── Kanban ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {COLUMNS.map(col => {
-            const colPhotos = photos[col.id] || [];
-            const isOver    = dragOverColumn === col.id;
-            const isFolded  = folderMode.has(col.id);
-            const selCount  = selectedPhotos[col.id]?.size || 0;
-            const hasTagged = colPhotos.some(p => p.game_tag);
+            const colPhotos  = photos[col.id] || [];
+            const isPhotoOver  = dragOverColumn === col.id;
+            const isFolderOver = dragOverFolderCol === col.id;
+            const isOver     = isPhotoOver || isFolderOver;
+            const isFolded   = folderMode.has(col.id);
+            const selCount   = selectedPhotos[col.id]?.size || 0;
+            const hasTagged  = colPhotos.some(p => p.game_tag);
             const { groups, ungrouped } = groupByTag(colPhotos);
+            const zoom       = colZoom[col.id] ?? 2;
+            const gridCls    = zoomGridCls(zoom);
 
-            const colBgStyle     = darkMode ? { backgroundColor: isOver ? col.darkRgba.replace('0.12','0.22').replace('0.13','0.23') : col.darkRgba } : {};
-            const colBorderStyle = darkMode ? { borderColor: col.darkBorderRgba } : {};
+            const colBgStyle     = darkMode ? { backgroundColor: isOver
+              ? col.darkRgba.replace('0.12','0.25').replace('0.13','0.25')
+              : col.darkRgba } : {};
+            const colBorderStyle = darkMode ? { borderColor: isOver ? '#60a5fa' : col.darkBorderRgba } : {};
             const headerStyle    = darkMode ? { backgroundColor: col.darkHeaderRgba } : {};
-
-            // Shared props for all PhotoCards in this column
-            const cardProps = {
-              selectMode,
-              onDragStart:      onPhotoDragStart,
-              onDragEnd:        onPhotoDragEnd,
-              onDragOver:       onPhotoDragOverItem,
-              onToggleSelect:   toggleSelectPhoto,
-              onOpenLightbox:   openLightbox,
-              onDownloadSingle: downloadSingle,
-              onDeletePhoto:    handleDeletePhoto,
-            };
-
-            const renderCard = (photo, sibs) => (
-              <PhotoCard
-                key={photo.id}
-                photo={photo}
-                columnId={col.id}
-                siblingPhotos={sibs}
-                isSelected={!!selectedPhotos[col.id]?.has(photo.id)}
-                isDragged={!!draggingPhoto?.photos?.some(p => p.id === photo.id)}
-                isOverItem={dragOverPhotoId === photo.id}
-                {...cardProps}
-              />
-            );
 
             return (
               <div
                 key={col.id}
+                ref={el => { colRefs.current[col.id] = el; }}
                 onDragOver={e => onColumnDragOver(e, col.id)}
                 onDrop={e => onColumnDrop(e, col.id)}
-                onDragLeave={() => setDragOverColumn(null)}
+                onDragLeave={() => { setDragOverColumn(null); setDragOverFolderCol(null); }}
                 className={[
                   'flex flex-col rounded-2xl border-2 transition-all duration-150',
                   isOver && !darkMode ? 'scale-[1.01] border-blue-300' : '',
                   !darkMode ? `${col.lightBg} ${isOver ? 'border-blue-300' : col.lightBorder}` : '',
-                  isOver && darkMode ? 'scale-[1.01]' : '',
+                  isFolderOver ? 'ring-2 ring-blue-400 ring-offset-1' : '',
                 ].join(' ')}
-                style={{ minHeight: '420px', ...colBgStyle, ...(darkMode ? colBorderStyle : {}) }}
+                style={{ minHeight: '420px', position: 'relative', ...colBgStyle, ...(darkMode ? colBorderStyle : {}) }}
               >
-                {/* Column header */}
+                {/* En-tête de colonne */}
                 <div
-                  className={`px-3 py-2.5 rounded-t-2xl border-b ${darkMode ? 'border-white/10' : col.lightBorder.replace('border-','border-b-')} ${!darkMode ? col.lightHeader : ''}`}
+                  className={`px-3 py-2.5 rounded-t-2xl border-b ${darkMode ? 'border-white/10' : col.lightBorder} ${!darkMode ? col.lightHeader : ''}`}
                   style={darkMode ? headerStyle : {}}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -738,11 +946,33 @@ export default function PhotosManager() {
                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-white/70 text-gray-600'}`}>
                         {colPhotos.length}{selCount > 0 && <span className="text-blue-400 ml-0.5">·{selCount}</span>}
                       </span>
+                      {/* Indicateur + boutons de zoom */}
+                      <div className="flex items-center gap-0.5 flex-shrink-0 ml-1">
+                        <button
+                          onClick={() => setColZoom(prev => ({ ...prev, [col.id]: Math.min((prev[col.id] ?? 2) + 1, 4) }))}
+                          title="Photos plus petites"
+                          disabled={(colZoom[col.id] ?? 2) >= 4}
+                          className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold transition-colors
+                            ${(colZoom[col.id] ?? 2) >= 4
+                              ? 'opacity-30 cursor-not-allowed'
+                              : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white/80 text-gray-500'}`}
+                        >−</button>
+                        <span className={`text-[9px] font-mono w-3 text-center select-none ${subtext}`}>{colZoom[col.id] ?? 2}</span>
+                        <button
+                          onClick={() => setColZoom(prev => ({ ...prev, [col.id]: Math.max((prev[col.id] ?? 2) - 1, 1) }))}
+                          title="Photos plus grandes"
+                          disabled={(colZoom[col.id] ?? 2) <= 1}
+                          className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold transition-colors
+                            ${(colZoom[col.id] ?? 2) <= 1
+                              ? 'opacity-30 cursor-not-allowed'
+                              : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white/80 text-gray-500'}`}
+                        >+</button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {colPhotos.length > 0 && (
                         <button
-                          onClick={() => downloadMultiple(colPhotos, col.label)}
+                          onClick={() => downloadMultiple(colPhotos)}
                           disabled={downloading}
                           title="Telecharger toute la colonne"
                           className={`p-1 rounded-lg transition-colors ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white text-gray-500'}`}
@@ -759,67 +989,147 @@ export default function PhotosManager() {
                           <Check className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {hasTagged && (
-                        <button
-                          onClick={() => toggleFolderMode(col.id)}
-                          title={isFolded ? 'Vue grille' : 'Vue dossiers'}
-                          className={`p-1 rounded-lg transition-colors ${isFolded ? 'text-blue-400 bg-blue-500/20' : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white text-gray-500'}`}
-                        >
-                          {isFolded ? <FolderOpen className="w-3.5 h-3.5" /> : <Folder className="w-3.5 h-3.5" />}
-                        </button>
-                      )}
+                      {/* Bouton vue dossiers — toujours visible */}
+                      <button
+                        onClick={() => toggleFolderMode(col.id)}
+                        title={isFolded ? 'Vue grille' : 'Vue dossiers'}
+                        className={`p-1 rounded-lg transition-colors ${isFolded
+                          ? 'text-amber-500 bg-amber-500/15 hover:bg-amber-500/25'
+                          : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white text-gray-500'}`}
+                      >
+                        {isFolded ? <FolderOpen className="w-3.5 h-3.5" /> : <Folder className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Photos area */}
-                <div className="flex-1 p-2 space-y-2 overflow-y-auto">
+                {/* ── Lasso overlay ── */}
+                {lasso && lasso.colId === col.id && (() => {
+                  const colEl  = colRefs.current[col.id];
+                  const rect   = colEl ? colEl.getBoundingClientRect() : { left: 0, top: 0 };
+                  const x      = Math.min(lasso.startX, lasso.curX) - rect.left;
+                  const y      = Math.min(lasso.startY, lasso.curY) - rect.top;
+                  const w      = Math.abs(lasso.curX - lasso.startX);
+                  const h      = Math.abs(lasso.curY - lasso.startY);
+                  return (
+                    <div
+                      className="absolute pointer-events-none z-20 rounded border border-blue-400 bg-blue-400/15"
+                      style={{ left: x, top: y, width: w, height: h }}
+                    />
+                  );
+                })()}
+
+                {/* Zone de photos */}
+                <div
+                  className="flex-1 p-2 space-y-2 overflow-y-auto select-none"
+                  onMouseDown={e => onZoneMouseDown(e, col.id)}
+                >
                   {colPhotos.length === 0 ? (
-                    <div className={`flex flex-col items-center justify-center py-10 gap-2 rounded-xl border-2 border-dashed ${darkMode ? 'border-white/10' : 'border-gray-300'}`}>
-                      <ImageIcon className={`w-8 h-8 ${subtext}`} />
-                      <p className={`text-xs ${subtext}`}>Deposer ici</p>
+                    <div className={[
+                      'flex flex-col items-center justify-center py-10 gap-2 rounded-xl border-2 border-dashed transition-colors',
+                      isFolderOver ? 'border-blue-400 bg-blue-50/30' : darkMode ? 'border-white/10' : 'border-gray-300',
+                    ].join(' ')}>
+                      {isFolderOver
+                        ? <FolderOpen className="w-8 h-8 text-blue-400" />
+                        : <ImageIcon  className={`w-8 h-8 ${subtext}`} />
+                      }
+                      <p className={`text-xs ${isFolderOver ? 'text-blue-400 font-medium' : subtext}`}>
+                        {isFolderOver ? 'Deposer le dossier ici' : 'Deposer ici'}
+                      </p>
                     </div>
                   ) : isFolded ? (
                     <>
+                      {/* ── Dossiers tagués ── */}
                       {Object.entries(groups).map(([tagLabel, gPhotos]) => {
-                        const isCollapsed = collapsedFolders[col.id]?.has(tagLabel);
-                        const [bName, ts] = tagLabel.split(' \u2022 ');
-                        const gSel = gPhotos.filter(p => selectedPhotos[col.id]?.has(p.id)).length;
+                        const isCollapsed    = collapsedFolders[col.id]?.has(tagLabel);
+                        const isFolderBeingDragged = draggingFolder?.tagLabel === tagLabel && draggingFolder?.fromColId === col.id;
+                        const [bName, ts]    = tagLabel.split(' \u2022 ');
+                        const gSel           = gPhotos.filter(p => selectedPhotos[col.id]?.has(p.id)).length;
+                        const coverPhotos    = gPhotos.slice(0, 3);
+
                         return (
-                          <div key={tagLabel} className={`rounded-xl overflow-hidden border ${darkMode ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white/60'}`}>
+                          <div
+                            key={tagLabel}
+                            data-folderid={tagLabel}
+                            draggable
+                            onDragStart={e => onFolderDragStart(e, tagLabel, col.id, gPhotos)}
+                            onDragEnd={onFolderDragEnd}
+                            className={[
+                              'rounded-xl overflow-hidden border transition-all duration-150',
+                              isFolderBeingDragged ? 'opacity-40 scale-95' : '',
+                              darkMode ? 'border-amber-500/20 bg-amber-500/5' : 'border-amber-200 bg-amber-50/60',
+                            ].join(' ')}
+                          >
+                            {/* En-tête du dossier */}
                             <div
-                              className={`flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-gray-50'}`}
+                              className={[
+                                'flex items-center gap-2 px-2.5 py-2.5 select-none',
+                                'cursor-grab active:cursor-grabbing transition-colors',
+                                darkMode ? 'hover:bg-amber-500/10' : 'hover:bg-amber-100/60',
+                              ].join(' ')}
                               onClick={() => toggleFolder(col.id, tagLabel)}
                             >
+                              {/* Poignée de drag */}
+                              <div className="flex-shrink-0 flex flex-col gap-[3px] opacity-40 mr-0.5">
+                                <div className="flex gap-[3px]">
+                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
+                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
+                                </div>
+                                <div className="flex gap-[3px]">
+                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
+                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
+                                </div>
+                                <div className="flex gap-[3px]">
+                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
+                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
+                                </div>
+                              </div>
                               {isCollapsed
-                                ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-blue-400" />
-                                : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-blue-400" />
+                                ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
+                                : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
                               }
-                              <FolderOpen className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
+                              <FolderOpen className="w-4 h-4 flex-shrink-0 text-amber-500" />
+                              {/* Aperçu miniature des 3 premières photos */}
+                              {isCollapsed && coverPhotos.length > 0 && (
+                                <div className="flex -space-x-2 flex-shrink-0">
+                                  {coverPhotos.map((p, i) => (
+                                    <img
+                                      key={p.id}
+                                      src={p.image_url}
+                                      alt=""
+                                      className="w-6 h-6 rounded-md object-cover border-2 border-white shadow-sm"
+                                      style={{ zIndex: coverPhotos.length - i }}
+                                      draggable={false}
+                                    />
+                                  ))}
+                                </div>
+                              )}
                               <div className="min-w-0 flex-1">
-                                <p className="text-xs font-semibold truncate">{bName}</p>
-                                {ts && <p className={`text-xs ${subtext}`}>{ts}</p>}
+                                <p className="text-xs font-bold truncate">{bName}</p>
+                                {ts && <p className={`text-[10px] ${subtext} truncate`}>{ts}</p>}
                               </div>
                               <button
-                                onClick={e => { e.stopPropagation(); downloadMultiple(gPhotos, bName); }}
+                                onClick={e => { e.stopPropagation(); downloadMultiple(gPhotos); }}
                                 disabled={downloading}
-                                className={`p-1 rounded-lg transition-colors ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+                                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
                                 title="Telecharger ce dossier"
                               >
                                 <Download className="w-3 h-3" />
                               </button>
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>
                                 {gPhotos.length}{gSel > 0 && <span className="text-blue-400 ml-0.5">·{gSel}</span>}
                               </span>
                             </div>
                             {!isCollapsed && (
-                              <div className="grid grid-cols-3 gap-1 p-1.5 pt-0">
-                                {gPhotos.map(photo => renderCard(photo, gPhotos))}
+                              <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
+                                {gPhotos.map(photo => renderCard(col.id, photo, gPhotos))}
                               </div>
                             )}
                           </div>
                         );
                       })}
+
+                      {/* ── Photos sans tag ── */}
                       {ungrouped.length > 0 && (
                         <div className={`rounded-xl overflow-hidden border ${darkMode ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white/40'}`}>
                           <div
@@ -837,16 +1147,17 @@ export default function PhotosManager() {
                             </span>
                           </div>
                           {!collapsedFolders[col.id]?.has('__ungrouped__') && (
-                            <div className="grid grid-cols-3 gap-1 p-1.5 pt-0">
-                              {ungrouped.map(photo => renderCard(photo, ungrouped))}
+                            <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
+                              {ungrouped.map(photo => renderCard(col.id, photo, ungrouped))}
                             </div>
                           )}
                         </div>
                       )}
                     </>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {colPhotos.map(photo => renderCard(photo, colPhotos))}
+                    /* Vue grille simple */
+                    <div className={`grid ${gridCls} gap-2`}>
+                      {colPhotos.map(photo => renderCard(col.id, photo, colPhotos))}
                     </div>
                   )}
                 </div>
@@ -859,7 +1170,6 @@ export default function PhotosManager() {
       {/* ── Lightbox ── */}
       {lightbox && (
         <div className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm" onClick={closeLightbox}>
-          {/* Top bar */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2">
               <button onClick={closeLightbox} className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
@@ -870,9 +1180,23 @@ export default function PhotosManager() {
               )}
             </div>
             <div className="flex-1 mx-4 min-w-0 text-center">
-              {lightbox.photo.game_tag && <p className="text-sm text-gray-300 truncate">{lightbox.photo.game_tag}</p>}
+              {lightbox.photo.game_tag && (
+                <p className="text-sm text-gray-300 truncate">
+                  {baseGameName(lightbox.photo.game_tag)}
+                  {lightbox.photo.game_tag.includes(' \u2022 ') && (
+                    <span className="text-gray-500 ml-2 text-xs">{lightbox.photo.game_tag.split(' \u2022 ')[1]}</span>
+                  )}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={e => { e.stopPropagation(); handleCopyUrl(lightbox.photo.image_url); }}
+                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                title="Copier l'URL"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
               <button
                 onClick={e => { e.stopPropagation(); downloadSingle(lightbox.photo); }}
                 className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
@@ -889,8 +1213,6 @@ export default function PhotosManager() {
               </button>
             </div>
           </div>
-
-          {/* Image area */}
           <div className="flex-1 flex items-center justify-center relative min-h-0 px-16" onClick={e => e.stopPropagation()}>
             {lightbox.siblingPhotos.length > 1 && (
               <button onClick={() => lightboxNav(-1)} className="absolute left-3 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors z-10">
@@ -910,8 +1232,6 @@ export default function PhotosManager() {
               </button>
             )}
           </div>
-
-          {/* Bottom bar — rotation */}
           <div className="flex items-center justify-center gap-4 px-4 py-4 flex-shrink-0" onClick={e => e.stopPropagation()}>
             <button onClick={() => rotateLightbox(-90)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors">
               <RotateCcw className="w-4 h-4" /> Gauche
@@ -924,7 +1244,7 @@ export default function PhotosManager() {
         </div>
       )}
 
-      {/* ── Confirm delete modal ── */}
+      {/* ── Modale suppression ── */}
       {pendingDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className={`rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4 ${cardBg}`}>
@@ -969,10 +1289,10 @@ export default function PhotosManager() {
 
       {/* ── Toast ── */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl font-medium text-sm flex items-center gap-2
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl font-medium text-sm flex items-center gap-2 max-w-sm text-center
           ${toast.type === 'error' ? 'bg-red-500 text-white' : toast.type === 'success' ? 'bg-green-500 text-white' : darkMode ? 'bg-gray-700 text-white' : 'bg-gray-800 text-white'}`}>
-          {toast.type === 'success' && <Check className="w-4 h-4" />}
-          {toast.type === 'error'   && <X     className="w-4 h-4" />}
+          {toast.type === 'success' && <Check className="w-4 h-4 flex-shrink-0" />}
+          {toast.type === 'error'   && <X     className="w-4 h-4 flex-shrink-0" />}
           {toast.message}
         </div>
       )}
