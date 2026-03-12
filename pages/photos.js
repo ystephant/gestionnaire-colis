@@ -5,7 +5,7 @@ import { useTheme } from '../lib/ThemeContext';
 import {
   Upload, Tag, Trash2, X, Check, ChevronDown, ChevronRight,
   Image as ImageIcon, Loader2, Sun, Moon, LogOut, ArrowLeft,
-  Folder, FolderOpen, Download, ZoomIn,
+  Folder, FolderOpen, Download, ZoomIn, Clipboard,
   RotateCcw, RotateCw, ChevronLeft,
 } from 'lucide-react';
 
@@ -83,7 +83,7 @@ const PhotoCard = ({
   photo, columnId, siblingPhotos,
   isSelected, isDragged, isOverItem, inFolder,
   onDragStart, onDragEnd, onDragOver,
-  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto,
+  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto, onCopyImage,
 }) => {
   const rot        = photo.rotation || 0;
   const blobCache  = React.useRef(null); // { url, file } — pré-chargé au survol
@@ -160,6 +160,13 @@ const PhotoCard = ({
           <ZoomIn className="w-3.5 h-3.5" />
         </button>
         <div className="flex gap-1">
+          <button
+            onClick={e => { e.stopPropagation(); onCopyImage(photo); }}
+            className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+            title="Copier l'image (Ctrl+V dans LeBonCoin)"
+          >
+            <Clipboard className="w-3 h-3" />
+          </button>
           <button
             onClick={e => { e.stopPropagation(); onDownloadSingle(photo); }}
             className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
@@ -738,7 +745,29 @@ export default function PhotosManager() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
-  const downloadSingle = useCallback(async (photo) => {
+  // ── Copier image dans le presse-papiers (Ctrl+V dans LeBonCoin) ──
+  const copyImageToClipboard = useCallback(async (photo) => {
+    try {
+      const res  = await fetch(photo.image_url);
+      const blob = await res.blob();
+      // Convertir en PNG si besoin — seul format accepté par ClipboardItem
+      let pngBlob = blob;
+      if (blob.type !== 'image/png') {
+        const bmp  = await createImageBitmap(blob);
+        const cvs  = document.createElement('canvas');
+        cvs.width  = bmp.width;
+        cvs.height = bmp.height;
+        cvs.getContext('2d').drawImage(bmp, 0, 0);
+        pngBlob = await new Promise(res => cvs.toBlob(res, 'image/png'));
+      }
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': pngBlob }),
+      ]);
+      showToast('Image copiée — colle-la avec Ctrl+V dans LeBonCoin', 'success');
+    } catch (err) {
+      showToast('Impossible de copier (autorisations navigateur requises)', 'error');
+    }
+  }, [showToast]);
     try {
       const res  = await fetch(photo.image_url);
       const blob = await res.blob();
@@ -824,6 +853,7 @@ export default function PhotosManager() {
     onOpenLightbox:   openLightbox,
     onDownloadSingle: downloadSingle,
     onDeletePhoto:    handleDeletePhoto,
+    onCopyImage:      copyImageToClipboard,
   };
 
   const renderCard = (colId, photo, sibs, inFolder = false) => (
@@ -885,6 +915,18 @@ export default function PhotosManager() {
               {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               Telecharger
             </button>
+            {totalSelected === 1 && (
+              <button
+                onClick={() => {
+                  const photo = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)))[0];
+                  if (photo) copyImageToClipboard(photo);
+                }}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
+                title="Copier l'image pour Ctrl+V dans LeBonCoin"
+              >
+                <Clipboard className="w-3.5 h-3.5" /> Copier
+              </button>
+            )}
             <button
               onClick={deleteSelected}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
