@@ -161,7 +161,7 @@ const PhotoCard = ({
         </button>
         <div className="flex gap-1">
           <button
-            onClick={e => { e.stopPropagation(); onCopyImage(photo); }}
+            onClick={e => { e.stopPropagation(); onCopyImage(photo, siblingPhotos || [photo]); }}
             className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
             title="Ouvrir dans une fenêtre (glisser vers LeBonCoin)"
           >
@@ -745,28 +745,103 @@ export default function PhotosManager() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
-  // ── Ouvrir dans une mini-fenêtre pour glisser vers LeBonCoin ──
-  const openPhotoPopup = useCallback((photo) => {
-    const w = 520, h = 520;
+  // ── Popup de glisser-déposer vers LeBonCoin/Vinted ─────────
+  const openPhotoPopup = useCallback((photo, siblings) => {
+    const photos = siblings && siblings.length > 0 ? siblings : [photo];
+    const startIdx = photos.findIndex(p => p.id === photo.id);
+    const idx = startIdx < 0 ? 0 : startIdx;
+
+    const w = 560, h = 580;
     const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
     const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
     const popup = window.open('', '_blank',
       `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
     );
     if (!popup) { showToast('Autorise les popups pour cette page', 'error'); return; }
-    const name = baseGameName(photo.game_tag) || 'photo';
+
+    const photosJson = JSON.stringify(photos.map(p => ({
+      url: p.image_url,
+      name: (baseGameName(p.game_tag) || 'photo'),
+    })));
+
     popup.document.write(`<!DOCTYPE html><html><head>
-      <title>${name}</title>
+      <title>Photos — LeBonCoin / Vinted</title>
       <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { background:#111; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:10px; font-family:sans-serif; }
-        img { max-width:100%; max-height:460px; object-fit:contain; cursor:grab; border-radius:8px; user-select:none; }
-        p { color:#aaa; font-size:12px; text-align:center; }
-        strong { color:#fff; }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#111;display:flex;flex-direction:column;height:100vh;font-family:sans-serif;overflow:hidden;user-select:none}
+        #top{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a1a;flex-shrink:0}
+        #counter{color:#aaa;font-size:13px}
+        #name{color:#fff;font-size:13px;font-weight:600;flex:1;text-align:center;truncate;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 8px}
+        #imgWrap{flex:1;display:flex;align-items:center;justify-content:center;padding:12px;min-height:0}
+        img{max-width:100%;max-height:100%;object-fit:contain;cursor:grab;border-radius:8px;display:block}
+        img:active{cursor:grabbing}
+        #bot{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a1a;flex-shrink:0;gap:8px}
+        button{background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;transition:background .15s}
+        button:hover{background:#3a3a3a}
+        button:disabled{opacity:.3;cursor:default}
+        #hint{color:#777;font-size:11px;text-align:center;flex:1}
+        #thumbs{display:flex;gap:6px;overflow-x:auto;padding:6px 12px;background:#1a1a1a;flex-shrink:0;scrollbar-width:thin}
+        .thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid transparent;flex-shrink:0;opacity:.6;transition:opacity .15s,border-color .15s}
+        .thumb:hover{opacity:1}
+        .thumb.active{border-color:#3b82f6;opacity:1}
       </style>
     </head><body>
-      <img src="${photo.image_url}" draggable="true" alt="${name}" />
-      <p><strong>Glisse l'image</strong> vers la fenêtre LeBonCoin</p>
+      <div id="top">
+        <span id="counter"></span>
+        <span id="name"></span>
+      </div>
+      <div id="imgWrap"><img id="img" draggable="true" /></div>
+      <div id="bot">
+        <button id="prev">&#8592;</button>
+        <span id="hint">Glisse l'image vers LeBonCoin · ← →</span>
+        <button id="next">&#8594;</button>
+      </div>
+      ${photos.length > 1 ? '<div id="thumbs"></div>' : ''}
+      <script>
+        const photos = ${photosJson};
+        let cur = ${idx};
+        const imgEl    = document.getElementById('img');
+        const nameEl   = document.getElementById('name');
+        const cntEl    = document.getElementById('counter');
+        const prevBtn  = document.getElementById('prev');
+        const nextBtn  = document.getElementById('next');
+        const thumbsEl = document.getElementById('thumbs');
+
+        function show(i) {
+          cur = (i + photos.length) % photos.length;
+          const p = photos[cur];
+          imgEl.src = p.url;
+          imgEl.alt = p.name;
+          nameEl.textContent = p.name;
+          cntEl.textContent = photos.length > 1 ? (cur+1) + ' / ' + photos.length : '';
+          prevBtn.disabled = photos.length <= 1;
+          nextBtn.disabled = photos.length <= 1;
+          if (thumbsEl) {
+            thumbsEl.querySelectorAll('.thumb').forEach((t,j) => {
+              t.classList.toggle('active', j === cur);
+            });
+            thumbsEl.children[cur]?.scrollIntoView({block:'nearest',inline:'nearest'});
+          }
+        }
+
+        if (thumbsEl) {
+          photos.forEach((p,i) => {
+            const t = document.createElement('img');
+            t.src = p.url; t.className = 'thumb'; t.draggable = false;
+            t.onclick = () => show(i);
+            thumbsEl.appendChild(t);
+          });
+        }
+
+        prevBtn.onclick = () => show(cur - 1);
+        nextBtn.onclick = () => show(cur + 1);
+        document.addEventListener('keydown', e => {
+          if (e.key === 'ArrowLeft')  show(cur - 1);
+          if (e.key === 'ArrowRight') show(cur + 1);
+        });
+
+        show(cur);
+      <\/script>
     </body></html>`);
     popup.document.close();
   }, [showToast]);
@@ -919,11 +994,11 @@ export default function PhotosManager() {
               {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               Telecharger
             </button>
-            {totalSelected === 1 && (
+            {totalSelected > 0 && (
               <button
                 onClick={() => {
-                  const photo = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)))[0];
-                  if (photo) openPhotoPopup(photo);
+                  const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
+                  if (all.length) openPhotoPopup(all[0], all);
                 }}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
                 title="Ouvrir dans une fenêtre pour glisser vers LeBonCoin"
@@ -1237,6 +1312,13 @@ export default function PhotosManager() {
                                 <p className="text-xs font-bold truncate">{bName}</p>
                                 {ts && <p className={`text-[10px] ${subtext} truncate`}>{ts}</p>}
                               </div>
+                              <button
+                                onClick={e => { e.stopPropagation(); openPhotoPopup(gPhotos[0], gPhotos); }}
+                                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
+                                title="Ouvrir le dossier pour glisser vers LeBonCoin"
+                              >
+                                <Clipboard className="w-3 h-3" />
+                              </button>
                               <button
                                 onClick={e => { e.stopPropagation(); downloadMultiple(gPhotos); }}
                                 disabled={downloading}
