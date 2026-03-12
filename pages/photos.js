@@ -163,7 +163,7 @@ const PhotoCard = ({
           <button
             onClick={e => { e.stopPropagation(); onCopyImage(photo); }}
             className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-            title="Copier l'image (Ctrl+V dans LeBonCoin)"
+            title="Ouvrir dans une fenêtre (glisser vers LeBonCoin)"
           >
             <Clipboard className="w-3 h-3" />
           </button>
@@ -745,28 +745,30 @@ export default function PhotosManager() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
-  // ── Copier image dans le presse-papiers (Ctrl+V dans LeBonCoin) ──
-  const copyImageToClipboard = useCallback(async (photo) => {
-    try {
-      const res  = await fetch(photo.image_url);
-      const blob = await res.blob();
-      // Convertir en PNG si besoin — seul format accepté par ClipboardItem
-      let pngBlob = blob;
-      if (blob.type !== 'image/png') {
-        const bmp  = await createImageBitmap(blob);
-        const cvs  = document.createElement('canvas');
-        cvs.width  = bmp.width;
-        cvs.height = bmp.height;
-        cvs.getContext('2d').drawImage(bmp, 0, 0);
-        pngBlob = await new Promise(res => cvs.toBlob(res, 'image/png'));
-      }
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': pngBlob }),
-      ]);
-      showToast('Image copiée — colle-la avec Ctrl+V dans LeBonCoin', 'success');
-    } catch (err) {
-      showToast('Impossible de copier (autorisations navigateur requises)', 'error');
-    }
+  // ── Ouvrir dans une mini-fenêtre pour glisser vers LeBonCoin ──
+  const openPhotoPopup = useCallback((photo) => {
+    const w = 520, h = 520;
+    const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
+    const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
+    const popup = window.open('', '_blank',
+      `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
+    );
+    if (!popup) { showToast('Autorise les popups pour cette page', 'error'); return; }
+    const name = baseGameName(photo.game_tag) || 'photo';
+    popup.document.write(`<!DOCTYPE html><html><head>
+      <title>${name}</title>
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:#111; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:10px; font-family:sans-serif; }
+        img { max-width:100%; max-height:460px; object-fit:contain; cursor:grab; border-radius:8px; user-select:none; }
+        p { color:#aaa; font-size:12px; text-align:center; }
+        strong { color:#fff; }
+      </style>
+    </head><body>
+      <img src="${photo.image_url}" draggable="true" alt="${name}" />
+      <p><strong>Glisse l'image</strong> vers la fenêtre LeBonCoin</p>
+    </body></html>`);
+    popup.document.close();
   }, [showToast]);
 
   const downloadSingle = useCallback(async (photo) => {
@@ -855,7 +857,7 @@ export default function PhotosManager() {
     onOpenLightbox:   openLightbox,
     onDownloadSingle: downloadSingle,
     onDeletePhoto:    handleDeletePhoto,
-    onCopyImage:      copyImageToClipboard,
+    onCopyImage:      openPhotoPopup,
   };
 
   const renderCard = (colId, photo, sibs, inFolder = false) => (
@@ -921,12 +923,12 @@ export default function PhotosManager() {
               <button
                 onClick={() => {
                   const photo = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)))[0];
-                  if (photo) copyImageToClipboard(photo);
+                  if (photo) openPhotoPopup(photo);
                 }}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
-                title="Copier l'image pour Ctrl+V dans LeBonCoin"
+                title="Ouvrir dans une fenêtre pour glisser vers LeBonCoin"
               >
-                <Clipboard className="w-3.5 h-3.5" /> Copier
+                <Clipboard className="w-3.5 h-3.5" /> Ouvrir
               </button>
             )}
             <button
