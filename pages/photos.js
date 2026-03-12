@@ -758,6 +758,7 @@ export default function PhotosManager() {
       showToast('Tag retiré', 'success');
     } catch { showToast('Erreur retrait tag', 'error'); }
   };
+  const filteredGames = gamesList.filter(g => g.toLowerCase().includes(tagSearch.toLowerCase()));
   const handleLogout  = () => { localStorage.removeItem('username'); localStorage.removeItem('password'); router.push('/'); };
 
   // ── Rendu ────────────────────────────────────────────────────
