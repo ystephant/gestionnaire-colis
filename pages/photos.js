@@ -251,6 +251,7 @@ export default function PhotosManager() {
   const [folderMode, setFolderMode]             = useState(new Set(COLUMNS.map(c => c.id)));
   const [collapsedFolders, setCollapsedFolders] = useState({});
   const [folderSearch, setFolderSearch]         = useState('');
+  const [showFolderSuggestions, setShowFolderSuggestions] = useState(false);
 
   // Lightbox
   const [lightbox, setLightbox] = useState(null);
@@ -1025,26 +1026,55 @@ export default function PhotosManager() {
             </div>
           </div>
           {/* Barre de recherche par nom de jeu */}
-          <div className="flex-1 max-w-xs relative">
-            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
-            <input
-              type="text"
-              placeholder="Rechercher un jeu..."
-              value={folderSearch}
-              onChange={e => setFolderSearch(e.target.value)}
-              className={`w-full pl-9 pr-9 py-1.5 text-sm rounded-xl border outline-none transition-colors ${
-                darkMode
-                  ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500 focus:border-blue-500'
-                  : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-400'
-              }`}
-            />
-            {folderSearch && (
-              <button onClick={() => setFolderSearch('')}
-                className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full transition-colors ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'}`}>
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
+          {(() => {
+            // Construire la liste unique de tous les noms de jeux présents dans les photos
+            const allGameNames = [...new Set(
+              COLUMNS.flatMap(col => (photos[col.id] || []).map(p => baseGameName(p.game_tag)).filter(Boolean))
+            )].sort();
+            const suggestions = folderSearch.trim()
+              ? allGameNames.filter(n => n.toLowerCase().includes(folderSearch.trim().toLowerCase()) && n.toLowerCase() !== folderSearch.trim().toLowerCase())
+              : allGameNames;
+            return (
+              <div className="flex-1 max-w-xs relative">
+                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none z-10 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+                <input
+                  type="text"
+                  placeholder="Rechercher un jeu..."
+                  value={folderSearch}
+                  onChange={e => { setFolderSearch(e.target.value); setShowFolderSuggestions(true); }}
+                  onFocus={() => setShowFolderSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowFolderSuggestions(false), 150)}
+                  className={`w-full pl-9 pr-9 py-1.5 text-sm rounded-xl border outline-none transition-colors ${
+                    darkMode
+                      ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500 focus:border-blue-500'
+                      : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-400'
+                  }`}
+                />
+                {folderSearch && (
+                  <button onClick={() => { setFolderSearch(''); setShowFolderSuggestions(false); }}
+                    className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full transition-colors ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'}`}>
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+                {/* Dropdown autocomplétion */}
+                {showFolderSuggestions && suggestions.length > 0 && (
+                  <div className={`absolute top-full mt-1 left-0 right-0 rounded-xl border shadow-2xl overflow-hidden z-50 max-h-52 overflow-y-auto ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
+                    {suggestions.map(name => (
+                      <button
+                        key={name}
+                        onMouseDown={() => { setFolderSearch(name); setShowFolderSuggestions(false); }}
+                        className={`w-full text-left text-sm px-3 py-2 transition-colors border-b last:border-0 ${
+                          darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-blue-50 text-gray-700 border-gray-100'
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -1326,9 +1356,12 @@ export default function PhotosManager() {
                             className={[
                               'rounded-xl overflow-hidden border transition-all duration-200',
                               isFolderBeingDragged ? 'opacity-40 scale-95' : '',
-                              isDimmed ? 'opacity-25 scale-[0.98]' : '',
-                              isMatch && q ? 'ring-2 ring-blue-400 ring-offset-1' : '',
-                              darkMode ? 'border-amber-500/20 bg-amber-500/5' : 'border-amber-200 bg-amber-50/60',
+                              isDimmed ? 'opacity-20 scale-[0.97] blur-[0.5px]' : '',
+                              isMatch && q
+                                ? darkMode
+                                  ? 'border-blue-400 bg-blue-500/15 shadow-lg shadow-blue-500/20 scale-[1.02]'
+                                  : 'border-blue-400 bg-blue-50 shadow-lg shadow-blue-200 scale-[1.02]'
+                                : darkMode ? 'border-amber-500/20 bg-amber-500/5' : 'border-amber-200 bg-amber-50/60',
                             ].join(' ')}
                           >
                             {/* En-tête du dossier */}
