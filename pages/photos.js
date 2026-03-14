@@ -452,10 +452,23 @@ export default function PhotosManager() {
           .eq('user_id', username).order('position', { ascending: true })
           .then(({ data }) => {
             if (!data) return;
-            setPhotos(prev => {
-              const next = { pas_encore_en_vente:[], en_cours_de_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
-              data.forEach(p => { if (next[p.status]) next[p.status].push(p); });
-              return next;
+            const next = { pas_encore_en_vente:[], en_cours_de_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
+            data.forEach(p => { if (next[p.status]) next[p.status].push(p); });
+            setPhotos(next);
+            // Replier les nouveaux dossiers apparus
+            setCollapsedFolders(prev => {
+              const updated = { ...prev };
+              COLUMNS.forEach(col => {
+                const tags = [...new Set((next[col.id] || []).filter(p => p.game_tag).map(p => p.game_tag))];
+                const hasUngrouped = (next[col.id] || []).some(p => !p.game_tag);
+                const allKeys = [...tags, ...(hasUngrouped ? ['__ungrouped__'] : [])];
+                const existing = updated[col.id] || new Set();
+                // Ajouter seulement les nouveaux tags pas encore connus
+                const merged = new Set(existing);
+                allKeys.forEach(k => { if (!existing.has || !existing.has(k)) merged.add(k); });
+                updated[col.id] = merged;
+              });
+              return updated;
             });
           });
       })
@@ -1101,7 +1114,7 @@ export default function PhotosManager() {
               ? allGameNames.filter(n => n.toLowerCase().includes(folderSearch.trim().toLowerCase()) && n.toLowerCase() !== folderSearch.trim().toLowerCase())
               : allGameNames;
             return (
-              <div className="hidden sm:block fixed left-1/2 -translate-x-1/2 w-72 z-10 relative">
+              <div className="hidden sm:block fixed left-1/2 -translate-x-1/2 w-72 z-10">
                 <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none z-10 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                 <input
                   type="text"
