@@ -623,6 +623,7 @@ export default function PhotosManager() {
 
   // ── Sélection multiple ───────────────────────────────────────
   const toggleSelectPhoto = useCallback((colId, photoId) => {
+    setShowTagDropdown(false);
     setSelectedPhotos(prev => {
       const s = new Set(prev[colId] || []);
       if (s.has(photoId)) s.delete(photoId); else s.add(photoId);
@@ -630,6 +631,7 @@ export default function PhotosManager() {
     });
   }, []);
   const onCtrlSelect = useCallback((colId, photoId) => {
+    setShowTagDropdown(false);
     setSelectedPhotos(prev => {
       const s = new Set(prev[colId] || []);
       if (s.has(photoId)) s.delete(photoId); else s.add(photoId);
@@ -639,6 +641,7 @@ export default function PhotosManager() {
 
   // Coche sur un dossier : sélectionne TOUTES ses photos (ou désélectionne si tout est déjà sélectionné)
   const toggleFolderSelection = useCallback((colId, folderPhotos) => {
+    setShowTagDropdown(false);
     setSelectedPhotos(prev => {
       const s      = new Set(prev[colId] || []);
       const allIds = folderPhotos.map(p => p.id);
