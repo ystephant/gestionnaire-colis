@@ -983,7 +983,7 @@ export default function PhotosManager() {
             </button>
             <div className="flex items-center gap-2">
               <ImageIcon className="w-5 h-5 text-blue-500" />
-              <span className="font-bold text-lg">Photos Vente</span>
+              <span className="font-bold text-lg">Suivi des photos</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1052,21 +1052,29 @@ export default function PhotosManager() {
                 <div className={`absolute top-full mt-1 right-0 w-64 rounded-xl border shadow-2xl overflow-hidden z-50 ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                   <div className={`p-2 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
                     <input
-                      autoFocus type="text" placeholder="Rechercher un jeu..."
+                      autoFocus type="text" placeholder="Rechercher ou créer un tag..."
                       value={tagSearch} onChange={e => setTagSearch(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && tagSearch.trim()) assignTag(tagSearch.trim()); }}
                       className={`w-full text-sm px-3 py-1.5 rounded-lg border outline-none ${inputCls}`}
                     />
                   </div>
                   <div className="max-h-52 overflow-y-auto">
-                    {gamesList.length === 0 && <p className={`text-sm px-4 py-3 ${subtext}`}>Chargement des jeux...</p>}
-                    {gamesList.length > 0 && filteredGames.length === 0 && <p className={`text-sm px-4 py-3 ${subtext}`}>Aucun jeu trouve</p>}
+                    {/* Option créer un nouveau tag si la saisie ne correspond à aucun jeu existant */}
+                    {tagSearch.trim() && !gamesList.some(g => g.toLowerCase() === tagSearch.trim().toLowerCase()) && (
+                      <button
+                        onClick={() => assignTag(tagSearch.trim())}
+                        className={`w-full text-left text-sm px-4 py-2.5 transition-colors border-b font-medium text-blue-500 ${darkMode ? 'hover:bg-gray-700 border-gray-700' : 'hover:bg-blue-50 border-gray-100'}`}
+                      >
+                        + Créer « {tagSearch.trim()} »
+                      </button>
+                    )}
+                    {gamesList.length === 0 && !tagSearch.trim() && <p className={`text-sm px-4 py-3 ${subtext}`}>Chargement des jeux...</p>}
                     {filteredGames.map(game => (
                       <button
                         key={game} onClick={() => assignTag(game)}
                         className={`w-full text-left text-sm px-4 py-2.5 transition-colors border-b last:border-0 ${darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-blue-50 text-gray-700 border-gray-100'}`}
                       >
-                        <span className="font-semibold">{game}</span>
-                        <span className={`block text-xs mt-0.5 ${subtext}`}>{formatTagTimestamp()}</span>
+                        {game}
                       </button>
                     ))}
                   </div>
@@ -1157,7 +1165,7 @@ export default function PhotosManager() {
                   <div className="flex items-center justify-between gap-1">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${col.dot}`} />
-                      <span className="font-semibold text-sm truncate">{col.label}</span>
+                      <span className="font-semibold text-sm">{col.label}</span>
                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-white/70 text-gray-600'}`}>
                         {colPhotos.length}{selCount > 0 && <span className="text-blue-400 ml-0.5">·{selCount}</span>}
                       </span>
@@ -1195,16 +1203,6 @@ export default function PhotosManager() {
                           {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                         </button>
                       )}
-                      {/* Bouton vue dossiers — toujours visible */}
-                      <button
-                        onClick={() => toggleFolderMode(col.id)}
-                        title={isFolded ? 'Vue grille' : 'Vue dossiers'}
-                        className={`p-1 rounded-lg transition-colors ${isFolded
-                          ? 'text-amber-500 bg-amber-500/15 hover:bg-amber-500/25'
-                          : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white text-gray-500'}`}
-                      >
-                        {isFolded ? <FolderOpen className="w-3.5 h-3.5" /> : <Folder className="w-3.5 h-3.5" />}
-                      </button>
                     </div>
                   </div>
                 </div>
