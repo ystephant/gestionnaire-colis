@@ -747,11 +747,11 @@ export default function PhotosManager() {
 
   // ── Popup de glisser-déposer vers LeBonCoin/Vinted ─────────
   const openPhotoPopup = useCallback((photo, siblings) => {
-    const photos = siblings && siblings.length > 0 ? siblings : [photo];
-    const startIdx = photos.findIndex(p => p.id === photo.id);
-    const idx = startIdx < 0 ? 0 : startIdx;
+    const allPhotos = siblings && siblings.length > 0 ? siblings : [photo];
+    const startIdx  = allPhotos.findIndex(p => p.id === photo.id);
+    const idx       = startIdx < 0 ? 0 : startIdx;
 
-    const w = 560, h = 580;
+    const w = 580, h = 630;
     const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
     const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
     const popup = window.open('', '_blank',
@@ -759,7 +759,7 @@ export default function PhotosManager() {
     );
     if (!popup) { showToast('Autorise les popups pour cette page', 'error'); return; }
 
-    const photosJson = JSON.stringify(photos.map(p => ({
+    const photosJson = JSON.stringify(allPhotos.map(p => ({
       url: p.image_url,
       name: (baseGameName(p.game_tag) || 'photo'),
     })));
@@ -769,20 +769,21 @@ export default function PhotosManager() {
       <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#111;display:flex;flex-direction:column;height:100vh;font-family:sans-serif;overflow:hidden;user-select:none}
-        #top{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a1a;flex-shrink:0}
-        #counter{color:#aaa;font-size:13px}
-        #name{color:#fff;font-size:13px;font-weight:600;flex:1;text-align:center;truncate;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 8px}
-        #imgWrap{flex:1;display:flex;align-items:center;justify-content:center;padding:12px;min-height:0}
-        img{max-width:100%;max-height:100%;object-fit:contain;cursor:grab;border-radius:8px;display:block}
-        img:active{cursor:grabbing}
-        #bot{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a1a;flex-shrink:0;gap:8px}
-        button{background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;transition:background .15s}
-        button:hover{background:#3a3a3a}
-        button:disabled{opacity:.3;cursor:default}
-        #hint{color:#777;font-size:11px;text-align:center;flex:1}
-        #thumbs{display:flex;gap:6px;overflow-x:auto;padding:6px 12px;background:#1a1a1a;flex-shrink:0;scrollbar-width:thin}
-        .thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid transparent;flex-shrink:0;opacity:.6;transition:opacity .15s,border-color .15s}
-        .thumb:hover{opacity:1}
+        #top{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1a1a1a;flex-shrink:0}
+        #counter{color:#888;font-size:12px;white-space:nowrap}
+        #name{color:#fff;font-size:13px;font-weight:600;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:center}
+        #imgWrap{flex:1;display:flex;align-items:center;justify-content:center;padding:10px;min-height:0}
+        #mainImg{max-width:100%;max-height:100%;object-fit:contain;cursor:grab;border-radius:8px;display:block}
+        #mainImg:active{cursor:grabbing}
+        #bot{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#1a1a1a;flex-shrink:0;border-top:1px solid #222}
+        .navBtn{background:#2a2a2a;color:#ccc;border:1px solid #444;border-radius:8px;padding:5px 14px;font-size:13px;cursor:pointer;transition:background .15s;flex-shrink:0}
+        .navBtn:hover:not(:disabled){background:#383838}
+        .navBtn:disabled{opacity:.25;cursor:default}
+        #hint{color:#555;font-size:11px;text-align:center;flex:1;line-height:1.4}
+        #thumbsRow{display:flex;gap:5px;overflow-x:auto;padding:6px 10px;background:#161616;flex-shrink:0;border-top:1px solid #222;scrollbar-width:thin}
+        .thumb{width:54px;height:54px;object-fit:cover;border-radius:6px;cursor:grab;border:2px solid transparent;flex-shrink:0;opacity:.5;transition:opacity .15s,border-color .15s}
+        .thumb:hover{opacity:.85}
+        .thumb:active{cursor:grabbing;opacity:1}
         .thumb.active{border-color:#3b82f6;opacity:1}
       </style>
     </head><body>
@@ -790,55 +791,73 @@ export default function PhotosManager() {
         <span id="counter"></span>
         <span id="name"></span>
       </div>
-      <div id="imgWrap"><img id="img" draggable="true" /></div>
+      <div id="imgWrap"><img id="mainImg" draggable="true" /></div>
       <div id="bot">
-        <button id="prev">&#8592;</button>
-        <span id="hint">Glisse l'image vers LeBonCoin · ← →</span>
-        <button id="next">&#8594;</button>
+        <button class="navBtn" id="prev">&#8592;</button>
+        <span id="hint">Glisse l'image principale<br>ou une miniature vers LeBonCoin · molette · ← →</span>
+        <button class="navBtn" id="next">&#8594;</button>
       </div>
-      ${photos.length > 1 ? '<div id="thumbs"></div>' : ''}
+      <div id="thumbsRow"></div>
       <script>
         const photos = ${photosJson};
         let cur = ${idx};
-        const imgEl    = document.getElementById('img');
+
+        const mainImg  = document.getElementById('mainImg');
         const nameEl   = document.getElementById('name');
         const cntEl    = document.getElementById('counter');
         const prevBtn  = document.getElementById('prev');
         const nextBtn  = document.getElementById('next');
-        const thumbsEl = document.getElementById('thumbs');
+        const thumbsRow= document.getElementById('thumbsRow');
+
+        function dragData(e, url, name) {
+          const ext  = url.toLowerCase().includes('.png') ? 'png' : 'jpg';
+          const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+          e.dataTransfer.effectAllowed = 'copy';
+          try { e.dataTransfer.setData('DownloadURL', mime+':'+name+'.'+ext+':'+url); } catch(_){}
+          try { e.dataTransfer.setData('text/uri-list', url); } catch(_){}
+          try { e.dataTransfer.setData('text/plain',    url); } catch(_){}
+        }
 
         function show(i) {
-          cur = (i + photos.length) % photos.length;
+          cur = ((i % photos.length) + photos.length) % photos.length;
           const p = photos[cur];
-          imgEl.src = p.url;
-          imgEl.alt = p.name;
+          mainImg.src = p.url;
+          mainImg.alt = p.name;
           nameEl.textContent = p.name;
-          cntEl.textContent = photos.length > 1 ? (cur+1) + ' / ' + photos.length : '';
-          prevBtn.disabled = photos.length <= 1;
-          nextBtn.disabled = photos.length <= 1;
-          if (thumbsEl) {
-            thumbsEl.querySelectorAll('.thumb').forEach((t,j) => {
-              t.classList.toggle('active', j === cur);
-            });
-            thumbsEl.children[cur]?.scrollIntoView({block:'nearest',inline:'nearest'});
-          }
+          cntEl.textContent  = photos.length > 1 ? (cur+1)+' / '+photos.length : '';
+          prevBtn.disabled   = photos.length <= 1;
+          nextBtn.disabled   = photos.length <= 1;
+          document.querySelectorAll('.thumb').forEach((t,j) => t.classList.toggle('active', j===cur));
+          const active = thumbsRow.children[cur];
+          if (active) active.scrollIntoView({block:'nearest',inline:'center'});
         }
 
-        if (thumbsEl) {
-          photos.forEach((p,i) => {
-            const t = document.createElement('img');
-            t.src = p.url; t.className = 'thumb'; t.draggable = false;
-            t.onclick = () => show(i);
-            thumbsEl.appendChild(t);
-          });
-        }
+        // Image principale
+        mainImg.addEventListener('dragstart', e => dragData(e, photos[cur].url, photos[cur].name));
 
-        prevBtn.onclick = () => show(cur - 1);
-        nextBtn.onclick = () => show(cur + 1);
+        // Miniatures — draggables et cliquables
+        photos.forEach((p, i) => {
+          const t = document.createElement('img');
+          t.src = p.url; t.className = 'thumb'; t.draggable = true; t.title = p.name;
+          t.addEventListener('click',     () => show(i));
+          t.addEventListener('dragstart', e => { e.stopPropagation(); dragData(e, p.url, p.name); });
+          thumbsRow.appendChild(t);
+        });
+
+        // Navigation clavier
         document.addEventListener('keydown', e => {
           if (e.key === 'ArrowLeft')  show(cur - 1);
           if (e.key === 'ArrowRight') show(cur + 1);
         });
+
+        // Navigation molette
+        document.addEventListener('wheel', e => {
+          e.preventDefault();
+          show(e.deltaY > 0 ? cur + 1 : cur - 1);
+        }, { passive: false });
+
+        prevBtn.addEventListener('click', () => show(cur - 1));
+        nextBtn.addEventListener('click', () => show(cur + 1));
 
         show(cur);
       <\/script>
@@ -1273,21 +1292,6 @@ export default function PhotosManager() {
                                 {allSelected && <Check className="w-3 h-3 text-white" />}
                                 {someSelected && <div className="w-2 h-0.5 bg-blue-500 rounded" />}
                               </button>
-                              {/* Poignée de drag */}
-                              <div className="flex-shrink-0 flex flex-col gap-[3px] opacity-40 mr-0.5">
-                                <div className="flex gap-[3px]">
-                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
-                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
-                                </div>
-                                <div className="flex gap-[3px]">
-                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
-                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
-                                </div>
-                                <div className="flex gap-[3px]">
-                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
-                                  <div className="w-[3px] h-[3px] rounded-full bg-current" />
-                                </div>
-                              </div>
                               {isCollapsed
                                 ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
                                 : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
