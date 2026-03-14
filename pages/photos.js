@@ -26,9 +26,9 @@ const COLUMNS = [
   },
   {
     id: 'en_cours_de_vente', label: 'En cours de vente',
-    lightBg: 'bg-amber-50', lightBorder: 'border-amber-200', lightHeader: 'bg-amber-100/70',
-    darkRgba: 'rgba(146,64,14,0.13)', darkBorderRgba: 'rgba(146,64,14,0.35)', darkHeaderRgba: 'rgba(146,64,14,0.20)',
-    dot: 'bg-amber-400',
+    lightBg: 'bg-emerald-50', lightBorder: 'border-emerald-200', lightHeader: 'bg-emerald-100/70',
+    darkRgba: 'rgba(6,78,59,0.13)', darkBorderRgba: 'rgba(6,78,59,0.35)', darkHeaderRgba: 'rgba(6,78,59,0.20)',
+    dot: 'bg-emerald-500',
   },
   {
     id: 'en_vente', label: 'En vente',
@@ -44,9 +44,9 @@ const COLUMNS = [
   },
   {
     id: 'vendu', label: 'Vendu \u2713',
-    lightBg: 'bg-emerald-50', lightBorder: 'border-emerald-200', lightHeader: 'bg-emerald-100/70',
-    darkRgba: 'rgba(6,78,59,0.13)', darkBorderRgba: 'rgba(6,78,59,0.35)', darkHeaderRgba: 'rgba(6,78,59,0.20)',
-    dot: 'bg-emerald-500',
+    lightBg: 'bg-red-50', lightBorder: 'border-red-200', lightHeader: 'bg-red-100/70',
+    darkRgba: 'rgba(153,27,27,0.13)', darkBorderRgba: 'rgba(153,27,27,0.35)', darkHeaderRgba: 'rgba(153,27,27,0.20)',
+    dot: 'bg-red-500',
   },
 ];
 
@@ -1037,7 +1037,7 @@ export default function PhotosManager() {
       <div className={`sticky top-0 z-30 border-b backdrop-blur ${darkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
         <div className="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-shrink-0">
-            <button onClick={() => router.back()} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+            <button onClick={() => router.push('/')} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
