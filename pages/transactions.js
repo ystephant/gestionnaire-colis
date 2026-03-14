@@ -438,7 +438,7 @@ const loadUserPreferences = async () => {
       const now = new Date();
       const dateStr = `Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
       setFont(C.lgray, 7);
-      doc.text(dateStr, W - M, 22, { align: 'right' });
+      doc.text(dateStr, W - M - 4, 22, { align: 'right' });
 
       // ── KPI Cards ───────────────────────────────────────────
       let y = 38;
@@ -510,29 +510,37 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
         y += 5;
 
-        const yAxisW  = 18; // largeur réservée à l'axe Y
-        const chartH  = 42, chartW = CW - yAxisW;
+        const legW    = 22; // largeur de la légende à gauche
+        const yAxisW  = 18; // largeur axe Y (labels €)
+        const leftW   = legW + yAxisW; // total espace gauche
+        const chartH  = 48, chartW = CW - leftW;
+        const topPad  = 5;  // espace en haut pour ne pas tronquer la barre max
         const maxVal  = Math.max(...chartData.flatMap(d => [d.buy, d.sell]));
-        const barAreaH = chartH - 8;
+        const barAreaH = chartH - 8 - topPad;
         const barCount = chartData.length;
         const barGroupW = Math.min(chartW / barCount, 14);
         const barW = (barGroupW - 2) / 2;
-        const chartX = M + yAxisW;
+        const chartX = M + leftW;
 
         // Fond du graphique
         setFill(C.card); doc.roundedRect(M, y, CW, chartH, 2, 2, 'F');
 
-        // Lignes de grille + étiquettes axe Y
+        // ── Légende à gauche (avant l'axe Y) ──
+        const legBaseY = y + topPad + 4;
+        setFill(C.blue);  doc.roundedRect(M + 2, legBaseY,      4, 2.5, 0.5, 0.5, 'F');
+        setFont(C.gray, 5.5); doc.text('Achats',  M + 7.5, legBaseY + 2);
+        setFill(C.green); doc.roundedRect(M + 2, legBaseY + 5,  4, 2.5, 0.5, 0.5, 'F');
+        setFont(C.gray, 5.5); doc.text('Ventes',  M + 7.5, legBaseY + 7);
+
+        // ── Lignes de grille + étiquettes axe Y ──
         setDraw(C.border); doc.setLineWidth(0.2);
         [0.25, 0.5, 0.75, 1].forEach(pct => {
           const gy  = y + chartH - 8 - barAreaH * pct;
           const val = maxVal * pct;
-          // Ligne de grille
           doc.line(chartX, gy, chartX + chartW - 2, gy);
-          // Label Y
           setFont(C.lgray, 4.5);
           const label = val >= 1000 ? `${(val/1000).toFixed(1)}k€` : `${val.toFixed(0)}€`;
-          doc.text(label, M + yAxisW - 2, gy + 1.2, { align: 'right' });
+          doc.text(label, M + leftW - 2, gy + 1.2, { align: 'right' });
         });
 
         chartData.forEach((d, i) => {
@@ -557,14 +565,77 @@ const loadUserPreferences = async () => {
           }
         });
 
-        // Légende
-        const legX = chartX + chartW - 40;
-        setFill(C.blue); doc.roundedRect(legX, y + 3, 4, 2.5, 0.5, 0.5, 'F');
-        setFont(C.gray, 6); doc.text('Achats', legX + 5.5, y + 5.5);
-        setFill(C.green); doc.roundedRect(legX + 18, y + 3, 4, 2.5, 0.5, 0.5, 'F');
-        doc.text('Ventes', legX + 23.5, y + 5.5);
-
         y += chartH + 8;
+      }
+
+      // ── Graphique nombre de transactions ─────────────────────
+      let countData = [];
+      if (pdfPeriodType === 'year') {
+        for (let m = 0; m < 12; m++) {
+          const nb = buys.filter(t => new Date(t.created_at).getMonth() === m).length;
+          const ns = sells.filter(t => new Date(t.created_at).getMonth() === m).length;
+          if (nb > 0 || ns > 0) countData.push({ label: MONTH_NAMES[m].slice(0,3), buy: nb, sell: ns });
+        }
+      } else {
+        const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        for (let d = 1; d <= daysInMonth; d++) {
+          const nb = buys.filter(t => new Date(t.created_at).getDate() === d).length;
+          const ns = sells.filter(t => new Date(t.created_at).getDate() === d).length;
+          if (nb > 0 || ns > 0) countData.push({ label: `${d}`, buy: nb, sell: ns });
+        }
+      }
+
+      if (countData.length > 0) {
+        if (y > H - 70) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
+
+        setFont(C.white, 9, 'bold');
+        doc.text('Nombre de transactions', M, y);
+        setFont(C.gray, 7);
+        doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 54, y);
+        y += 5;
+
+        const legW2   = 22;
+        const yAxisW2 = 14;
+        const leftW2  = legW2 + yAxisW2;
+        const chartH2 = 40, chartW2 = CW - leftW2;
+        const topPad2 = 4;
+        const maxCount = Math.max(...countData.flatMap(d => [d.buy, d.sell]));
+        const barAreaH2 = chartH2 - 8 - topPad2;
+        const barGroupW2 = Math.min(chartW2 / countData.length, 14);
+        const barW2 = (barGroupW2 - 2) / 2;
+        const chartX2 = M + leftW2;
+
+        setFill(C.card); doc.roundedRect(M, y, CW, chartH2, 2, 2, 'F');
+
+        // Légende à gauche
+        const legBaseY2 = y + topPad2 + 4;
+        setFill(C.blue);  doc.roundedRect(M + 2, legBaseY2,     4, 2.5, 0.5, 0.5, 'F');
+        setFont(C.gray, 5.5); doc.text('Achats', M + 7.5, legBaseY2 + 2);
+        setFill(C.green); doc.roundedRect(M + 2, legBaseY2 + 5, 4, 2.5, 0.5, 0.5, 'F');
+        setFont(C.gray, 5.5); doc.text('Ventes', M + 7.5, legBaseY2 + 7);
+
+        // Grille + labels Y (nombre entier)
+        setDraw(C.border); doc.setLineWidth(0.2);
+        [0.25, 0.5, 0.75, 1].forEach(pct => {
+          const gy  = y + chartH2 - 8 - barAreaH2 * pct;
+          const val = Math.round(maxCount * pct);
+          doc.line(chartX2, gy, chartX2 + chartW2 - 2, gy);
+          setFont(C.lgray, 4.5);
+          doc.text(`${val}`, M + leftW2 - 2, gy + 1.2, { align: 'right' });
+        });
+
+        // Barres
+        countData.forEach((d, i) => {
+          const bx    = chartX2 + 3 + i * barGroupW2;
+          const buyH  = maxCount > 0 ? (d.buy  / maxCount) * barAreaH2 : 0;
+          const sellH = maxCount > 0 ? (d.sell / maxCount) * barAreaH2 : 0;
+          const baseY = y + chartH2 - 8;
+          if (d.buy > 0)  { setFill(C.blue);  doc.roundedRect(bx,            baseY - buyH,  barW2, buyH,  0.5, 0.5, 'F'); }
+          if (d.sell > 0) { setFill(C.green); doc.roundedRect(bx + barW2 + 0.5, baseY - sellH, barW2, sellH, 0.5, 0.5, 'F'); }
+          if (barGroupW2 >= 6) { setFont(C.lgray, 4.5); doc.text(d.label, bx + barGroupW2 / 2 - barGroupW2 * 0.1, y + chartH2 - 2, { align: 'center' }); }
+        });
+
+        y += chartH2 + 8;
       }
 
       // ── Top 5 jeux rentables ─────────────────────────────────
