@@ -389,24 +389,29 @@ export default function PhotosManager() {
     }
   }, []);
 
-  // Wheel non-passif sur le header uniquement — scroll page libre partout ailleurs
+  // Wheel non-passif sur le header de colonne — ré-attaché aussi quand les photos chargent
   useEffect(() => {
     if (!isLoggedIn) return;
     const handlers = {};
+    let attached = 0;
     COLUMNS.forEach(col => {
       const el = headerRefs.current[col.id];
       if (!el) return;
       const h = (e) => onColWheel(e, col.id);
       handlers[col.id] = h;
       el.addEventListener('wheel', h, { passive: false });
+      attached++;
     });
+    // Si aucun header n'était encore rendu, on planifie un ré-essai
+    if (attached === 0) return;
     return () => {
       COLUMNS.forEach(col => {
         const el = headerRefs.current[col.id];
         if (el && handlers[col.id]) el.removeEventListener('wheel', handlers[col.id]);
       });
     };
-  }, [onColWheel, isLoggedIn]);
+  // photos en dep pour ré-attacher après le premier render des colonnes
+  }, [onColWheel, isLoggedIn, photos]);
 
   // Modale suppression / toast
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -1041,7 +1046,7 @@ export default function PhotosManager() {
 
       {/* ── Header ── */}
       <div className={`sticky top-0 z-30 border-b backdrop-blur ${darkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
-        <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-4">
+        <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-4 relative">
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={() => router.push('/')} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
               <ArrowLeft className="w-5 h-5" />
@@ -1060,7 +1065,7 @@ export default function PhotosManager() {
               ? allGameNames.filter(n => n.toLowerCase().includes(folderSearch.trim().toLowerCase()) && n.toLowerCase() !== folderSearch.trim().toLowerCase())
               : allGameNames;
             return (
-              <div className="hidden sm:block flex-1 max-w-xs relative">
+              <div className="hidden sm:block absolute left-1/2 -translate-x-1/2 w-72 relative">
                 <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none z-10 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                 <input
                   type="text"
@@ -1092,9 +1097,6 @@ export default function PhotosManager() {
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 ml-auto">
             <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
               {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
-            </button>
-            <button onClick={handleLogout} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -1272,43 +1274,52 @@ export default function PhotosManager() {
           )}
         </div>
 
-        {/* ── Onglets colonnes sur mobile ── */}
-        <div className={`sm:hidden flex overflow-x-auto gap-1 pb-1 -mx-1 px-1`}>
-          {COLUMNS.filter(c => c.id !== 'vendu').map(c => (
-            <button
-              key={c.id}
-              onClick={() => setMobileCol(c.id)}
-              className={[
-                'flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap border',
-                mobileCol === c.id
-                  ? 'bg-blue-500 text-white border-blue-500'
-                  : darkMode ? 'bg-gray-800 text-gray-400 border-gray-700' : 'bg-white text-gray-600 border-gray-200',
-              ].join(' ')}
-            >
-              <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${c.dot}`} />
-              {c.label}
-              {(photos[c.id] || []).length > 0 && (
-                <span className="ml-1 opacity-60">({photos[c.id].length})</span>
-              )}
-            </button>
-          ))}
-          <button
-            key="vendu"
-            onClick={() => setMobileCol('vendu')}
-            className={[
-              'flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap border',
-              mobileCol === 'vendu'
-                ? 'bg-blue-500 text-white border-blue-500'
-                : darkMode ? 'bg-gray-800 text-gray-400 border-gray-700' : 'bg-white text-gray-600 border-gray-200',
-            ].join(' ')}
-          >
-            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-red-500" />
-            Vendu
-            {(photos['vendu'] || []).length > 0 && (
-              <span className="ml-1 opacity-60">({photos['vendu'].length})</span>
-            )}
-          </button>
-        </div>
+        {/* ── Onglets colonnes sur mobile — grille compacte, pas de scroll ── */}
+        {(() => {
+          const q = folderSearch.trim().toLowerCase();
+          // Colonnes qui contiennent au moins un dossier correspondant à la recherche
+          const matchingCols = q ? new Set(
+            COLUMNS.filter(col =>
+              (photos[col.id] || []).some(p => p.game_tag && baseGameName(p.game_tag).toLowerCase().includes(q))
+            ).map(c => c.id)
+          ) : new Set();
+
+          return (
+            <div className="sm:hidden grid grid-cols-5 gap-1">
+              {COLUMNS.map(c => {
+                const isActive  = mobileCol === c.id;
+                const isMatch   = matchingCols.has(c.id);
+                const isDragOver = dragOverColumn === c.id || dragOverFolderCol === c.id;
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => setMobileCol(c.id)}
+                    onDragOver={e => { e.preventDefault(); onColumnDragOver(e, c.id); }}
+                    onDrop={e => { onColumnDrop(e, c.id); setMobileCol(c.id); }}
+                    onDragLeave={() => { setDragOverColumn(null); setDragOverFolderCol(null); }}
+                    className={[
+                      'flex flex-col items-center py-2 px-1 rounded-xl border cursor-pointer transition-all duration-150 select-none',
+                      isActive ? 'border-blue-500 bg-blue-500/10' : '',
+                      isDragOver ? 'border-blue-400 bg-blue-400/15 scale-105' : '',
+                      isMatch && q && !isActive ? 'border-blue-300 bg-blue-50 dark:bg-blue-900/20' : '',
+                      !isActive && !isDragOver && !isMatch ? (darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white') : '',
+                    ].join(' ')}
+                  >
+                    <div className={`w-2 h-2 rounded-full mb-1 ${c.dot}`} />
+                    <span className={`text-[10px] font-semibold text-center leading-tight ${isActive ? 'text-blue-500' : darkMode ? 'text-gray-400' : 'text-gray-600'}`} style={{fontSize:'9px'}}>
+                      {c.label.replace('Pas encore en vente','Pas encore').replace('En cours de vente','En cours').replace('En attente reception','En attente').replace(' ✓','')}
+                    </span>
+                    {(photos[c.id] || []).length > 0 && (
+                      <span className={`text-[9px] font-mono mt-0.5 ${isMatch && q ? 'text-blue-500 font-bold' : darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        {photos[c.id].length}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* ── Kanban — 4 colonnes principales ── */}
         {(() => {
@@ -1326,14 +1337,16 @@ export default function PhotosManager() {
             const gridCls    = zoomGridCls(zoom);
 
             const isVendu = col.id === 'vendu';
+            const qCol = folderSearch.trim().toLowerCase();
+            const colHasMatch = qCol && (photos[col.id] || []).some(p => p.game_tag && baseGameName(p.game_tag).toLowerCase().includes(qCol));
 
             const colBgStyle     = isVendu ? {} : darkMode ? { backgroundColor: isOver
               ? col.darkRgba.replace('0.12','0.25').replace('0.13','0.25')
               : col.darkRgba } : {};
             const colBorderStyle = isVendu
               ? (darkMode ? { borderColor: 'transparent' } : {})
-              : darkMode ? { borderColor: isOver ? '#60a5fa' : col.darkBorderRgba } : {};
-            const headerStyle    = darkMode ? { backgroundColor: col.darkHeaderRgba } : {};
+              : darkMode ? { borderColor: isOver ? '#60a5fa' : colHasMatch ? '#3b82f6' : col.darkBorderRgba } : {};
+            const headerStyle    = darkMode ? { backgroundColor: colHasMatch ? 'rgba(59,130,246,0.15)' : col.darkHeaderRgba } : {};
 
             return (
               <div
@@ -1346,7 +1359,8 @@ export default function PhotosManager() {
                 className={[
                   'flex flex-col rounded-2xl border-2 transition-all duration-150',
                   isOver && !darkMode ? 'scale-[1.01] border-blue-300' : '',
-                  !darkMode && !isVendu ? `${col.lightBg} ${isOver ? 'border-blue-300' : col.lightBorder}` : '',
+                  colHasMatch && !darkMode && !isOver ? 'border-blue-300' : '',
+                  !darkMode && !isVendu ? `${col.lightBg} ${(isOver || colHasMatch) ? 'border-blue-300' : col.lightBorder}` : '',
                   !darkMode && isVendu ? (isOver ? 'border-blue-300' : 'border-transparent') : '',
                   isFolderOver ? 'ring-2 ring-blue-400 ring-offset-1' : '',
                 ].join(' ')}
@@ -1355,7 +1369,7 @@ export default function PhotosManager() {
                 {/* En-tête de colonne */}
                 <div
                   ref={el => { headerRefs.current[col.id] = el; }}
-                  className={`px-3 py-2.5 rounded-t-2xl border-b ${darkMode ? 'border-white/10' : col.lightBorder} ${!darkMode ? col.lightHeader : ''}`}
+                  className={`px-3 py-2.5 rounded-t-2xl border-b ${darkMode ? 'border-white/10' : col.lightBorder} ${!darkMode ? (colHasMatch ? 'bg-blue-100/70' : col.lightHeader) : ''}`}
                   style={darkMode ? headerStyle : {}}
                 >
                   <div className="flex items-center justify-between gap-1">
