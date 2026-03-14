@@ -23,30 +23,35 @@ const COLUMNS = [
     lightBg: 'bg-rose-50', lightBorder: 'border-rose-200', lightHeader: 'bg-rose-100/70',
     darkRgba: 'rgba(159,18,57,0.12)', darkBorderRgba: 'rgba(159,18,57,0.35)', darkHeaderRgba: 'rgba(159,18,57,0.18)',
     dot: 'bg-rose-400',
+    toastBg: '#f43f5e', // rose-500
   },
   {
     id: 'en_cours_de_vente', label: 'En cours de vente',
     lightBg: 'bg-emerald-50', lightBorder: 'border-emerald-200', lightHeader: 'bg-emerald-100/70',
     darkRgba: 'rgba(6,78,59,0.13)', darkBorderRgba: 'rgba(6,78,59,0.35)', darkHeaderRgba: 'rgba(6,78,59,0.20)',
     dot: 'bg-emerald-500',
+    toastBg: '#10b981', // emerald-500
   },
   {
     id: 'en_vente', label: 'En vente',
     lightBg: 'bg-sky-50', lightBorder: 'border-sky-200', lightHeader: 'bg-sky-100/70',
     darkRgba: 'rgba(7,89,133,0.13)', darkBorderRgba: 'rgba(7,89,133,0.35)', darkHeaderRgba: 'rgba(7,89,133,0.20)',
     dot: 'bg-sky-400',
+    toastBg: '#0ea5e9', // sky-500
   },
   {
     id: 'en_attente_reception', label: 'En attente reception',
     lightBg: 'bg-violet-50', lightBorder: 'border-violet-200', lightHeader: 'bg-violet-100/70',
     darkRgba: 'rgba(76,29,149,0.13)', darkBorderRgba: 'rgba(76,29,149,0.35)', darkHeaderRgba: 'rgba(76,29,149,0.20)',
     dot: 'bg-violet-400',
+    toastBg: '#8b5cf6', // violet-500
   },
   {
     id: 'vendu', label: 'Vendu \u2713',
     lightBg: 'bg-red-50', lightBorder: 'border-red-200', lightHeader: 'bg-red-100/70',
     darkRgba: 'rgba(153,27,27,0.13)', darkBorderRgba: 'rgba(153,27,27,0.35)', darkHeaderRgba: 'rgba(153,27,27,0.20)',
     dot: 'bg-red-500',
+    toastBg: '#ef4444', // red-500
   },
 ];
 
@@ -430,6 +435,34 @@ export default function PhotosManager() {
     if (isLoggedIn && username) { loadPhotos(); loadGames(); }
   }, [isLoggedIn, username]);
 
+  // ── Realtime — synchronisation entre appareils ───────────────
+  useEffect(() => {
+    if (!isLoggedIn || !username) return;
+    const channel = supabase
+      .channel(`sale_photos:${username}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'sale_photos',
+        filter: `user_id=eq.${username}`,
+      }, () => {
+        // Recharger silencieusement sans toast ni reset de sélection
+        supabase
+          .from('sale_photos').select('*')
+          .eq('user_id', username).order('position', { ascending: true })
+          .then(({ data }) => {
+            if (!data) return;
+            setPhotos(prev => {
+              const next = { pas_encore_en_vente:[], en_cours_de_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
+              data.forEach(p => { if (next[p.status]) next[p.status].push(p); });
+              return next;
+            });
+          });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [isLoggedIn, username]);
+
   const loadPhotos = async () => {
     try {
       const { data, error } = await supabase
@@ -463,9 +496,9 @@ export default function PhotosManager() {
     } catch (e) { console.error(e); }
   };
 
-  const showToast = useCallback((message, type = 'default') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+  const showToast = useCallback((message, type = 'default', color = null) => {
+    setToast({ message, type, color });
+    setTimeout(() => setToast(null), 3500);
   }, []);
 
   // ── Upload ───────────────────────────────────────────────────
@@ -570,7 +603,10 @@ export default function PhotosManager() {
         s.add(tagLabel);
         return { ...prev, [toColumn]: s };
       });
-      showToast(`Dossier "${tagLabel === '__ungrouped__' ? 'Sans tag' : baseGameName(tagLabel)}" déplacé`, 'success');
+      const destCol  = COLUMNS.find(c => c.id === toColumn);
+      const destLabel = destCol ? destCol.label : toColumn;
+      const toastColor = destCol ? destCol.toastBg : null;
+      showToast(`"${tagLabel === '__ungrouped__' ? 'Sans tag' : baseGameName(tagLabel)}" déplacé vers "${destLabel}"`, 'success', toastColor);
       return;
     }
 
@@ -1781,11 +1817,21 @@ export default function PhotosManager() {
 
       {/* ── Toast ── */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl font-medium text-sm flex items-center gap-2 max-w-sm text-center
-          ${toast.type === 'error' ? 'bg-red-500 text-white' : toast.type === 'success' ? 'bg-green-500 text-white' : darkMode ? 'bg-gray-700 text-white' : 'bg-gray-800 text-white'}`}>
-          {toast.type === 'success' && <Check className="w-4 h-4 flex-shrink-0" />}
-          {toast.type === 'error'   && <X     className="w-4 h-4 flex-shrink-0" />}
-          {toast.message}
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl font-medium text-sm flex items-center gap-2 max-w-sm text-center text-white transition-all"
+          style={toast.color
+            ? { backgroundColor: toast.color, boxShadow: `0 8px 32px ${toast.color}60, 0 2px 8px ${toast.color}40` }
+            : {}
+          }
+        >
+          {!toast.color && (
+            <span className={`absolute inset-0 rounded-xl ${toast.type === 'error' ? 'bg-red-500' : toast.type === 'success' ? 'bg-green-500' : darkMode ? 'bg-gray-700' : 'bg-gray-800'}`} />
+          )}
+          <span className="relative flex items-center gap-2">
+            {toast.type === 'success' && <Check className="w-4 h-4 flex-shrink-0" />}
+            {toast.type === 'error'   && <X     className="w-4 h-4 flex-shrink-0" />}
+            {toast.message}
+          </span>
         </div>
       )}
     </div>
