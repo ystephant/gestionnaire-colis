@@ -562,7 +562,7 @@ export default function PhotosManager() {
         s.add(tagLabel);
         return { ...prev, [toColumn]: s };
       });
-      showToast(`Dossier "${baseGameName(tagLabel)}" déplacé`, 'success');
+      showToast(`Dossier "${tagLabel === '__ungrouped__' ? 'Sans tag' : baseGameName(tagLabel)}" déplacé`, 'success');
       return;
     }
 
@@ -592,6 +592,15 @@ export default function PhotosManager() {
       return next;
     });
     setSelectedPhotos({});
+    // Garder "__ungrouped__" replié dans la colonne de destination si des photos sans tag arrivent
+    const hasUntaggedInMove = ptm.some(p => !p.game_tag);
+    if (hasUntaggedInMove) {
+      setCollapsedFolders(prev => {
+        const s = new Set(prev[toColumn] || []);
+        s.add('__ungrouped__');
+        return { ...prev, [toColumn]: s };
+      });
+    }
     try {
       await supabase.from('sale_photos')
         .update({ status: toColumn, updated_at: new Date().toISOString() })
@@ -1407,7 +1416,6 @@ export default function PhotosManager() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-bold leading-tight break-words">{bName}</p>
-                                {ts && <p className={`text-[10px] mt-0.5 ${subtext}`}>{ts}</p>}
                               </div>
                               <button
                                 onClick={e => { e.stopPropagation(); openPhotoPopup(gPhotos[0], gPhotos); }}
@@ -1438,29 +1446,74 @@ export default function PhotosManager() {
                       })}
 
                       {/* ── Photos sans tag ── */}
-                      {ungrouped.length > 0 && (
-                        <div className={`rounded-xl overflow-hidden border ${darkMode ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white/40'}`}>
+                      {ungrouped.length > 0 && (() => {
+                        const ugSel     = ungrouped.filter(p => selectedPhotos[col.id]?.has(p.id)).length;
+                        const ugAll     = ungrouped.length > 0 && ugSel === ungrouped.length;
+                        const ugSome    = ugSel > 0 && !ugAll;
+                        const isUgDragging = draggingFolder?.tagLabel === '__ungrouped__' && draggingFolder?.fromColId === col.id;
+                        return (
                           <div
-                            className={`flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-gray-50'}`}
-                            onClick={() => toggleFolder(col.id, '__ungrouped__')}
+                            draggable
+                            data-folderid="__ungrouped__"
+                            onDragStart={e => onFolderDragStart(e, '__ungrouped__', col.id, ungrouped)}
+                            onDragEnd={onFolderDragEnd}
+                            className={[
+                              'rounded-xl overflow-hidden border transition-all duration-150',
+                              isUgDragging ? 'opacity-40 scale-95' : '',
+                              darkMode ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white/40',
+                            ].join(' ')}
                           >
-                            {collapsedFolders[col.id]?.has('__ungrouped__')
-                              ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
-                              : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
-                            }
-                            <ImageIcon className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
-                            <span className={`text-xs font-medium flex-1 ${subtext}`}>Sans tag</span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
-                              {ungrouped.length}
-                            </span>
-                          </div>
-                          {!collapsedFolders[col.id]?.has('__ungrouped__') && (
-                            <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
-                              {ungrouped.map(photo => renderCard(col.id, photo, ungrouped))}
+                            <div
+                              className={`flex items-center gap-2 px-2.5 py-2 cursor-grab active:cursor-grabbing transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-gray-50'}`}
+                              onClick={() => toggleFolder(col.id, '__ungrouped__')}
+                            >
+                              {/* Checkbox */}
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleFolderSelection(col.id, ungrouped); }}
+                                title={ugAll ? 'Désélectionner' : 'Sélectionner tout'}
+                                className={[
+                                  'flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
+                                  ugAll ? 'bg-blue-500 border-blue-500' : ugSome ? 'bg-blue-200 border-blue-400' : darkMode ? 'border-gray-500 bg-transparent hover:border-blue-400' : 'border-gray-300 bg-white hover:border-blue-400',
+                                ].join(' ')}
+                                onMouseDown={e => e.stopPropagation()}
+                              >
+                                {ugAll && <Check className="w-3 h-3 text-white" />}
+                                {ugSome && <div className="w-2 h-0.5 bg-blue-500 rounded" />}
+                              </button>
+                              {collapsedFolders[col.id]?.has('__ungrouped__')
+                                ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
+                                : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
+                              }
+                              <span className={`text-xs font-medium flex-1 ${subtext}`}>Sans tag</span>
+                              <button
+                                onClick={e => { e.stopPropagation(); openPhotoPopup(ungrouped[0], ungrouped); }}
+                                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
+                                title="Ouvrir pour glisser vers LeBonCoin"
+                                onMouseDown={e => e.stopPropagation()}
+                              >
+                                <Clipboard className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); downloadMultiple(ungrouped); }}
+                                disabled={downloading}
+                                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
+                                title="Télécharger les photos sans tag"
+                                onMouseDown={e => e.stopPropagation()}
+                              >
+                                <Download className="w-3 h-3" />
+                              </button>
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
+                                {ungrouped.length}{ugSel > 0 && <span className="text-blue-400 ml-0.5">·{ugSel}</span>}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      )}
+                            {!collapsedFolders[col.id]?.has('__ungrouped__') && (
+                              <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
+                                {ungrouped.map(photo => renderCard(col.id, photo, ungrouped, true))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </>
                   ) : (
                     /* Vue grille simple */
