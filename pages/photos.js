@@ -1,1526 +1,2903 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
-import {
-  Upload, Tag, Trash2, X, Check, ChevronDown, ChevronRight,
-  Image as ImageIcon, Loader2, Sun, Moon, LogOut, ArrowLeft,
-  Folder, FolderOpen, Download, ZoomIn, Clipboard,
-  RotateCcw, RotateCw, ChevronLeft,
-} from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-const CLOUDINARY_CLOUD_NAME    = 'dfnwxqjey';
-const CLOUDINARY_UPLOAD_PRESET = 'boardgames_upload';
-
-const COLUMNS = [
-  {
-    id: 'pas_encore_en_vente', label: 'Pas encore en vente',
-    lightBg: 'bg-rose-50', lightBorder: 'border-rose-200', lightHeader: 'bg-rose-100/70',
-    darkRgba: 'rgba(159,18,57,0.12)', darkBorderRgba: 'rgba(159,18,57,0.35)', darkHeaderRgba: 'rgba(159,18,57,0.18)',
-    dot: 'bg-rose-400',
-  },
-  {
-    id: 'en_cours_de_vente', label: 'En cours de vente',
-    lightBg: 'bg-amber-50', lightBorder: 'border-amber-200', lightHeader: 'bg-amber-100/70',
-    darkRgba: 'rgba(146,64,14,0.13)', darkBorderRgba: 'rgba(146,64,14,0.35)', darkHeaderRgba: 'rgba(146,64,14,0.20)',
-    dot: 'bg-amber-400',
-  },
-  {
-    id: 'en_vente', label: 'En vente',
-    lightBg: 'bg-sky-50', lightBorder: 'border-sky-200', lightHeader: 'bg-sky-100/70',
-    darkRgba: 'rgba(7,89,133,0.13)', darkBorderRgba: 'rgba(7,89,133,0.35)', darkHeaderRgba: 'rgba(7,89,133,0.20)',
-    dot: 'bg-sky-400',
-  },
-  {
-    id: 'en_attente_reception', label: 'En attente reception',
-    lightBg: 'bg-violet-50', lightBorder: 'border-violet-200', lightHeader: 'bg-violet-100/70',
-    darkRgba: 'rgba(76,29,149,0.13)', darkBorderRgba: 'rgba(76,29,149,0.35)', darkHeaderRgba: 'rgba(76,29,149,0.20)',
-    dot: 'bg-violet-400',
-  },
-  {
-    id: 'vendu', label: 'Vendu \u2713',
-    lightBg: 'bg-emerald-50', lightBorder: 'border-emerald-200', lightHeader: 'bg-emerald-100/70',
-    darkRgba: 'rgba(6,78,59,0.13)', darkBorderRgba: 'rgba(6,78,59,0.35)', darkHeaderRgba: 'rgba(6,78,59,0.20)',
-    dot: 'bg-emerald-500',
-  },
-];
-
-const formatTagTimestamp = () => {
-  const n = new Date();
-  return `${String(n.getDate()).padStart(2,'0')}/${String(n.getMonth()+1).padStart(2,'0')} ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
-};
-const baseGameName = (tag) => (tag ? tag.split(' \u2022 ')[0] : '');
-
-// Horodatage court depuis le tag : "11/03 14:32" → "1103-1432"
-const shortTs = (tag) => {
-  if (!tag) return '';
-  const ts = tag.split(' \u2022 ')[1]; // "11/03 14:32"
-  if (!ts) return '';
-  return ts.replace('/', '').replace(' ', '-').replace(':', ''); // "1103-1432"
-};
-
-// Nom de fichier propre : Catan_1103-1432_1.jpg
-const makeFilename = (photo, index, ext) => {
-  if (photo.game_tag) {
-    const name = baseGameName(photo.game_tag).replace(/\s+/g, '_');
-    const ts   = shortTs(photo.game_tag);
-    return `${name}_${ts}_${index}.${ext}`;
-  }
-  return `photo_${index}.${ext}`;
-};
-
-// ─────────────────────────────────────────────────────────────
-// PhotoCard défini EN DEHORS du composant principal — ne jamais
-// redéfinir dans le render, sinon React démonte/remonte à chaque
-// render et casse le drag, la lightbox, etc.
-// ─────────────────────────────────────────────────────────────
-const PhotoCard = ({
-  photo, columnId, siblingPhotos,
-  isSelected, isDragged, isOverItem, inFolder,
-  onDragStart, onDragEnd, onDragOver,
-  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto, onCopyImage,
-}) => {
-  const rot        = photo.rotation || 0;
-  const blobCache  = React.useRef(null); // { url, file } — pré-chargé au survol
-
-  // Pré-charger le blob dès le survol pour l'avoir prêt au dragstart
-  const handleMouseEnter = async () => {
-    if (blobCache.current?.url === photo.image_url) return;
-    try {
-      const res  = await fetch(photo.image_url);
-      const blob = await res.blob();
-      const ext  = blob.type.includes('png') ? 'png' : 'jpg';
-      const name = makeFilename(photo, 1, ext);
-      blobCache.current = { url: photo.image_url, file: new File([blob], name, { type: blob.type }) };
-    } catch { /* ignore */ }
-  };
-
-  const handleDragStart = (e) => {
-    // Si le blob est prêt, on l'injecte comme vrai fichier — LeBonCoin/Vinted le reconnaît
-    if (blobCache.current?.file) {
-      try { e.dataTransfer.items.add(blobCache.current.file); } catch { /* ignore */ }
-    }
-    // Fallbacks
-    try {
-      const ext  = photo.image_url.includes('.png') ? 'png' : 'jpg';
-      const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-      const name = makeFilename(photo, 1, ext);
-      e.dataTransfer.setData('DownloadURL', `${mime}:${name}:${photo.image_url}`);
-      e.dataTransfer.setData('text/uri-list', photo.image_url);
-      e.dataTransfer.setData('text/plain', photo.image_url);
-    } catch { /* ignore */ }
-    e.dataTransfer.effectAllowed = 'copyMove';
-    onDragStart(e, photo, columnId);
-  };
-
-  return (
-    <div
-      data-photoid={photo.id}
-      data-colid={columnId}
-      draggable
-      onMouseEnter={handleMouseEnter}
-      onDragStart={handleDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={e => onDragOver(e, photo.id)}
-      onClick={e => {
-        if (e.ctrlKey || e.metaKey) { e.stopPropagation(); onCtrlSelect(columnId, photo.id); return; }
-        onToggleSelect(columnId, photo.id);
-      }}
-      className={[
-        'relative rounded-xl overflow-hidden transition-all duration-150 group cursor-pointer',
-        isDragged  ? 'opacity-30 scale-95'               : 'opacity-100',
-        isOverItem ? 'ring-2 ring-blue-400'               : '',
-        isSelected ? 'ring-2 ring-blue-500 scale-[0.96]' : '',
-      ].join(' ')}
-      style={{ aspectRatio: '1/1' }}
-    >
-      {/* Image */}
-      <div className="w-full h-full overflow-hidden">
-        <img
-          src={photo.image_url}
-          alt={photo.game_tag || 'photo'}
-          className="w-full h-full object-cover transition-transform duration-300"
-          style={{ transform: `rotate(${rot}deg)`, transformOrigin: 'center' }}
-          draggable={false}
-        />
-      </div>
-
-      {/* Hover actions — toujours visibles au survol */}
-      <div className="absolute top-1.5 left-1.5 right-1.5 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
-        <button
-          onClick={e => { e.stopPropagation(); onOpenLightbox(photo, siblingPhotos || [photo]); }}
-          className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-          title="Agrandir"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-        <div className="flex gap-1">
-          <button
-            onClick={e => { e.stopPropagation(); onCopyImage(photo, siblingPhotos || [photo]); }}
-            className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-            title="Ouvrir dans une fenêtre (glisser vers LeBonCoin)"
-          >
-            <Clipboard className="w-3 h-3" />
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); onDownloadSingle(photo); }}
-            className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-            title="Telecharger"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); onDeletePhoto(photo); }}
-            className="w-7 h-7 rounded-lg bg-red-500/80 hover:bg-red-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-            title="Supprimer"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Selection overlay — masqué dans les dossiers (la coche est sur le dossier) */}
-      {!inFolder && (
-        <div className={`absolute inset-0 pointer-events-none transition-colors ${isSelected ? 'bg-blue-500/30' : 'bg-black/0 group-hover:bg-black/10'}`}>
-          <div className={`absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm
-            ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white/80 border-white'}`}>
-            {isSelected && <Check className="w-3 h-3 text-white" />}
-          </div>
-        </div>
-      )}
-
-      {/* Tag badge */}
-      {photo.game_tag && (() => {
-        const [name, ts] = photo.game_tag.split(' \u2022 ');
-        return (
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-1.5 pt-4 pb-1">
-            <p className="text-white text-xs font-semibold truncate leading-tight">{name}</p>
-            {ts && <p className="text-white/60 text-[9px] truncate leading-tight">{ts}</p>}
-          </div>
-        );
-      })()}
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────
-// Composant principal
-// ─────────────────────────────────────────────────────────────
-export default function PhotosManager() {
+export default function TransactionsTracker() {
   const router = useRouter();
   const { darkMode, toggleDarkMode } = useTheme();
-  const [username, setUsername]     = useState('');
+  const [username, setUsername] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loading, setLoading]       = useState(true);
-
-  const [photos, setPhotos] = useState({
-    pas_encore_en_vente: [], en_cours_de_vente: [],
-    en_vente: [], en_attente_reception: [], vendu: [],
+  const [loading, setLoading] = useState(true);
+  
+  const [buyTransactions, setBuyTransactions] = useState([]);
+  const [sellTransactions, setSellTransactions] = useState([]);
+  
+  const [gameName, setGameName] = useState('');
+  const [buyPrice, setBuyPrice] = useState('');
+  const [sellPrice, setSellPrice] = useState('');
+  
+  const [expandedBuyMonths, setExpandedBuyMonths] = useState(new Set());
+  const [expandedSellMonths, setExpandedSellMonths] = useState(new Set());
+  const [statsView, setStatsView] = useState(false);
+  const [gameNameSuggestions, setGameNameSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedGameFilter, setSelectedGameFilter] = useState('');
+  const [timeGrouping, setTimeGrouping] = useState('day'); // 'day', 'month', 'year'
+  const [globalStatsFilter, setGlobalStatsFilter] = useState('all'); // 'all', 'current-month', 'current-year', 'custom'
+  const [showStatsFilterMenu, setShowStatsFilterMenu] = useState(false);
+  const [customMonth, setCustomMonth] = useState('');
+  const [customYear, setCustomYear] = useState('');
+  const [gameSearch, setGameSearch] = useState('');
+  const [showGameSearch, setShowGameSearch] = useState(false);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [toast, setToast] = useState(null); // { message, type: 'buy' | 'sell' }
+  const [editingTransaction, setEditingTransaction] = useState(null); // { id, price }
+  const [showDormantStock, setShowDormantStock] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    evolution: true,
+    comparison: true,
+    distribution: true,
+    top10Bought: true,
+    top10Profitable: true,
+    top10LeastProfitable: true,
+    detailProfitable: true,
+    detailLosses: true,
+    detailLossesWithSales: true,
+    avgPrices: false 
+    
   });
 
-  // Upload depuis le bureau
-  const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const [uploading, setUploading]           = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const fileInputRef = useRef(null);
+  // ── États export PDF ─────────────────────────────────────────
+  const [showPdfModal,     setShowPdfModal]     = useState(false);
+  const [pdfPeriodType,    setPdfPeriodType]    = useState('month'); // 'month' | 'year'
+  const [pdfSelectedMonth, setPdfSelectedMonth] = useState('');
+  const [pdfSelectedYear,  setPdfSelectedYear]  = useState('');
+  const [pdfGenerating,    setPdfGenerating]    = useState(false);
 
-  // Drag de photos entre colonnes
-  const [draggingPhoto, setDraggingPhoto]     = useState(null);
-  const [dragOverColumn, setDragOverColumn]   = useState(null);
-  const [dragOverPhotoId, setDragOverPhotoId] = useState(null);
-
-  // Drag de dossier entier entre colonnes
-  const [draggingFolder, setDraggingFolder] = useState(null); // { tagLabel, fromColId, folderPhotos }
-  const [dragOverFolderCol, setDragOverFolderCol] = useState(null);
-
-  // Sélection multiple
-  const [selectMode, setSelectMode]         = useState(true);
-  const [selectedPhotos, setSelectedPhotos] = useState({});
-
-  // Tagging
-  const [gamesList, setGamesList]             = useState([]);
-  const [showTagDropdown, setShowTagDropdown] = useState(false);
-  const [tagSearch, setTagSearch]             = useState('');
-
-  // Vue dossiers — active par défaut sur toutes les colonnes
-  const [folderMode, setFolderMode]             = useState(new Set(COLUMNS.map(c => c.id)));
-  const [collapsedFolders, setCollapsedFolders] = useState({});
-
-  // Lightbox
-  const [lightbox, setLightbox] = useState(null);
-
-  // Download
-  const [downloading, setDownloading] = useState(false);
-
-  // Zoom molette par colonne — 1=très grand, 4=très petit
-  const [colZoom, setColZoom] = useState(() => {
-    const z = {};
-    COLUMNS.forEach(c => { z[c.id] = 2; });
-    return z;
-  });
-  const colRefs    = useRef({});
-  const headerRefs = useRef({}); // wheel uniquement sur le header
-  const photosRef = useRef({});   // miroir de photos pour les handlers globaux
-  const lassoRef  = useRef(null); // miroir de lasso pour les handlers globaux
-
-  // Lasso — rectangle de sélection dessiné à la souris
-  const [lasso, setLasso] = useState(null);
-  // { colId, startX, startY, curX, curY }
-
-  // Sync refs
-  useEffect(() => { photosRef.current = photos; }, [photos]);
-  useEffect(() => { lassoRef.current  = lasso;  }, [lasso]);
-
-  // Handlers globaux mousemove / mouseup pour le lasso
   useEffect(() => {
-    const onMove = (e) => {
-      if (!lassoRef.current) return;
-      setLasso(prev => prev ? { ...prev, curX: e.clientX, curY: e.clientY } : null);
-    };
+    checkAuth();
+  }, []);
 
-    const onUp = () => {
-      const l = lassoRef.current;
-      if (!l) return;
-
-      const minX = Math.min(l.startX, l.curX);
-      const maxX = Math.max(l.startX, l.curX);
-      const minY = Math.min(l.startY, l.curY);
-      const maxY = Math.max(l.startY, l.curY);
-
-      // Seuil minimum pour ne pas déclencher sur un simple clic
-      if (maxX - minX > 6 || maxY - minY > 6) {
-        const colEl = colRefs.current[l.colId];
-        if (colEl) {
-          const hitPhotoIds = [];
-          colEl.querySelectorAll('[data-photoid]').forEach(el => {
-            const r = el.getBoundingClientRect();
-            if (r.left < maxX && r.right > minX && r.top < maxY && r.bottom > minY) {
-              hitPhotoIds.push(el.dataset.photoid);
-            }
-          });
-
-          // En vue dossiers : sélectionner aussi les dossiers entiers
-          const hitFolderTags = [];
-          colEl.querySelectorAll('[data-folderid]').forEach(el => {
-            const r = el.getBoundingClientRect();
-            if (r.left < maxX && r.right > minX && r.top < maxY && r.bottom > minY) {
-              hitFolderTags.push(el.dataset.folderid);
-            }
-          });
-
-          const colPhotos = photosRef.current[l.colId] || [];
-          hitFolderTags.forEach(tag => {
-            colPhotos.filter(p => p.game_tag === tag).forEach(p => hitPhotoIds.push(p.id));
-          });
-
-          if (hitPhotoIds.length > 0) {
-            setSelectedPhotos(prev => {
-              const s = new Set(prev[l.colId] || []);
-              hitPhotoIds.forEach(id => s.add(id));
-              return { ...prev, [l.colId]: s };
-            });
-          }
-        }
-      } else {
-        // Clic simple sur le fond → désélectionner tout
-        setSelectedPhotos({});
-      }
-      setLasso(null);
-    };
-
-    // Clic hors de toute colonne → désélectionner
-    const onGlobalDown = (e) => {
-      if (e.target.closest('[data-photoid],[data-folderid],button,a,input,[role="dialog"],[data-noclr]')) return;
-      setSelectedPhotos({});
-    };
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    document.addEventListener('mousedown', onGlobalDown);
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.removeEventListener('mousedown', onGlobalDown);
-    };
-  }, []); // stable — utilise les refs
-
-  // ── Molette : replier/déplier les dossiers de la colonne ───
-  // Ref vers collapsedFolders + folderMode + photos pour les handlers non-passifs
-  const collapsedFoldersRef = useRef({});
-  const folderModeRef       = useRef(new Set());
-  const groupsRef           = useRef({});
-
-  useEffect(() => { collapsedFoldersRef.current = collapsedFolders; }, [collapsedFolders]);
-  useEffect(() => { folderModeRef.current       = folderMode;       }, [folderMode]);
-  // groupsRef mis à jour dans le render — on le met ici via photos
   useEffect(() => {
-    const g = {};
-    COLUMNS.forEach(col => {
-      const colPhotos = photos[col.id] || [];
-      const grp = {};
-      colPhotos.forEach(p => { if (p.game_tag) { if (!grp[p.game_tag]) grp[p.game_tag] = []; grp[p.game_tag].push(p); } });
-      g[col.id] = grp;
-    });
-    groupsRef.current = g;
-  }, [photos]);
-
-  const onColWheel = useCallback((e, colId) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!folderModeRef.current.has(colId)) return;
-    const taggedKeys = Object.keys(groupsRef.current[colId] || {});
-    const hasUngrouped = (photosRef.current[colId] || []).some(p => !p.game_tag);
-    const allKeys = [...taggedKeys, ...(hasUngrouped ? ['__ungrouped__'] : [])];
-    if (!allKeys.length) return;
-    if (e.deltaY > 0) {
-      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set(allKeys) }));
-    } else {
-      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set() }));
+    if (isLoggedIn && username) {
+      loadTransactions();
+      loadUserPreferences();
+      const cleanup = subscribeToChanges();
+      return cleanup;
     }
-  }, []);
-
-  // Wheel non-passif sur le header uniquement — scroll page libre partout ailleurs
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    const handlers = {};
-    COLUMNS.forEach(col => {
-      const el = headerRefs.current[col.id];
-      if (!el) return;
-      const h = (e) => onColWheel(e, col.id);
-      handlers[col.id] = h;
-      el.addEventListener('wheel', h, { passive: false });
-    });
-    return () => {
-      COLUMNS.forEach(col => {
-        const el = headerRefs.current[col.id];
-        if (el && handlers[col.id]) el.removeEventListener('wheel', handlers[col.id]);
-      });
-    };
-  }, [onColWheel, isLoggedIn]);
-
-  // Modale suppression / toast
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [toast, setToast]                 = useState(null);
-
-  // ── Auth ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const u = localStorage.getItem('username');
-    const p = localStorage.getItem('password');
-    if (u && p) { setUsername(u); setIsLoggedIn(true); }
-    else router.push('/');
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (isLoggedIn && username) { loadPhotos(); loadGames(); }
   }, [isLoggedIn, username]);
-
-  const loadPhotos = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('sale_photos').select('*')
-        .eq('user_id', username).order('position', { ascending: true });
-      if (error) throw error;
-      const g = { pas_encore_en_vente:[], en_cours_de_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
-      (data || []).forEach(p => { if (g[p.status]) g[p.status].push(p); });
-      setPhotos(g);
-    } catch { showToast('Erreur chargement photos', 'error'); }
+  
+  const checkAuth = () => {
+    const savedUsername = localStorage.getItem('username');
+    const savedPassword = localStorage.getItem('password');
+    
+    if (savedUsername && savedPassword) {
+      setUsername(savedUsername);
+      setIsLoggedIn(true);
+      setLoading(false);
+    } else {
+      router.push('/');
+      setLoading(false);
+    }
   };
 
-  const loadGames = async () => {
+  const loadTransactions = async () => {
+    if (!username) return;
+    
     try {
-      const { data, error } = await supabase
+      const { data: buys, error: buyError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', username)
+        .eq('type', 'buy')
+        .order('created_at', { ascending: false });
+
+      const { data: sells, error: sellError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', username)
+        .eq('type', 'sell')
+        .order('created_at', { ascending: false });
+
+      if (buyError) throw buyError;
+      if (sellError) throw sellError;
+
+      setBuyTransactions(buys || []);
+      setSellTransactions(sells || []);
+
+      // Extract unique game names for autocomplete
+      // Inclut les jeux créés depuis photos.js (type='game_ref')
+      const { data: gameRefs } = await supabase
         .from('transactions')
         .select('game_name')
         .eq('user_id', username)
+        .eq('type', 'game_ref')
         .not('game_name', 'is', null);
-      if (error) throw error;
-      const unique = [...new Set((data || []).map(t => t.game_name).filter(Boolean))].sort();
-      setGamesList(unique);
-    } catch (e) { console.error(e); }
-  };
 
-  const showToast = useCallback((message, type = 'default') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
+      const allTransactions = [...(buys || []), ...(sells || []), ...(gameRefs || [])];
+      const uniqueNames = [...new Set(allTransactions
+        .map(t => t.game_name)
+        .filter(name => name && name.trim() !== '')
+      )].sort();
+      setGameNameSuggestions(uniqueNames);
 
-  // ── Upload ───────────────────────────────────────────────────
-  const uploadToCloudinary = async (file) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    fd.append('folder', 'sale_photos');
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-      { method: 'POST', body: fd }
-    );
-    if (!res.ok) throw new Error('Upload echoue');
-    const data = await res.json();
-    return { url: data.secure_url, publicId: data.public_id };
-  };
-
-  const handleFileDrop = useCallback(async (files) => {
-    const valid = Array.from(files).filter(f => f.type.startsWith('image/'));
-    if (!valid.length) return;
-    setUploading(true); setUploadProgress(0);
-    let done = 0;
-    for (const file of valid) {
-      try {
-        const { url, publicId } = await uploadToCloudinary(file);
-        const { data, error } = await supabase.from('sale_photos').insert({
-          user_id: username, image_url: url, cloudinary_public_id: publicId,
-          status: 'pas_encore_en_vente', position: Date.now(), rotation: 0,
-        }).select().single();
-        if (error) throw error;
-        setPhotos(prev => ({ ...prev, pas_encore_en_vente: [...prev.pas_encore_en_vente, data] }));
-      } catch { showToast(`Erreur upload: ${file.name}`, 'error'); }
-      done++;
-      setUploadProgress(Math.round((done / valid.length) * 100));
+      // Auto-expand current month
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      setExpandedBuyMonths(new Set([currentMonth]));
+      setExpandedSellMonths(new Set([currentMonth]));
+    } catch (error) {
+      console.error('Erreur de chargement:', error);
+    } finally {
+      setLoading(false);
     }
-    setUploading(false); setUploadProgress(0);
-    showToast(`${done} photo${done > 1 ? 's' : ''} ajoutee${done > 1 ? 's' : ''}`, 'success');
-  }, [username]);
-
-  const onDropZoneDragOver  = (e) => { e.preventDefault(); setIsDraggingFile(true); };
-  const onDropZoneDragLeave = ()  => setIsDraggingFile(false);
-  const onDropZoneDrop      = (e) => {
-    e.preventDefault(); setIsDraggingFile(false);
-    // Ne pas déclencher si c'est un drag interne (photo ou dossier)
-    if (draggingPhoto || draggingFolder) return;
-    handleFileDrop(e.dataTransfer.files);
   };
 
-  // ── Drag de photos entre colonnes ───────────────────────────
-  const onPhotoDragStart = useCallback((e, photo, fromColumn) => {
-    e.stopPropagation();
-    const sel = selectedPhotos[fromColumn];
-    const isInSel = sel && sel.size > 0 && sel.has(photo.id);
-    let ptm = (selectMode && isInSel)
-      ? COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)))
-      : [photo];
-    if (!ptm.length) ptm = [photo];
-    setDraggingPhoto({ photos: ptm });
-    e.dataTransfer.effectAllowed = 'copyMove';
-  }, [selectMode, selectedPhotos, photos]);
+const loadUserPreferences = async () => {
+    if (!username) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('*')
+        .eq('user_id', username)
+        .single();
 
-  const onPhotoDragEnd = useCallback(() => {
-    setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
-  }, []);
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+        console.error('Erreur de chargement des préférences:', error);
+        return;
+      }
 
-  const onPhotoDragOverItem = useCallback((e, photoId) => {
-    e.preventDefault(); e.stopPropagation();
-    setDragOverPhotoId(photoId);
-  }, []);
-
-  // ── Drag de DOSSIER entier entre colonnes ───────────────────
-  const onFolderDragStart = useCallback((e, tagLabel, fromColId, folderPhotos) => {
-    e.stopPropagation();
-    setDraggingFolder({ tagLabel, fromColId, folderPhotos });
-    e.dataTransfer.effectAllowed = 'move';
-  }, []);
-
-  const onFolderDragEnd = useCallback(() => {
-    setDraggingFolder(null); setDragOverFolderCol(null);
-  }, []);
-
-  // ── Drop sur une colonne (photo OU dossier) ─────────────────
-  const onColumnDragOver = (e, colId) => {
-    e.preventDefault();
-    if (draggingFolder) setDragOverFolderCol(colId);
-    else setDragOverColumn(colId);
+      if (data) {
+        setGlobalStatsFilter(data.global_stats_filter || 'all');
+        setCustomMonth(data.custom_month || '');
+        setCustomYear(data.custom_year || '');
+      }
+    } catch (error) {
+      console.error('Erreur de chargement des préférences:', error);
+    }
   };
 
-  const onColumnDrop = async (e, toColumn) => {
-    e.preventDefault();
+  const saveUserPreferences = async (filter, month = '', year = '') => {
+    if (!username) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: username,
+          global_stats_filter: filter,
+          custom_month: month,
+          custom_year: year,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        });
 
-    // Priorité : drag de dossier
-    if (draggingFolder) {
-      const { tagLabel, fromColId, folderPhotos } = draggingFolder;
-      setDraggingFolder(null); setDragOverFolderCol(null);
-      if (fromColId === toColumn) return;
-      if (toColumn === 'vendu') { setPendingDelete({ photos: folderPhotos }); return; }
-      await movePhotos(folderPhotos, toColumn, null);
-      showToast(`Dossier "${baseGameName(tagLabel)}" déplacé`, 'success');
+      if (error) {
+        console.error('Erreur de sauvegarde des préférences:', error);
+      }
+    } catch (error) {
+      console.error('Erreur de sauvegarde des préférences:', error);
+    }
+  };
+  
+  const subscribeToChanges = () => {
+    if (!username) return () => {};
+    
+    console.log('Subscribing to changes for user:', username);
+    
+    const channel = supabase
+      .channel('transactions_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `user_id=eq.${username}`
+        },
+        (payload) => {
+          console.log('Change received!', payload);
+          loadTransactions();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+      });
+
+    return () => {
+      console.log('Unsubscribing from changes');
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const parsePrice = (value) => {
+    return parseFloat(value.replace(',', '.')) || 0;
+  };
+
+  const addBuy = async () => {
+    if (!buyPrice.trim()) return;
+    if (!username) {
+      alert('Erreur: utilisateur non connecté');
       return;
     }
 
-    // Drag de photo(s)
-    if (!draggingPhoto) return;
-    const { photos: ptm } = draggingPhoto;
-    const capturedBeforeId = dragOverPhotoId;
-    setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
-    if (toColumn === 'vendu') { setPendingDelete({ photos: ptm }); return; }
-    await movePhotos(ptm, toColumn, capturedBeforeId);
-  };
+    const price = parsePrice(buyPrice);
+    if (price <= 0) return;
 
-  const movePhotos = async (ptm, toColumn, beforePhotoId = null) => {
-    const ids = ptm.map(p => p.id);
-    setPhotos(prev => {
-      const next = {};
-      COLUMNS.forEach(col => { next[col.id] = (prev[col.id] || []).filter(p => !ids.includes(p.id)); });
-      const to = [...next[toColumn]];
-      const updated = ptm.map(p => ({ ...p, status: toColumn }));
-      if (beforePhotoId) {
-        const idx = to.findIndex(p => p.id === beforePhotoId);
-        to.splice(idx >= 0 ? idx : to.length, 0, ...updated);
-      } else {
-        to.push(...updated);
-      }
-      next[toColumn] = to;
-      return next;
-    });
-    setSelectedPhotos({});
     try {
-      await supabase.from('sale_photos')
-        .update({ status: toColumn, updated_at: new Date().toISOString() })
-        .in('id', ids);
-    } catch { showToast('Erreur deplacement', 'error'); loadPhotos(); }
-  };
-
-  // ── Suppression ──────────────────────────────────────────────
-  const handleDeletePhoto = useCallback((photo) => {
-    setPendingDelete({ photos: [photo] });
-  }, []);
-
-  const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    const { photos: toDelete } = pendingDelete;
-    setPendingDelete(null);
-    const ids = toDelete.map(p => p.id);
-    setPhotos(prev => {
-      const next = {};
-      COLUMNS.forEach(col => { next[col.id] = (prev[col.id] || []).filter(p => !ids.includes(p.id)); });
-      return next;
-    });
-    setSelectedPhotos({});
-    if (lightbox && ids.includes(lightbox.photo.id)) setLightbox(null);
-    try {
-      await Promise.all(toDelete.map(ph =>
-        fetch('/api/delete-cloudinary', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ publicId: ph.cloudinary_public_id }),
-        })
-      ));
-      await supabase.from('sale_photos').delete().in('id', ids);
-      showToast(
-        ids.length > 1 ? `${ids.length} photos supprimees` : 'Photo supprimee',
-        'success'
-      );
-    } catch { showToast('Erreur suppression', 'error'); loadPhotos(); }
-  };
-
-  const deleteSelected = () => {
-    const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
-    if (all.length) setPendingDelete({ photos: all });
-  };
-
-  // ── Sélection multiple ───────────────────────────────────────
-  const toggleSelectPhoto = useCallback((colId, photoId) => {
-    setShowTagDropdown(false);
-    setSelectedPhotos(prev => {
-      const s = new Set(prev[colId] || []);
-      if (s.has(photoId)) s.delete(photoId); else s.add(photoId);
-      return { ...prev, [colId]: s };
-    });
-  }, []);
-  const onCtrlSelect = useCallback((colId, photoId) => {
-    setShowTagDropdown(false);
-    setSelectedPhotos(prev => {
-      const s = new Set(prev[colId] || []);
-      if (s.has(photoId)) s.delete(photoId); else s.add(photoId);
-      return { ...prev, [colId]: s };
-    });
-  }, []);
-
-  // Coche sur un dossier : sélectionne TOUTES ses photos (ou désélectionne si tout est déjà sélectionné)
-  const toggleFolderSelection = useCallback((colId, folderPhotos) => {
-    setShowTagDropdown(false);
-    setSelectedPhotos(prev => {
-      const s      = new Set(prev[colId] || []);
-      const allIds = folderPhotos.map(p => p.id);
-      const allSel = allIds.every(id => s.has(id));
-      if (allSel) { allIds.forEach(id => s.delete(id)); }  // tout coché → tout décocher
-      else        { allIds.forEach(id => s.add(id));    }  // partiel/vide → tout cocher
-      return { ...prev, [colId]: s };
-    });
-  }, []);
-
-  // Clic sur le fond (hors photo/dossier/bouton) → désélectionner tout
-  const onZoneMouseDown = useCallback((e, colId) => {
-    if (e.button !== 0) return;
-    if (e.target.closest('[data-photoid],[data-folderid],button,a,input')) return;
-    e.preventDefault();
-    setSelectedPhotos({});
-    setLasso({ colId, startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY });
-  }, []);
-
-  const selectAllInColumn = (colId) => setSelectedPhotos(prev => ({
-    ...prev, [colId]: new Set((photos[colId] || []).map(p => p.id))
-  }));
-  const selectAll = () => {
-    const n = {};
-    COLUMNS.forEach(col => { n[col.id] = new Set((photos[col.id] || []).map(p => p.id)); });
-    setSelectedPhotos(n);
-  };
-  const totalSelected = Object.values(selectedPhotos).reduce((acc, s) => acc + (s?.size || 0), 0);
-
-  // ── Tagging ──────────────────────────────────────────────────
-  const assignTag = async (gameName) => {
-    if (totalSelected === 0) return;
-    const tagLabel = `${gameName} \u2022 ${formatTagTimestamp()}`;
-    setShowTagDropdown(false); setTagSearch('');
-
-    // Si le jeu n'existe pas encore, l'enregistrer dans transactions (type game_ref)
-    // → disponible dans l'autocomplétion de transactions.js sans créer de nouvelle table
-    if (!gamesList.includes(gameName)) {
-      try {
-        await supabase.from('transactions').insert([{
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert([{
           user_id: username,
-          type: 'game_ref',
-          game_name: gameName,
-          price: 0,
-          created_at: new Date().toISOString(),
-        }]);
-        setGamesList(prev => [...prev, gameName].sort());
-      } catch (e) { console.error('Erreur enregistrement jeu:', e); }
+          type: 'buy',
+          game_name: gameName.trim() || null,
+          price: price,
+          created_at: new Date().toISOString()
+        }])
+        .select();
+
+      if (error) throw error;
+      
+      console.log('Transaction ajoutée:', data);
+      setBuyPrice('');
+      setGameName('');
+      setToast({ message: `Achat ajouté${gameName.trim() ? ` — ${gameName.trim()}` : ''}`, type: 'buy' });
+      setTimeout(() => setToast(null), 2500);
+    } catch (error) {
+      console.error('Erreur d\'ajout:', error);
+      alert('Erreur lors de l\'ajout: ' + error.message);
+    }
+  };
+
+  const addSell = async () => {
+    if (!sellPrice.trim()) return;
+    if (!username) {
+      alert('Erreur: utilisateur non connecté');
+      return;
     }
 
-    const updates = Object.entries(selectedPhotos)
-      .filter(([, s]) => s && s.size > 0)
-      .map(([colId, s]) => ({ colId, ids: [...s] }));
-    setPhotos(prev => {
-      const next = { ...prev };
-      updates.forEach(({ colId, ids }) => {
-        next[colId] = next[colId].map(p => ids.includes(p.id) ? { ...p, game_tag: tagLabel } : p);
-      });
-      return next;
-    });
-    setSelectedPhotos({});
+    const price = parsePrice(sellPrice);
+    if (price <= 0) return;
+
     try {
-      const allIds = updates.flatMap(u => u.ids);
-      await supabase.from('sale_photos')
-        .update({ game_tag: tagLabel, updated_at: new Date().toISOString() })
-        .in('id', allIds);
-      showToast(`"${gameName}" taggué sur ${allIds.length} photo${allIds.length > 1 ? 's' : ''}`, 'success');
-    } catch { showToast('Erreur tag', 'error'); loadPhotos(); }
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert([{
+          user_id: username,
+          type: 'sell',
+          game_name: gameName.trim() || null,
+          price: price,
+          created_at: new Date().toISOString()
+        }])
+        .select();
+
+      if (error) throw error;
+      
+      console.log('Transaction ajoutée:', data);
+      setSellPrice('');
+      setGameName('');
+      setToast({ message: `Vente ajoutée${gameName.trim() ? ` — ${gameName.trim()}` : ''}`, type: 'sell' });
+      setTimeout(() => setToast(null), 2500);
+    } catch (error) {
+      console.error('Erreur d\'ajout:', error);
+      alert('Erreur lors de l\'ajout: ' + error.message);
+    }
   };
 
-  // ── Dossiers ─────────────────────────────────────────────────
-  const toggleFolderMode = (colId) => setFolderMode(prev => {
-    const n = new Set(prev);
-    if (n.has(colId)) n.delete(colId); else n.add(colId);
-    return n;
+  const deleteTransaction = async (id) => {
+    if (!confirm('Supprimer cette transaction ?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Erreur de suppression:', error);
+    }
+  };
+
+  const updateTransactionPrice = async (id, newPrice) => {
+    const price = parseFloat(String(newPrice).replace(',', '.'));
+    if (!price || price <= 0) return;
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ price })
+        .eq('id', id);
+      if (error) throw error;
+      setEditingTransaction(null);
+    } catch (error) {
+      console.error('Erreur de mise à jour:', error);
+    }
+  };
+
+  const archiveOldData = async () => {
+    const cutoffDate = new Date();
+    cutoffDate.setFullYear(cutoffDate.getFullYear() - 2);
+
+    try {
+      const { data: oldTransactions } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', username)
+        .lt('created_at', cutoffDate.toISOString());
+
+      if (oldTransactions && oldTransactions.length > 0) {
+        await supabase
+          .from('transactions_archive')
+          .insert(oldTransactions);
+
+        await supabase
+          .from('transactions')
+          .delete()
+          .eq('user_id', username)
+          .lt('created_at', cutoffDate.toISOString());
+
+        alert(`${oldTransactions.length} transaction(s) archivée(s)`);
+      } else {
+        alert('Aucune transaction à archiver');
+      }
+    } catch (error) {
+      console.error('Erreur d\'archivage:', error);
+    }
+  };
+
+  // ── Génération PDF ───────────────────────────────────────────
+  const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  const getAvailableYears = () => {
+    const all = [...buyTransactions, ...sellTransactions];
+    return [...new Set(all.map(t => new Date(t.created_at).getFullYear()))].sort().reverse();
+  };
+
+  const loadJsPDF = () => new Promise((resolve, reject) => {
+    if (window.jspdf?.jsPDF) { resolve(window.jspdf.jsPDF); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = () => resolve(window.jspdf.jsPDF);
+    s.onerror = reject;
+    document.head.appendChild(s);
   });
-  const toggleFolder = (colId, tagLabel) => setCollapsedFolders(prev => {
-    const s = new Set(prev[colId] || []);
-    if (s.has(tagLabel)) s.delete(tagLabel); else s.add(tagLabel);
-    return { ...prev, [colId]: s };
-  });
-  const groupByTag = (colPhotos) => {
-    const groups = {}; const ungrouped = [];
-    colPhotos.forEach(p => {
-      if (p.game_tag) { if (!groups[p.game_tag]) groups[p.game_tag] = []; groups[p.game_tag].push(p); }
-      else ungrouped.push(p);
+
+  const generatePDF = async () => {
+    setPdfGenerating(true);
+    try {
+      const JsPDF = await loadJsPDF();
+      const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const W = 210, H = 297, M = 14;
+      const CW = W - M * 2;
+
+      // ── Filtrage des transactions selon la période ──────────
+      const targetYear  = parseInt(pdfPeriodType === 'year' ? pdfSelectedYear : pdfSelectedYear);
+      const targetMonth = pdfPeriodType === 'month' ? parseInt(pdfSelectedMonth) : null;
+
+      const filterTx = (txs) => txs.filter(t => {
+        const d = new Date(t.created_at);
+        if (pdfPeriodType === 'year') return d.getFullYear() === targetYear;
+        return d.getFullYear() === targetYear && d.getMonth() === targetMonth;
+      });
+
+      const buys  = filterTx(buyTransactions);
+      const sells = filterTx(sellTransactions);
+      const stats = calculateStats(buys, sells);
+      const avgBuy  = stats.buyCount  > 0 ? stats.totalBuy  / stats.buyCount  : 0;
+      const avgSell = stats.sellCount > 0 ? stats.totalSell / stats.sellCount : 0;
+
+      const periodLabel = pdfPeriodType === 'year'
+        ? `Année ${pdfSelectedYear}`
+        : `${MONTH_NAMES[targetMonth]} ${pdfSelectedYear}`;
+
+      // ── Palette ─────────────────────────────────────────────
+      const C = {
+        bg:      [15,  23,  42],   // slate-900
+        card:    [30,  41,  59],   // slate-800
+        border:  [51,  65,  85],   // slate-700
+        indigo:  [99,  102, 241],  // indigo-500
+        green:   [16,  185, 129],  // emerald-500
+        amber:   [245, 158, 11],   // amber-500
+        red:     [239, 68,  68],   // red-500
+        blue:    [59,  130, 246],  // blue-500
+        white:   [255, 255, 255],
+        gray:    [148, 163, 184],  // slate-400
+        lgray:   [100, 116, 139],  // slate-500
+      };
+
+      const setFill = (col) => doc.setFillColor(...col);
+      const setDraw = (col) => doc.setDrawColor(...col);
+      const setFont = (col, size, style='normal') => {
+        doc.setTextColor(...col);
+        doc.setFontSize(size);
+        doc.setFont('helvetica', style);
+      };
+
+      // ── Fond page ───────────────────────────────────────────
+      setFill(C.bg); doc.rect(0, 0, W, H, 'F');
+
+      // ── Header ──────────────────────────────────────────────
+      // Bande de fond
+      setFill(C.card); doc.roundedRect(M, 8, CW, 22, 3, 3, 'F');
+      // Accent gauche
+      setFill(C.indigo); doc.rect(M, 8, 3, 22, 'F');
+
+      setFont(C.white, 14, 'bold');
+      doc.text('Rapport de Transactions', M + 8, 16);
+      setFont(C.gray, 8);
+      doc.text(periodLabel, M + 8, 22);
+
+      const now = new Date();
+      const dateStr = `Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
+      setFont(C.lgray, 7);
+      doc.text(dateStr, W - M, 22, { align: 'right' });
+      setFont(C.gray, 7);
+      doc.text(`@${username}`, W - M, 17, { align: 'right' });
+
+      // ── KPI Cards ───────────────────────────────────────────
+      let y = 38;
+      const kpis = [
+        { label: 'Total Achats',       value: `${stats.totalBuy.toFixed(2)} €`,  sub: `${stats.buyCount} transaction${stats.buyCount>1?'s':''}`,  color: C.blue   },
+        { label: 'Total Ventes',       value: `${stats.totalSell.toFixed(2)} €`, sub: `${stats.sellCount} transaction${stats.sellCount>1?'s':''}`, color: C.green  },
+        { label: stats.profit >= 0 ? 'Bénéfice' : 'Perte',
+                                       value: `${stats.profit >= 0 ? '+' : ''}${stats.profit.toFixed(2)} €`,
+                                       sub: `${stats.profit >= 0 ? '+' : ''}${stats.profitPercent.toFixed(1)} %`,
+                                       color: stats.profit >= 0 ? C.green : C.red },
+        { label: 'Nb Transactions',    value: `${stats.buyCount + stats.sellCount}`, sub: `${stats.buyCount} achats · ${stats.sellCount} ventes`, color: C.indigo },
+        { label: 'Prix Achat Moyen',   value: `${avgBuy.toFixed(2)} €`,          sub: 'par achat',                                                color: C.amber  },
+        { label: 'Prix Vente Moyen',   value: `${avgSell.toFixed(2)} €`,         sub: 'par vente',                                                color: C.amber  },
+      ];
+
+      const cols   = 3;
+      const cw     = (CW - 4) / cols;
+      const ch     = 20;
+      const gutter = 2;
+
+      kpis.forEach((k, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = M + col * (cw + gutter);
+        const cy = y + row * (ch + gutter);
+
+        setFill(C.card); doc.roundedRect(x, cy, cw, ch, 2, 2, 'F');
+        // Barre de couleur en haut
+        setFill(k.color); doc.roundedRect(x, cy, cw, 2.5, 1, 1, 'F');
+
+        setFont(C.gray, 6.5);
+        doc.text(k.label.toUpperCase(), x + 4, cy + 7);
+        setFont(C.white, 11, 'bold');
+        doc.text(k.value, x + 4, cy + 13.5);
+        setFont(C.lgray, 6);
+        doc.text(k.sub, x + 4, cy + 18);
+      });
+
+      y += 2 * (ch + gutter) + 8;
+
+      // ── Graphique en barres ──────────────────────────────────
+      // Construire les données par période
+      let chartData = [];
+      if (pdfPeriodType === 'year') {
+        for (let m = 0; m < 12; m++) {
+          const mb = buys.filter(t => new Date(t.created_at).getMonth() === m);
+          const ms = sells.filter(t => new Date(t.created_at).getMonth() === m);
+          const tb = mb.reduce((s,t) => s+t.price, 0);
+          const ts = ms.reduce((s,t) => s+t.price, 0);
+          if (tb > 0 || ts > 0) chartData.push({ label: MONTH_NAMES[m].slice(0,3), buy: tb, sell: ts });
+        }
+      } else {
+        // Par jour du mois
+        const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        for (let d = 1; d <= daysInMonth; d++) {
+          const db = buys.filter(t => new Date(t.created_at).getDate() === d);
+          const ds = sells.filter(t => new Date(t.created_at).getDate() === d);
+          const tb = db.reduce((s,t) => s+t.price, 0);
+          const ts = ds.reduce((s,t) => s+t.price, 0);
+          if (tb > 0 || ts > 0) chartData.push({ label: `${d}`, buy: tb, sell: ts });
+        }
+      }
+
+      if (chartData.length > 0) {
+        // Titre section
+        setFont(C.white, 9, 'bold');
+        doc.text('Évolution', M, y);
+        setFont(C.gray, 7);
+        doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
+        y += 5;
+
+        const chartH = 38, chartW = CW;
+        const maxVal = Math.max(...chartData.flatMap(d => [d.buy, d.sell]));
+        const barAreaH = chartH - 8;
+        const barCount = chartData.length;
+        const barGroupW = Math.min(chartW / barCount, 14);
+        const barW = (barGroupW - 2) / 2;
+        const chartX = M;
+
+        // Fond du graphique
+        setFill(C.card); doc.roundedRect(chartX, y, chartW, chartH, 2, 2, 'F');
+
+        // Lignes de grille
+        setDraw(C.border); doc.setLineWidth(0.2);
+        [0.25, 0.5, 0.75, 1].forEach(pct => {
+          const gy = y + chartH - 8 - barAreaH * pct;
+          doc.line(chartX + 2, gy, chartX + chartW - 2, gy);
+        });
+
+        chartData.forEach((d, i) => {
+          const bx = chartX + 3 + i * barGroupW;
+          const buyH  = maxVal > 0 ? (d.buy  / maxVal) * barAreaH : 0;
+          const sellH = maxVal > 0 ? (d.sell / maxVal) * barAreaH : 0;
+          const baseY = y + chartH - 8;
+
+          if (d.buy > 0) {
+            setFill(C.blue);
+            doc.roundedRect(bx, baseY - buyH, barW, buyH, 0.5, 0.5, 'F');
+          }
+          if (d.sell > 0) {
+            setFill(C.green);
+            doc.roundedRect(bx + barW + 0.5, baseY - sellH, barW, sellH, 0.5, 0.5, 'F');
+          }
+
+          // Label
+          if (barGroupW >= 6) {
+            setFont(C.lgray, 4.5);
+            doc.text(d.label, bx + barGroupW / 2 - barGroupW * 0.1, y + chartH - 2, { align: 'center' });
+          }
+        });
+
+        // Légende
+        const legX = chartX + chartW - 40;
+        setFill(C.blue); doc.roundedRect(legX, y + 3, 4, 2.5, 0.5, 0.5, 'F');
+        setFont(C.gray, 6); doc.text('Achats', legX + 5.5, y + 5.5);
+        setFill(C.green); doc.roundedRect(legX + 18, y + 3, 4, 2.5, 0.5, 0.5, 'F');
+        doc.text('Ventes', legX + 23.5, y + 5.5);
+
+        y += chartH + 8;
+      }
+
+      // ── Top 5 jeux rentables ─────────────────────────────────
+      const top5 = getTop10MostProfitableGames()
+        .filter(g => {
+          if (pdfPeriodType === 'year') {
+            return [...buys,...sells].some(t => t.game_name === g.name);
+          }
+          return [...buys,...sells].some(t => t.game_name === g.name);
+        })
+        .slice(0, 5);
+
+      if (top5.length > 0) {
+        setFont(C.white, 9, 'bold');
+        doc.text('Top 5 — Jeux les plus rentables', M, y);
+        y += 5;
+
+        const cols5 = ['Jeu', 'Achat', 'Vente', 'Bénéfice', 'Marge'];
+        const colW5 = [65, 25, 25, 28, 22];
+        let cx = M;
+
+        // Entête tableau
+        setFill(C.card); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+        setFill(C.indigo); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+        cols5.forEach((c, i) => {
+          setFont(C.white, 6.5, 'bold');
+          doc.text(c, cx + 2, y + 4.7);
+          cx += colW5[i];
+        });
+        y += 7;
+
+        top5.forEach((g, ri) => {
+          if (ri % 2 === 0) { setFill([22, 33, 51]); } else { setFill(C.card); }
+          doc.rect(M, y, CW, 7, 'F');
+          cx = M;
+          const profit = g.profit;
+          const margin = g.margin;
+          const row = [
+            g.name.length > 28 ? g.name.slice(0,27)+'…' : g.name,
+            `${g.totalBuy.toFixed(2)} €`,
+            `${g.totalSell.toFixed(2)} €`,
+            `${profit >= 0 ? '+' : ''}${profit.toFixed(2)} €`,
+            `${margin >= 0 ? '+' : ''}${margin.toFixed(1)} %`,
+          ];
+          row.forEach((v, ci) => {
+            const color = ci === 3 ? (profit >= 0 ? C.green : C.red)
+                        : ci === 4 ? (margin >= 0 ? C.green : C.red)
+                        : C.white;
+            setFont(color, 6.5);
+            doc.text(v, cx + 2, y + 4.7);
+            cx += colW5[ci];
+          });
+          y += 7;
+        });
+        y += 6;
+      }
+
+      // ── Liste des transactions de la période ─────────────────
+      const allPeriodTx = [
+        ...buys.map(t => ({ ...t, typeLabel: 'Achat' })),
+        ...sells.map(t => ({ ...t, typeLabel: 'Vente' })),
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      if (allPeriodTx.length > 0) {
+        // Nouvelle page si peu de place
+        if (y > H - 60) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
+
+        setFont(C.white, 9, 'bold');
+        doc.text('Détail des transactions', M, y);
+        y += 5;
+
+        const colsTx = ['Date', 'Type', 'Jeu', 'Prix'];
+        const colWTx = [28, 18, 108, 26];
+        let cx2 = M;
+
+        setFill(C.indigo); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+        colsTx.forEach((c, i) => {
+          setFont(C.white, 6.5, 'bold');
+          doc.text(c, cx2 + 2, y + 4.7);
+          cx2 += colWTx[i];
+        });
+        y += 7;
+
+        for (const t of allPeriodTx) {
+          if (y > H - 14) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
+          const ri = allPeriodTx.indexOf(t);
+          if (ri % 2 === 0) { setFill([22, 33, 51]); } else { setFill(C.card); }
+          doc.rect(M, y, CW, 6.5, 'F');
+          cx2 = M;
+          const date = new Date(t.created_at).toLocaleDateString('fr-FR');
+          const row = [
+            date,
+            t.typeLabel,
+            (t.game_name || '—').length > 42 ? (t.game_name||'—').slice(0,41)+'…' : (t.game_name || '—'),
+            `${t.price.toFixed(2)} €`,
+          ];
+          row.forEach((v, ci) => {
+            const color = ci === 1 ? (t.typeLabel === 'Achat' ? C.blue : C.green) : C.white;
+            setFont(color, 6);
+            doc.text(v, cx2 + 2, y + 4.5);
+            cx2 += colWTx[ci];
+          });
+          y += 6.5;
+        }
+      }
+
+      // ── Footer sur chaque page ───────────────────────────────
+      const pageCount = doc.getNumberOfPages();
+      for (let p = 1; p <= pageCount; p++) {
+        doc.setPage(p);
+        setFill(C.card); doc.rect(0, H - 8, W, 8, 'F');
+        setFont(C.lgray, 6);
+        doc.text(`Page ${p} / ${pageCount}`, W / 2, H - 3, { align: 'center' });
+        doc.text('Suivi des transactions — généré automatiquement', M, H - 3);
+      }
+
+      // ── Téléchargement ───────────────────────────────────────
+      const filename = `transactions_${periodLabel.replace(' ', '_').toLowerCase()}.pdf`;
+      doc.save(filename);
+      setShowPdfModal(false);
+    } catch (e) {
+      console.error('Erreur PDF:', e);
+      alert('Erreur lors de la génération du PDF : ' + e.message);
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
+
+  const exportToExcel = () => {
+    // Create a clean, structured CSV with proper columns
+    const csvRows = [];
+    
+    // Title and summary section
+    csvRows.push(['SUIVI ACHATS/VENTES - ' + new Date().toLocaleDateString('fr-FR')]);
+    csvRows.push([]);
+    csvRows.push(['STATISTIQUES GLOBALES']);
+    csvRows.push(['Indicateur', 'Valeur']);
+    csvRows.push(['Total Achats', globalStats.totalBuy.toFixed(2) + '€']);
+    csvRows.push(['Nombre d\'achats', globalStats.buyCount]);
+    csvRows.push(['Total Ventes', globalStats.totalSell.toFixed(2) + '€']);
+    csvRows.push(['Nombre de ventes', globalStats.sellCount]);
+    csvRows.push(['Bénéfice', (globalStats.profit >= 0 ? '+' : '') + globalStats.profit.toFixed(2) + '€']);
+    csvRows.push(['Marge', (globalStats.profitPercent >= 0 ? '+' : '') + globalStats.profitPercent.toFixed(1) + '%']);
+    csvRows.push([]);
+    csvRows.push([]);
+    
+    // All transactions in one table
+    csvRows.push(['LISTE COMPLÈTE DES TRANSACTIONS']);
+    csvRows.push(['Type', 'Nom du Jeu', 'Prix (€)', 'Date', 'Mois/Année']);
+    
+    // Combine and sort all transactions by date
+    const allTransactions = [
+      ...buyTransactions.map(t => ({ ...t, typeLabel: 'ACHAT' })),
+      ...sellTransactions.map(t => ({ ...t, typeLabel: 'VENTE' }))
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    
+    allTransactions.forEach(t => {
+      csvRows.push([
+        t.typeLabel,
+        t.game_name || 'Non renseigné',
+        t.price.toFixed(2),
+        formatDate(t.created_at),
+        formatMonthYear(t.created_at.slice(0, 7))
+      ]);
     });
-    return { groups, ungrouped };
+    
+    csvRows.push([]);
+    csvRows.push([]);
+    
+    // Monthly breakdown
+    csvRows.push(['DÉTAIL PAR MOIS']);
+    csvRows.push(['Mois', 'Achats (€)', 'Nb Achats', 'Ventes (€)', 'Nb Ventes', 'Bénéfice (€)', 'Marge (%)']);
+    
+    const allMonths = new Set([
+      ...Object.keys(groupByMonth(buyTransactions)),
+      ...Object.keys(groupByMonth(sellTransactions))
+    ]);
+    
+    Array.from(allMonths).sort().reverse().forEach(month => {
+      const buyMonth = groupByMonth(buyTransactions)[month] || [];
+      const sellMonth = groupByMonth(sellTransactions)[month] || [];
+      
+      const buyTotal = buyMonth.reduce((sum, t) => sum + t.price, 0);
+      const sellTotal = sellMonth.reduce((sum, t) => sum + t.price, 0);
+      const profit = sellTotal - buyTotal;
+      const margin = buyTotal > 0 ? ((profit / buyTotal) * 100) : 0;
+      
+      csvRows.push([
+        formatMonthYear(month),
+        buyTotal.toFixed(2),
+        buyMonth.length,
+        sellTotal.toFixed(2),
+        sellMonth.length,
+        (profit >= 0 ? '+' : '') + profit.toFixed(2),
+        (margin >= 0 ? '+' : '') + margin.toFixed(1)
+      ]);
+    });
+    
+    csvRows.push([]);
+    csvRows.push([]);
+    
+    // Top 10 most bought games
+    if (top10MostBought.length > 0) {
+      csvRows.push(['TOP 10 JEUX LES PLUS ACHETÉS']);
+      csvRows.push(['Rang', 'Nom du Jeu', 'Nombre d\'achats']);
+      top10MostBought.forEach((game, index) => {
+        csvRows.push([index + 1, game.name, game.count]);
+      });
+      csvRows.push([]);
+      csvRows.push([]);
+    }
+    
+    // Top 10 most profitable games
+    if (top10MostProfitable.length > 0) {
+      csvRows.push(['TOP 10 JEUX LES PLUS RENTABLES']);
+      csvRows.push(['Rang', 'Nom du Jeu', 'Bénéfice (€)']);
+      top10MostProfitable.forEach((game, index) => {
+        csvRows.push([
+          index + 1,
+          game.name,
+          (game.profit >= 0 ? '+' : '') + game.profit.toFixed(2)
+        ]);
+      });
+    }
+    
+    // Convert to CSV format with semicolons for Excel
+    const csvContent = csvRows.map(row => row.join(';')).join('\n');
+    
+    // Create blob and download
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `suivi_transactions_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  // ── Lightbox ─────────────────────────────────────────────────
-  const openLightbox = useCallback((photo, siblingPhotos) => {
-    const index = siblingPhotos.findIndex(p => p.id === photo.id);
-    setLightbox({ photo, rotation: photo.rotation || 0, siblingPhotos, index });
-  }, []);
-  const closeLightbox = () => setLightbox(null);
-  const lightboxNav = (dir) => {
-    if (!lightbox) return;
-    const idx = (lightbox.index + dir + lightbox.siblingPhotos.length) % lightbox.siblingPhotos.length;
-    const ph = lightbox.siblingPhotos[idx];
-    setLightbox(prev => ({ ...prev, photo: ph, rotation: ph.rotation || 0, index: idx }));
+  const getTop10MostBoughtGames = () => {
+    const gameCounts = {};
+    
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        gameCounts[name] = (gameCounts[name] || 0) + 1;
+      });
+    
+    return Object.entries(gameCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
   };
-  const rotateLightbox = async (dir) => {
-    const newRot = ((lightbox.rotation + dir) + 360) % 360;
-    setLightbox(prev => ({ ...prev, rotation: newRot }));
-    const colId = lightbox.photo.status;
-    setPhotos(prev => ({
+
+  const getTop10MostProfitableGames = () => {
+    const gameStats = {};
+    
+    // Calculate buys per game
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].buys += t.price;
+        gameStats[name].buyCount += 1;
+      });
+    
+    // Calculate sells per game
+    sellTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].sells += t.price;
+        gameStats[name].sellCount += 1;
+      });
+    
+    // Calculate profit and margin
+    return Object.entries(gameStats)
+      .map(([name, stats]) => {
+        const profit = stats.sells - stats.buys;
+        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        return {
+          name,
+          profit,
+          margin,
+          totalBuy: stats.buys,
+          totalSell: stats.sells,
+          buyCount: stats.buyCount,
+          sellCount: stats.sellCount
+        };
+      })
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 10);
+  };
+
+  const getTop10LeastProfitableGames = () => {
+    const gameStats = {};
+    
+    // Calculate buys per game
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].buys += t.price;
+        gameStats[name].buyCount += 1;
+      });
+    
+    // Calculate sells per game
+    sellTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].sells += t.price;
+        gameStats[name].sellCount += 1;
+      });
+    
+    // Calculate profit and margin, filter only losses or break-even
+    return Object.entries(gameStats)
+      .map(([name, stats]) => {
+        const profit = stats.sells - stats.buys;
+        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        return {
+          name,
+          profit,
+          margin,
+          totalBuy: stats.buys,
+          totalSell: stats.sells,
+          buyCount: stats.buyCount,
+          sellCount: stats.sellCount
+        };
+      })
+      .filter(game => game.profit <= 0) // Only losses and break-even
+      .sort((a, b) => a.profit - b.profit) // Worst first
+      .slice(0, 10);
+  };
+
+  const getTop10LeastProfitableGamesWithSales = () => {
+    const gameStats = {};
+    
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].buys += t.price;
+        gameStats[name].buyCount += 1;
+      });
+    
+    sellTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '')
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!gameStats[name]) gameStats[name] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+        gameStats[name].sells += t.price;
+        gameStats[name].sellCount += 1;
+      });
+    
+    return Object.entries(gameStats)
+      .map(([name, stats]) => {
+        const profit = stats.sells - stats.buys;
+        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        return {
+          name,
+          profit,
+          margin,
+          totalBuy: stats.buys,
+          totalSell: stats.sells,
+          buyCount: stats.buyCount,
+          sellCount: stats.sellCount
+        };
+      })
+      .filter(game => game.profit <= 0 && game.sellCount >= 1) // Only losses with at least 1 sale
+      .sort((a, b) => a.profit - b.profit)
+      .slice(0, 10);
+  };
+
+  const getDormantStock = () => {
+    const excluded = (name) => name.toLowerCase().includes('lot') || name.toLowerCase().includes('extension');
+
+    const buysByGame = {};
+    buyTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '' && !excluded(t.game_name))
+      .forEach(t => {
+        const name = t.game_name.trim();
+        if (!buysByGame[name]) buysByGame[name] = [];
+        buysByGame[name].push(t);
+      });
+
+    const now = new Date();
+
+    return Object.entries(buysByGame)
+      .map(([name, buys]) => {
+        const firstBuy = new Date(Math.min(...buys.map(b => new Date(b.created_at))));
+        const daysDormant = Math.floor((now - firstBuy) / (1000 * 60 * 60 * 24));
+        const totalInvested = buys.reduce((s, t) => s + t.price, 0);
+        return { name, count: buys.length, totalInvested, firstBuy, daysDormant };
+      })
+      .filter(item => item.daysDormant >= 90)
+      .sort((a, b) => b.daysDormant - a.daysDormant);
+  };
+
+
+  const handleGameNameChange = (value) => {
+    setGameName(value);
+    setShowSuggestions(value.length > 0);
+  };
+
+  const selectSuggestion = (suggestion) => {
+    setGameName(suggestion);
+    setShowSuggestions(false);
+  };
+
+  const handleGameNameKeyDown = (e) => {
+    // Tab key: auto-complete if only one suggestion
+    if (e.key === 'Tab' && filteredSuggestions.length === 1) {
+      e.preventDefault();
+      selectSuggestion(filteredSuggestions[0]);
+    }
+  };
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
       ...prev,
-      [colId]: prev[colId].map(p => p.id === lightbox.photo.id ? { ...p, rotation: newRot } : p),
+      [section]: !prev[section]
     }));
-    try {
-      await supabase.from('sale_photos')
-        .update({ rotation: newRot, updated_at: new Date().toISOString() })
-        .eq('id', lightbox.photo.id);
-    } catch { showToast('Erreur rotation', 'error'); }
   };
 
-  // ── Téléchargement ───────────────────────────────────────────
-  const triggerDownload = (url, filename) => {
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  };
+  const filteredSuggestions = gameNameSuggestions.filter(name => 
+    name.toLowerCase().includes(gameName.toLowerCase())
+  );
 
-  // ── Popup de glisser-déposer vers LeBonCoin/Vinted ─────────
-  const openPhotoPopup = useCallback((photo, siblings) => {
-    const allPhotos = siblings && siblings.length > 0 ? siblings : [photo];
-    const startIdx  = allPhotos.findIndex(p => p.id === photo.id);
-    const idx       = startIdx < 0 ? 0 : startIdx;
-
-    const w = 580, h = 630;
-    const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
-    const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
-    const popup = window.open('', '_blank',
-      `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
-    );
-    if (!popup) { showToast('Autorise les popups pour cette page', 'error'); return; }
-
-    const photosJson = JSON.stringify(allPhotos.map(p => ({
-      url: p.image_url,
-      name: (baseGameName(p.game_tag) || 'photo'),
-    })));
-
-    popup.document.write(`<!DOCTYPE html><html><head>
-      <title>Photos — LeBonCoin / Vinted</title>
-      <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{background:#111;display:flex;flex-direction:column;height:100vh;font-family:sans-serif;overflow:hidden;user-select:none}
-        #top{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1a1a1a;flex-shrink:0}
-        #counter{color:#888;font-size:12px;white-space:nowrap}
-        #name{color:#fff;font-size:13px;font-weight:600;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:center}
-        #imgWrap{flex:1;display:flex;align-items:center;justify-content:center;padding:10px;min-height:0}
-        #mainImg{max-width:100%;max-height:100%;object-fit:contain;cursor:grab;border-radius:8px;display:block}
-        #mainImg:active{cursor:grabbing}
-        #bot{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#1a1a1a;flex-shrink:0;border-top:1px solid #222}
-        .navBtn{background:#2a2a2a;color:#ccc;border:1px solid #444;border-radius:8px;padding:5px 14px;font-size:13px;cursor:pointer;transition:background .15s;flex-shrink:0}
-        .navBtn:hover:not(:disabled){background:#383838}
-        .navBtn:disabled{opacity:.25;cursor:default}
-        #hint{color:#555;font-size:11px;text-align:center;flex:1;line-height:1.4}
-        #thumbsRow{display:flex;gap:5px;overflow-x:auto;padding:6px 10px;background:#161616;flex-shrink:0;border-top:1px solid #222;scrollbar-width:thin}
-        .thumb{width:54px;height:54px;object-fit:cover;border-radius:6px;cursor:grab;border:2px solid transparent;flex-shrink:0;opacity:.5;transition:opacity .15s,border-color .15s}
-        .thumb:hover{opacity:.85}
-        .thumb:active{cursor:grabbing;opacity:1}
-        .thumb.active{border-color:#3b82f6;opacity:1}
-      </style>
-    </head><body>
-      <div id="top">
-        <span id="counter"></span>
-        <span id="name"></span>
-      </div>
-      <div id="imgWrap"><img id="mainImg" draggable="true" /></div>
-      <div id="bot">
-        <button class="navBtn" id="prev">&#8592;</button>
-        <span id="hint">Glisse l'image principale<br>ou une miniature vers LeBonCoin · molette · ← →</span>
-        <button class="navBtn" id="next">&#8594;</button>
-      </div>
-      <div id="thumbsRow"></div>
-      <script>
-        const photos = ${photosJson};
-        let cur = ${idx};
-
-        const mainImg  = document.getElementById('mainImg');
-        const nameEl   = document.getElementById('name');
-        const cntEl    = document.getElementById('counter');
-        const prevBtn  = document.getElementById('prev');
-        const nextBtn  = document.getElementById('next');
-        const thumbsRow= document.getElementById('thumbsRow');
-
-        function dragData(e, url, name) {
-          const ext  = url.toLowerCase().includes('.png') ? 'png' : 'jpg';
-          const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-          e.dataTransfer.effectAllowed = 'copy';
-          try { e.dataTransfer.setData('DownloadURL', mime+':'+name+'.'+ext+':'+url); } catch(_){}
-          try { e.dataTransfer.setData('text/uri-list', url); } catch(_){}
-          try { e.dataTransfer.setData('text/plain',    url); } catch(_){}
-        }
-
-        function show(i) {
-          cur = ((i % photos.length) + photos.length) % photos.length;
-          const p = photos[cur];
-          mainImg.src = p.url;
-          mainImg.alt = p.name;
-          nameEl.textContent = p.name;
-          cntEl.textContent  = photos.length > 1 ? (cur+1)+' / '+photos.length : '';
-          prevBtn.disabled   = photos.length <= 1;
-          nextBtn.disabled   = photos.length <= 1;
-          document.querySelectorAll('.thumb').forEach((t,j) => t.classList.toggle('active', j===cur));
-          const active = thumbsRow.children[cur];
-          if (active) active.scrollIntoView({block:'nearest',inline:'center'});
-        }
-
-        // Image principale
-        mainImg.addEventListener('dragstart', e => dragData(e, photos[cur].url, photos[cur].name));
-
-        // Miniatures — draggables et cliquables
-        photos.forEach((p, i) => {
-          const t = document.createElement('img');
-          t.src = p.url; t.className = 'thumb'; t.draggable = true; t.title = p.name;
-          t.addEventListener('click',     () => show(i));
-          t.addEventListener('dragstart', e => { e.stopPropagation(); dragData(e, p.url, p.name); });
-          thumbsRow.appendChild(t);
-        });
-
-        // Navigation clavier
-        document.addEventListener('keydown', e => {
-          if (e.key === 'ArrowLeft')  show(cur - 1);
-          if (e.key === 'ArrowRight') show(cur + 1);
-        });
-
-        // Navigation molette
-        document.addEventListener('wheel', e => {
-          e.preventDefault();
-          show(e.deltaY > 0 ? cur + 1 : cur - 1);
-        }, { passive: false });
-
-        prevBtn.addEventListener('click', () => show(cur - 1));
-        nextBtn.addEventListener('click', () => show(cur + 1));
-
-        show(cur);
-      <\/script>
-    </body></html>`);
-    popup.document.close();
-  }, [showToast]);
-
-  const downloadSingle = useCallback(async (photo) => {
-    try {
-      const res  = await fetch(photo.image_url);
-      const blob = await res.blob();
-      const ext  = blob.type.includes('png') ? 'png' : 'jpg';
-      const url  = URL.createObjectURL(blob);
-      triggerDownload(url, makeFilename(photo, 1, ext));
-      URL.revokeObjectURL(url);
-    } catch { showToast('Erreur telechargement', 'error'); }
-  }, []);
-
-  const downloadMultiple = async (photosArr) => {
-    if (!photosArr.length) return;
-    if (photosArr.length === 1) { await downloadSingle(photosArr[0]); return; }
-    setDownloading(true);
-    for (let i = 0; i < photosArr.length; i++) {
-      const ph = photosArr[i];
-      try {
-        const res  = await fetch(ph.image_url);
-        const blob = await res.blob();
-        const ext  = blob.type.includes('png') ? 'png' : 'jpg';
-        const url  = URL.createObjectURL(blob);
-        triggerDownload(url, makeFilename(ph, i + 1, ext));
-        URL.revokeObjectURL(url);
-        await new Promise(r => setTimeout(r, 300));
-      } catch { /* skip */ }
-    }
-    setDownloading(false);
-    showToast(`${photosArr.length} photos telechargees`, 'success');
-  };
-  const downloadSelected = () => {
-    const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
-    downloadMultiple(all);
-  };
-
-  const removeTag = async () => {
-    if (totalSelected === 0) return;
-    const updates = Object.entries(selectedPhotos)
-      .filter(([, s]) => s && s.size > 0)
-      .map(([colId, s]) => ({ colId, ids: [...s] }));
-    setPhotos(prev => {
-      const next = { ...prev };
-      updates.forEach(({ colId, ids }) => {
-        next[colId] = (prev[colId] || []).map(p => ids.includes(p.id) ? { ...p, game_tag: null } : p);
-      });
-      return next;
+  const groupByMonth = (transactions) => {
+    const groups = {};
+    transactions.forEach(t => {
+      const month = t.created_at.slice(0, 7);
+      if (!groups[month]) groups[month] = [];
+      groups[month].push(t);
     });
-    setSelectedPhotos({});
-    try {
-      const allIds = updates.flatMap(u => u.ids);
-      await supabase.from('sale_photos').update({ game_tag: null, updated_at: new Date().toISOString() }).in('id', allIds);
-      showToast('Tag retiré', 'success');
-    } catch { showToast('Erreur retrait tag', 'error'); }
-  };
-  const filteredGames = gamesList.filter(g => g.toLowerCase().includes(tagSearch.toLowerCase()));
-  const handleLogout  = () => { localStorage.removeItem('username'); localStorage.removeItem('password'); router.push('/'); };
-
-  // ── Rendu ────────────────────────────────────────────────────
-  if (loading) return (
-    <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-    </div>
-  );
-  if (!isLoggedIn) return null;
-
-  const subtext  = darkMode ? 'text-gray-400' : 'text-gray-500';
-  const textMain = darkMode ? 'text-gray-100' : 'text-gray-800';
-  const cardBg   = darkMode ? 'bg-gray-800'   : 'bg-white';
-  const inputCls = darkMode
-    ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-400'
-    : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400';
-  const btnGhost = darkMode
-    ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-    : 'bg-gray-100 hover:bg-gray-200 text-gray-700';
-  const divider = darkMode ? 'bg-gray-600' : 'bg-gray-300';
-
-  // Props partagés pour tous les PhotoCards — stables entre renders
-  const cardProps = {
-    onDragStart:      onPhotoDragStart,
-    onDragEnd:        onPhotoDragEnd,
-    onDragOver:       onPhotoDragOverItem,
-    onToggleSelect:   toggleSelectPhoto,
-    onCtrlSelect:     onCtrlSelect,
-    onOpenLightbox:   openLightbox,
-    onDownloadSingle: downloadSingle,
-    onDeletePhoto:    handleDeletePhoto,
-    onCopyImage:      openPhotoPopup,
+    return groups;
   };
 
-  const renderCard = (colId, photo, sibs, inFolder = false) => (
-    <PhotoCard
-      key={photo.id}
-      photo={photo}
-      columnId={colId}
-      siblingPhotos={sibs}
-      isSelected={!!selectedPhotos[colId]?.has(photo.id)}
-      isDragged={!!draggingPhoto?.photos?.some(p => p.id === photo.id)}
-      isOverItem={dragOverPhotoId === photo.id}
-      inFolder={inFolder}
-      {...cardProps}
-    />
-  );
+  const groupByDay = (transactions) => {
+    const groups = {};
+    transactions.forEach(t => {
+      const day = t.created_at.slice(0, 10);
+      if (!groups[day]) groups[day] = [];
+      groups[day].push(t);
+    });
+    return groups;
+  };
 
-  // grid-cols selon zoom (1–4)
-  const zoomGridCls = (z) => ['grid-cols-1','grid-cols-2','grid-cols-3','grid-cols-4'][z - 1] || 'grid-cols-2';
+  const groupByYear = (transactions) => {
+    const groups = {};
+    transactions.forEach(t => {
+      const year = t.created_at.slice(0, 4);
+      if (!groups[year]) groups[year] = [];
+      groups[year].push(t);
+    });
+    return groups;
+  };
+
+  const calculateStats = (buys, sells) => {
+    const totalBuy = buys.reduce((sum, t) => sum + t.price, 0);
+    const totalSell = sells.reduce((sum, t) => sum + t.price, 0);
+    const profit = totalSell - totalBuy;
+    const profitPercent = totalBuy > 0 ? ((profit / totalBuy) * 100) : 0;
+
+    return {
+      totalBuy,
+      totalSell,
+      profit,
+      profitPercent,
+      buyCount: buys.length,
+      sellCount: sells.length
+    };
+  };
+
+  const getFilteredTransactions = () => {
+    let filteredBuys = buyTransactions;
+    let filteredSells = sellTransactions;
+    
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    
+    if (globalStatsFilter === 'current-month') {
+      filteredBuys = buyTransactions.filter(t => {
+        const date = new Date(t.created_at);
+        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      });
+      filteredSells = sellTransactions.filter(t => {
+        const date = new Date(t.created_at);
+        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      });
+    } else if (globalStatsFilter === 'current-year') {
+      filteredBuys = buyTransactions.filter(t => {
+        const date = new Date(t.created_at);
+        return date.getFullYear() === currentYear;
+      });
+      filteredSells = sellTransactions.filter(t => {
+        const date = new Date(t.created_at);
+        return date.getFullYear() === currentYear;
+      });
+    } else if (globalStatsFilter === 'custom' && customMonth && customYear) {
+      const targetMonth = parseInt(customMonth);
+      const targetYear = parseInt(customYear);
+      filteredBuys = buyTransactions.filter(t => {
+        const date = new Date(t.created_at);
+        return date.getMonth() === targetMonth && date.getFullYear() === targetYear;
+      });
+      filteredSells = sellTransactions.filter(t => {
+        const date = new Date(t.created_at);
+        return date.getMonth() === targetMonth && date.getFullYear() === targetYear;
+      });
+    }
+    
+    return { filteredBuys, filteredSells };
+  };
+
+  const getAvailableMonthsYears = () => {
+    const allTransactions = [...buyTransactions, ...sellTransactions];
+    const monthsYears = new Set();
+    
+    allTransactions.forEach(t => {
+      const date = new Date(t.created_at);
+      const month = date.getMonth();
+      const year = date.getFullYear();
+      monthsYears.add(`${year}-${month}`);
+    });
+    
+    return Array.from(monthsYears).sort().reverse().map(my => {
+      const [year, month] = my.split('-');
+      return { year, month: parseInt(month) };
+    });
+  };
+
+  const availableMonthsYears = getAvailableMonthsYears();
+  
+  const getChartData = () => {
+    let buysToUse = buyTransactions;
+    let sellsToUse = sellTransactions;
+    
+    // Filter by selected game if any
+    if (selectedGameFilter) {
+      buysToUse = buyTransactions.filter(t => t.game_name === selectedGameFilter);
+      sellsToUse = sellTransactions.filter(t => t.game_name === selectedGameFilter);
+    }
+    
+    let groupFunction;
+    let formatFunction;
+    
+    if (timeGrouping === 'day') {
+      groupFunction = groupByDay;
+      formatFunction = (key) => {
+        const date = new Date(key);
+        return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      };
+    } else if (timeGrouping === 'year') {
+      groupFunction = groupByYear;
+      formatFunction = (key) => key;
+    } else {
+      groupFunction = groupByMonth;
+      formatFunction = formatMonthYear;
+    }
+    
+    const allPeriods = new Set([
+      ...Object.keys(groupFunction(buysToUse)),
+      ...Object.keys(groupFunction(sellsToUse))
+    ]);
+
+    const sortedPeriods = Array.from(allPeriods).sort();
+    
+    return sortedPeriods.map(period => {
+      const buyPeriod = groupFunction(buysToUse)[period] || [];
+      const sellPeriod = groupFunction(sellsToUse)[period] || [];
+      
+      const buyTotal = buyPeriod.reduce((sum, t) => sum + t.price, 0);
+      const sellTotal = sellPeriod.reduce((sum, t) => sum + t.price, 0);
+      
+      return {
+        month: formatFunction(period),
+        achats: parseFloat(buyTotal.toFixed(2)),
+        ventes: parseFloat(sellTotal.toFixed(2)),
+        benefice: parseFloat((sellTotal - buyTotal).toFixed(2))
+      };
+    });
+  };
+
+  const toggleMonth = (month, type) => {
+    if (type === 'buy') {
+      const newExpanded = new Set(expandedBuyMonths);
+      if (newExpanded.has(month)) {
+        newExpanded.delete(month);
+      } else {
+        newExpanded.add(month);
+      }
+      setExpandedBuyMonths(newExpanded);
+    } else {
+      const newExpanded = new Set(expandedSellMonths);
+      if (newExpanded.has(month)) {
+        newExpanded.delete(month);
+      } else {
+        newExpanded.add(month);
+      }
+      setExpandedSellMonths(newExpanded);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatMonthYear = (monthString) => {
+    const [year, month] = monthString.split('-');
+    const date = new Date(year, month - 1);
+    return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+  };
+
+  // Filtrer par recherche de jeu si active
+  const filteredBySearch = gameSearch.trim() !== '' 
+    ? {
+        buys: buyTransactions.filter(t => 
+          t.game_name && t.game_name.toLowerCase().includes(gameSearch.toLowerCase())
+        ),
+        sells: sellTransactions.filter(t => 
+          t.game_name && t.game_name.toLowerCase().includes(gameSearch.toLowerCase())
+        )
+      }
+    : {
+        buys: buyTransactions,
+        sells: sellTransactions
+      };
+
+  const buyMonthlyGroups = groupByMonth(filteredBySearch.buys);
+  const sellMonthlyGroups = groupByMonth(filteredBySearch.sells);
+  const { filteredBuys, filteredSells } = getFilteredTransactions();
+  const globalStats = calculateStats(filteredBuys, filteredSells);
+  const chartData = getChartData();
+  const top10MostBought = getTop10MostBoughtGames();
+  const top10MostProfitable = getTop10MostProfitableGames();
+  const top10LeastProfitable = getTop10LeastProfitableGames();
+  const top10LeastProfitableWithSales = getTop10LeastProfitableGamesWithSales();
+
+  const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#8b5cf6'];
+
+  if (loading) {
+    return (
+      <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-gray-50 to-slate-100'} flex items-center justify-center`}>
+        <div className={`text-xl ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Chargement...</div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-800'}`}>
-
-      {/* ── Header ── */}
-      <div className={`sticky top-0 z-30 border-b backdrop-blur ${darkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
-        <div className="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <button onClick={() => router.back()} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-2">
-              <ImageIcon className="w-5 h-5 text-blue-500" />
-              <span className="font-bold text-lg">Suivi des photos</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
-            <button onClick={handleLogout} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Barre flottante de sélection ── */}
-      {selectMode && totalSelected > 0 && (
-        <div className="sticky top-[57px] z-20 flex justify-center px-4 py-2 pointer-events-none">
-          <div className={`pointer-events-auto flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-2xl shadow-2xl border ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
-            <span className={`text-sm font-medium ${subtext}`}>{totalSelected} photo{totalSelected > 1 ? 's' : ''}</span>
-            <div className={`w-px h-4 ${divider}`} />
-            <button onClick={selectAll}              className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Tout</button>
-            <button onClick={() => setSelectedPhotos({})} className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Aucun</button>
-            <div className={`w-px h-4 ${divider}`} />
-            <button
-              onClick={downloadSelected} disabled={downloading}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
-            >
-              {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-              Telecharger
-            </button>
-            {totalSelected > 0 && (
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-gray-50 to-slate-100'} py-8 px-4 transition-colors duration-300`}>
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
               <button
-                onClick={() => {
-                  const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
-                  if (all.length) openPhotoPopup(all[0], all);
-                }}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
-                title="Ouvrir dans une fenêtre pour glisser vers LeBonCoin"
+                onClick={() => router.push('/')}
+                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
               >
-                <Clipboard className="w-3.5 h-3.5" /> Ouvrir
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
               </button>
-            )}
-            <button
-              onClick={deleteSelected}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Supprimer
-            </button>
-            <div className={`w-px h-4 ${divider}`} />
-            {/* Retirer le tag */}
-            <button
-              onClick={removeTag}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
-              title="Retirer le tag des photos sélectionnées"
-            >
-              <X className="w-3.5 h-3.5" /> Retirer tag
-            </button>
-            {/* Dropdown tag */}
-            <div className="relative">
-              <button
-                onClick={() => setShowTagDropdown(p => !p)}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
-              >
-                <Tag className="w-3.5 h-3.5" /> Tagger <ChevronDown className="w-3 h-3" />
-              </button>
-              {showTagDropdown && (
-                <div className={`absolute top-full mt-1 right-0 w-64 rounded-xl border shadow-2xl overflow-hidden z-50 ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
-                  <div className={`p-2 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                    <input
-                      autoFocus type="text" placeholder="Rechercher ou créer un tag..."
-                      value={tagSearch} onChange={e => setTagSearch(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && tagSearch.trim()) assignTag(tagSearch.trim()); }}
-                      className={`w-full text-sm px-3 py-1.5 rounded-lg border outline-none ${inputCls}`}
-                    />
-                  </div>
-                  <div className="max-h-52 overflow-y-auto">
-                    {/* Option créer un nouveau tag si la saisie ne correspond à aucun jeu existant */}
-                    {tagSearch.trim() && !gamesList.some(g => g.toLowerCase() === tagSearch.trim().toLowerCase()) && (
-                      <button
-                        onClick={() => assignTag(tagSearch.trim())}
-                        className={`w-full text-left text-sm px-4 py-2.5 transition-colors border-b font-medium text-blue-500 ${darkMode ? 'hover:bg-gray-700 border-gray-700' : 'hover:bg-blue-50 border-gray-100'}`}
-                      >
-                        + Créer « {tagSearch.trim()} »
-                      </button>
-                    )}
-                    {gamesList.length === 0 && !tagSearch.trim() && <p className={`text-sm px-4 py-3 ${subtext}`}>Chargement des jeux...</p>}
-                    {filteredGames.map(game => (
-                      <button
-                        key={game} onClick={() => assignTag(game)}
-                        className={`w-full text-left text-sm px-4 py-2.5 transition-colors border-b last:border-0 ${darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-blue-50 text-gray-700 border-gray-100'}`}
-                      >
-                        {game}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
-
-        {/* ── Zone d'upload ── */}
-        <div
-          onDragOver={onDropZoneDragOver}
-          onDragLeave={onDropZoneDragLeave}
-          onDrop={onDropZoneDrop}
-          onClick={() => !uploading && fileInputRef.current?.click()}
-          className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200
-            ${isDraggingFile && !draggingPhoto && !draggingFolder
-              ? 'border-blue-400 bg-blue-50 scale-[1.01]'
-              : darkMode
-                ? 'border-gray-600 hover:border-blue-500 hover:bg-gray-800/50'
-                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/30'
-            }`}
-        >
-          <input ref={fileInputRef} type="file" multiple accept="image/*" className="hidden"
-            onChange={e => handleFileDrop(e.target.files)} />
-          {uploading ? (
-            <div className="space-y-3">
-              <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto" />
-              <p className={`text-sm font-medium ${subtext}`}>Upload en cours… {uploadProgress}%</p>
-              <div className={`w-64 mx-auto rounded-full h-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Upload className={`w-10 h-10 mx-auto ${subtext}`} />
-              <p className={`font-semibold ${textMain}`}>Glisser vos photos depuis le bureau ici</p>
-              <p className={`text-sm ${subtext}`}>ou cliquer pour selectionner — JPG, PNG, WEBP</p>
-            </div>
-          )}
-        </div>
-
-        {/* ── Kanban ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {COLUMNS.map(col => {
-            const colPhotos  = photos[col.id] || [];
-            const isPhotoOver  = dragOverColumn === col.id;
-            const isFolderOver = dragOverFolderCol === col.id;
-            const isOver     = isPhotoOver || isFolderOver;
-            const isFolded   = folderMode.has(col.id);
-            const selCount   = selectedPhotos[col.id]?.size || 0;
-            const hasTagged  = colPhotos.some(p => p.game_tag);
-            const { groups, ungrouped } = groupByTag(colPhotos);
-            const zoom       = colZoom[col.id] ?? 2;
-            const gridCls    = zoomGridCls(zoom);
-
-            const colBgStyle     = darkMode ? { backgroundColor: isOver
-              ? col.darkRgba.replace('0.12','0.25').replace('0.13','0.25')
-              : col.darkRgba } : {};
-            const colBorderStyle = darkMode ? { borderColor: isOver ? '#60a5fa' : col.darkBorderRgba } : {};
-            const headerStyle    = darkMode ? { backgroundColor: col.darkHeaderRgba } : {};
-
-            return (
-              <div
-                key={col.id}
-                data-kanban-col={col.id}
-                ref={el => { colRefs.current[col.id] = el; }}
-                onDragOver={e => onColumnDragOver(e, col.id)}
-                onDrop={e => onColumnDrop(e, col.id)}
-                onDragLeave={() => { setDragOverColumn(null); setDragOverFolderCol(null); }}
-                className={[
-                  'flex flex-col rounded-2xl border-2 transition-all duration-150',
-                  isOver && !darkMode ? 'scale-[1.01] border-blue-300' : '',
-                  !darkMode ? `${col.lightBg} ${isOver ? 'border-blue-300' : col.lightBorder}` : '',
-                  isFolderOver ? 'ring-2 ring-blue-400 ring-offset-1' : '',
-                ].join(' ')}
-                style={{ minHeight: '420px', position: 'relative', ...colBgStyle, ...(darkMode ? colBorderStyle : {}) }}
-              >
-                {/* En-tête de colonne */}
-                <div
-                  ref={el => { headerRefs.current[col.id] = el; }}
-                  className={`px-3 py-2.5 rounded-t-2xl border-b ${darkMode ? 'border-white/10' : col.lightBorder} ${!darkMode ? col.lightHeader : ''}`}
-                  style={darkMode ? headerStyle : {}}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${col.dot}`} />
-                      <span className="font-semibold text-sm">{col.label}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-white/70 text-gray-600'}`}>
-                        {colPhotos.length}{selCount > 0 && <span className="text-blue-400 ml-0.5">·{selCount}</span>}
-                      </span>
-                      {/* Indicateur + boutons de zoom */}
-                      <div className="flex items-center gap-0.5 flex-shrink-0 ml-1">
-                        <button
-                          onClick={() => setColZoom(prev => ({ ...prev, [col.id]: Math.min((prev[col.id] ?? 2) + 1, 4) }))}
-                          title="Photos plus petites"
-                          disabled={(colZoom[col.id] ?? 2) >= 4}
-                          className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold transition-colors
-                            ${(colZoom[col.id] ?? 2) >= 4
-                              ? 'opacity-30 cursor-not-allowed'
-                              : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white/80 text-gray-500'}`}
-                        >−</button>
-                        <span className={`text-[9px] font-mono w-3 text-center select-none ${subtext}`}>{colZoom[col.id] ?? 2}</span>
-                        <button
-                          onClick={() => setColZoom(prev => ({ ...prev, [col.id]: Math.max((prev[col.id] ?? 2) - 1, 1) }))}
-                          title="Photos plus grandes"
-                          disabled={(colZoom[col.id] ?? 2) <= 1}
-                          className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold transition-colors
-                            ${(colZoom[col.id] ?? 2) <= 1
-                              ? 'opacity-30 cursor-not-allowed'
-                              : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white/80 text-gray-500'}`}
-                        >+</button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {colPhotos.length > 0 && (
-                        <button
-                          onClick={() => downloadMultiple(colPhotos)}
-                          disabled={downloading}
-                          title="Telecharger toute la colonne"
-                          className={`p-1 rounded-lg transition-colors ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white text-gray-500'}`}
-                        >
-                          {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── Lasso overlay ── */}
-                {lasso && lasso.colId === col.id && (() => {
-                  const colEl  = colRefs.current[col.id];
-                  const rect   = colEl ? colEl.getBoundingClientRect() : { left: 0, top: 0 };
-                  const x      = Math.min(lasso.startX, lasso.curX) - rect.left;
-                  const y      = Math.min(lasso.startY, lasso.curY) - rect.top;
-                  const w      = Math.abs(lasso.curX - lasso.startX);
-                  const h      = Math.abs(lasso.curY - lasso.startY);
-                  return (
-                    <div
-                      className="absolute pointer-events-none z-20 rounded border border-blue-400 bg-blue-400/15"
-                      style={{ left: x, top: y, width: w, height: h }}
-                    />
-                  );
-                })()}
-
-                {/* Zone de photos */}
-                <div
-                  className="flex-1 p-2 space-y-2 overflow-y-auto select-none"
-                  onMouseDown={e => onZoneMouseDown(e, col.id)}
-                >
-                  {colPhotos.length === 0 ? (
-                    <div className={[
-                      'flex flex-col items-center justify-center py-10 gap-2 rounded-xl border-2 border-dashed transition-colors',
-                      isFolderOver ? 'border-blue-400 bg-blue-50/30' : darkMode ? 'border-white/10' : 'border-gray-300',
-                    ].join(' ')}>
-                      {isFolderOver
-                        ? <FolderOpen className="w-8 h-8 text-blue-400" />
-                        : <ImageIcon  className={`w-8 h-8 ${subtext}`} />
-                      }
-                      <p className={`text-xs ${isFolderOver ? 'text-blue-400 font-medium' : subtext}`}>
-                        {isFolderOver ? 'Deposer le dossier ici' : 'Deposer ici'}
-                      </p>
-                    </div>
-                  ) : isFolded ? (
-                    <>
-                      {/* ── Dossiers tagués ── */}
-                      {Object.entries(groups).map(([tagLabel, gPhotos]) => {
-                        const isCollapsed    = collapsedFolders[col.id]?.has(tagLabel);
-                        const isFolderBeingDragged = draggingFolder?.tagLabel === tagLabel && draggingFolder?.fromColId === col.id;
-                        const [bName, ts]    = tagLabel.split(' \u2022 ');
-                        const gSel           = gPhotos.filter(p => selectedPhotos[col.id]?.has(p.id)).length;
-                        const allSelected    = gPhotos.length > 0 && gSel === gPhotos.length;
-                        const someSelected   = gSel > 0 && !allSelected;
-                        const coverPhotos    = gPhotos.slice(0, 3);
-
-                        return (
-                          <div
-                            key={tagLabel}
-                            data-folderid={tagLabel}
-                            draggable
-                            onDragStart={e => onFolderDragStart(e, tagLabel, col.id, gPhotos)}
-                            onDragEnd={onFolderDragEnd}
-                            className={[
-                              'rounded-xl overflow-hidden border transition-all duration-150',
-                              isFolderBeingDragged ? 'opacity-40 scale-95' : '',
-                              darkMode ? 'border-amber-500/20 bg-amber-500/5' : 'border-amber-200 bg-amber-50/60',
-                            ].join(' ')}
-                          >
-                            {/* En-tête du dossier */}
-                            <div
-                              className={[
-                                'flex items-center gap-2 px-2.5 py-2.5 select-none',
-                                'cursor-grab active:cursor-grabbing transition-colors',
-                                darkMode ? 'hover:bg-amber-500/10' : 'hover:bg-amber-100/60',
-                              ].join(' ')}
-                              onClick={() => toggleFolder(col.id, tagLabel)}
-                            >
-                              {/* Checkbox dossier — sélectionne/désélectionne toutes les photos */}
-                              <button
-                                onClick={e => { e.stopPropagation(); toggleFolderSelection(col.id, gPhotos); }}                                title={allSelected ? 'Désélectionner le dossier' : 'Sélectionner le dossier'}
-                                className={[
-                                  'flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
-                                  allSelected
-                                    ? 'bg-blue-500 border-blue-500'
-                                    : someSelected
-                                      ? 'bg-blue-200 border-blue-400'
-                                      : darkMode ? 'border-gray-500 bg-transparent hover:border-blue-400' : 'border-gray-300 bg-white hover:border-blue-400',
-                                ].join(' ')}
-                              >
-                                {allSelected && <Check className="w-3 h-3 text-white" />}
-                                {someSelected && <div className="w-2 h-0.5 bg-blue-500 rounded" />}
-                              </button>
-                              {isCollapsed
-                                ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
-                                : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
-                              }
-                              <FolderOpen className="w-4 h-4 flex-shrink-0 text-amber-500" />
-                              {/* Aperçu miniature des 3 premières photos */}
-                              {isCollapsed && coverPhotos.length > 0 && (
-                                <div className="flex -space-x-2 flex-shrink-0">
-                                  {coverPhotos.map((p, i) => (
-                                    <img
-                                      key={p.id}
-                                      src={p.image_url}
-                                      alt=""
-                                      className="w-6 h-6 rounded-md object-cover border-2 border-white shadow-sm"
-                                      style={{ zIndex: coverPhotos.length - i }}
-                                      draggable={false}
-                                    />
-                                  ))}
-                                </div>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-bold truncate">{bName}</p>
-                                {ts && <p className={`text-[10px] ${subtext} truncate`}>{ts}</p>}
-                              </div>
-                              <button
-                                onClick={e => { e.stopPropagation(); openPhotoPopup(gPhotos[0], gPhotos); }}
-                                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
-                                title="Ouvrir le dossier pour glisser vers LeBonCoin"
-                              >
-                                <Clipboard className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={e => { e.stopPropagation(); downloadMultiple(gPhotos); }}
-                                disabled={downloading}
-                                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
-                                title="Telecharger ce dossier"
-                              >
-                                <Download className="w-3 h-3" />
-                              </button>
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>
-                                {gPhotos.length}{gSel > 0 && <span className="text-blue-400 ml-0.5">·{gSel}</span>}
-                              </span>
-                            </div>
-                            {!isCollapsed && (
-                              <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
-                                {gPhotos.map(photo => renderCard(col.id, photo, gPhotos, true))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-
-                      {/* ── Photos sans tag ── */}
-                      {ungrouped.length > 0 && (
-                        <div className={`rounded-xl overflow-hidden border ${darkMode ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white/40'}`}>
-                          <div
-                            className={`flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-gray-50'}`}
-                            onClick={() => toggleFolder(col.id, '__ungrouped__')}
-                          >
-                            {collapsedFolders[col.id]?.has('__ungrouped__')
-                              ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
-                              : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
-                            }
-                            <ImageIcon className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
-                            <span className={`text-xs font-medium flex-1 ${subtext}`}>Sans tag</span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
-                              {ungrouped.length}
-                            </span>
-                          </div>
-                          {!collapsedFolders[col.id]?.has('__ungrouped__') && (
-                            <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
-                              {ungrouped.map(photo => renderCard(col.id, photo, ungrouped))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    /* Vue grille simple */
-                    <div className={`grid ${gridCls} gap-2`}>
-                      {colPhotos.map(photo => renderCard(col.id, photo, colPhotos))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Lightbox ── */}
-      {lightbox && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm" onClick={closeLightbox}>
-          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-2">
-              <button onClick={closeLightbox} className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-              {lightbox.siblingPhotos.length > 1 && (
-                <span className="text-sm text-gray-400">{lightbox.index + 1} / {lightbox.siblingPhotos.length}</span>
-              )}
-            </div>
-            <div className="flex-1 mx-4 min-w-0 text-center">
-              {lightbox.photo.game_tag && (
-                <p className="text-sm text-gray-300 truncate">
-                  {baseGameName(lightbox.photo.game_tag)}
-                  {lightbox.photo.game_tag.includes(' \u2022 ') && (
-                    <span className="text-gray-500 ml-2 text-xs">{lightbox.photo.game_tag.split(' \u2022 ')[1]}</span>
-                  )}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={e => { e.stopPropagation(); downloadSingle(lightbox.photo); }}
-                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-                title="Telecharger"
-              >
-                <Download className="w-5 h-5" />
-              </button>
-              <button
-                onClick={e => { e.stopPropagation(); setPendingDelete({ photos: [lightbox.photo] }); }}
-                className="w-9 h-9 rounded-xl bg-red-500/70 hover:bg-red-600 flex items-center justify-center text-white transition-colors"
-                title="Supprimer"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 flex items-center justify-center relative min-h-0 px-16" onClick={e => e.stopPropagation()}>
-            {lightbox.siblingPhotos.length > 1 && (
-              <button onClick={() => lightboxNav(-1)} className="absolute left-3 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors z-10">
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-            <img
-              src={lightbox.photo.image_url}
-              alt={lightbox.photo.game_tag || 'photo'}
-              className="max-w-full max-h-full object-contain rounded-xl shadow-2xl transition-transform duration-300"
-              style={{ transform: `rotate(${lightbox.rotation}deg)`, maxHeight: 'calc(100vh - 160px)' }}
-              draggable={false}
-            />
-            {lightbox.siblingPhotos.length > 1 && (
-              <button onClick={() => lightboxNav(1)} className="absolute right-3 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors z-10">
-                <ChevronLeft className="w-6 h-6 rotate-180" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center justify-center gap-4 px-4 py-4 flex-shrink-0" onClick={e => e.stopPropagation()}>
-            <button onClick={() => rotateLightbox(-90)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors">
-              <RotateCcw className="w-4 h-4" /> Gauche
-            </button>
-            <span className="text-gray-500 text-xs font-mono w-10 text-center">{lightbox.rotation}°</span>
-            <button onClick={() => rotateLightbox(90)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors">
-              Droite <RotateCw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modale suppression ── */}
-      {pendingDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className={`rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4 ${cardBg}`}>
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                <Trash2 className="w-5 h-5 text-red-500" />
+              <div className="bg-indigo-600 p-3 rounded-xl">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <line x1="12" y1="1" x2="12" y2="23"></line>
+                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
               </div>
               <div>
-                <h3 className="font-bold text-base">Supprimer definitivement ?</h3>
-                <p className={`text-sm mt-1 ${subtext}`}>
-                  {pendingDelete.photos.length > 1
-                    ? `${pendingDelete.photos.length} photos seront supprimees de Cloudinary et de la base de donnees.`
-                    : 'Cette photo sera supprimee de Cloudinary et de la base de donnees.'
-                  } Cette action est irreversible.
+                <h1 className={`text-2xl md:text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  Suivi Achats/Ventes
+                </h1>
+                <p className={`text-xs md:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Synchronisation en temps réel
                 </p>
               </div>
+              </div>
+
+              {/* Mini widget mois en cours */}
+              {(() => {
+                const now = new Date();
+                const cm = now.getMonth();
+                const cy = now.getFullYear();
+                const mBuys = buyTransactions.filter(t => { const d = new Date(t.created_at); return d.getMonth() === cm && d.getFullYear() === cy; });
+                const mSells = sellTransactions.filter(t => { const d = new Date(t.created_at); return d.getMonth() === cm && d.getFullYear() === cy; });
+                const mProfit = mSells.reduce((s,t) => s + t.price, 0) - mBuys.reduce((s,t) => s + t.price, 0);
+                const monthLabel = now.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+                return (
+                  <div className={`hidden md:flex flex-col items-end flex-shrink-0 px-3 py-2 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                    <span className={`text-xs font-semibold mb-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{monthLabel}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <span className="font-bold text-red-400">{mBuys.length}</span> achat{mBuys.length > 1 ? 's' : ''}
+                      </span>
+                      <span className={`text-xs ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>·</span>
+                      <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <span className="font-bold text-green-400">{mSells.length}</span> vente{mSells.length > 1 ? 's' : ''}
+                      </span>
+                      <span className={`text-xs ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>·</span>
+                      <span className={`text-xs font-bold ${mProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {mProfit >= 0 ? '+' : ''}{mProfit.toFixed(2)}€
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
-            {pendingDelete.photos.length === 1 && (
-              <img src={pendingDelete.photos[0].image_url} alt="" className="w-full h-32 object-cover rounded-xl" />
-            )}
-            {pendingDelete.photos.length > 1 && (
-              <div className="flex gap-1 overflow-hidden rounded-xl">
-                {pendingDelete.photos.slice(0, 4).map(p => <img key={p.id} src={p.image_url} alt="" className="flex-1 h-20 object-cover" />)}
-                {pendingDelete.photos.length > 4 && (
-                  <div className={`flex-1 h-20 flex items-center justify-center text-sm font-bold ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
-                    +{pendingDelete.photos.length - 4}
+            
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              <button
+                onClick={exportToExcel}
+                className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
+                  darkMode 
+                    ? 'bg-green-700 text-white hover:bg-green-600' 
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
+                title="Exporter en CSV"
+              >
+                📥 Exporter
+              </button>
+
+              <button
+                onClick={() => {
+                  const years = getAvailableYears();
+                  if (years.length > 0 && !pdfSelectedYear) setPdfSelectedYear(String(years[0]));
+                  if (!pdfSelectedMonth) setPdfSelectedMonth(String(new Date().getMonth()));
+                  setShowPdfModal(true);
+                }}
+                className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
+                  darkMode
+                    ? 'bg-indigo-700 text-white hover:bg-indigo-600'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                }`}
+                title="Exporter en PDF"
+              >
+                📄 PDF
+              </button>
+              
+              <button
+                onClick={() => setStatsView(!statsView)}
+                className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
+                  statsView
+                    ? 'bg-indigo-600 text-white'
+                    : darkMode 
+                      ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {statsView ? '📝 Transactions' : '📊 Statistiques'}
+              </button>
+
+              {/* Bouton de recherche - visible uniquement en mode Transactions */}
+              {!statsView && (
+                <button
+                  onClick={() => {
+                    setShowGameSearch(!showGameSearch);
+                    if (showGameSearch) {
+                      setGameSearch('');
+                    }
+                  }}
+                  className={`p-2 md:p-3 rounded-xl transition ${
+                    showGameSearch
+                      ? 'bg-indigo-600 text-white'
+                      : darkMode 
+                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' 
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                  }`}
+                  title="Rechercher un jeu"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                  </svg>
+                </button>
+              )}
+
+              {/* Bouton stock dormant */}
+              {(() => {
+                const dormant = getDormantStock();
+                return (
+                  <button
+                    onClick={() => setShowDormantStock(!showDormantStock)}
+                    className={`relative p-2 md:p-3 rounded-xl transition ${
+                      showDormantStock
+                        ? 'bg-amber-500 text-white'
+                        : darkMode
+                          ? 'bg-gray-700 hover:bg-gray-600 text-gray-400'
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                    }`}
+                    title="Stock dormant"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                      <path d="M12 9v4"/><path d="M12 17h.01"/>
+                    </svg>
+                    {dormant.length > 0 && !showDormantStock && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                        {dormant.length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })()}
+              
+              <button
+                onClick={toggleDarkMode}
+                className={`p-2 md:p-3 rounded-xl transition ${
+                  darkMode 
+                    ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                {darkMode ? '☀️' : '🌙'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Panneau stock dormant */}
+        {showDormantStock && (() => {
+          const dormant = getDormantStock();
+          return (
+            <div className={`${darkMode ? 'bg-gray-800 border border-amber-800/40' : 'bg-amber-50 border border-amber-200'} rounded-2xl shadow-xl p-5 mb-6`}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                    <path d="M12 9v4"/><path d="M12 17h.01"/>
+                  </svg>
+                  <span className={`text-sm font-semibold ${darkMode ? 'text-amber-400' : 'text-amber-700'}`}>
+                    Stock dormant — jeux achetés non revendus
+                  </span>
+                </div>
+                <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  {dormant.length} jeu{dormant.length > 1 ? 'x' : ''}
+                </span>
+              </div>
+
+              {dormant.length === 0 ? (
+                <p className={`text-sm text-center py-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  ✅ Aucun stock dormant détecté
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {/* En-têtes de colonnes */}
+                  <div className={`grid grid-cols-[4rem_1fr_auto] gap-2 px-4 py-1 text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <span className="text-center">Ancienneté</span>
+                    <span>Nom du jeu</span>
+                    <span>Total investi</span>
+                  </div>
+                  {dormant.map((item, i) => (
+                    <div key={i} className={`grid grid-cols-[4rem_1fr_auto] items-center gap-2 px-4 py-3 rounded-xl ${
+                      darkMode ? 'bg-gray-700/60' : 'bg-white'
+                    }`}>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-center ${
+                        item.daysDormant > 180
+                          ? 'bg-red-500/20 text-red-400'
+                          : item.daysDormant > 120
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-yellow-500/20 text-yellow-500'
+                      }`} title="Nombre de jours depuis le premier achat">
+                        {item.daysDormant}j
+                      </span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`text-sm font-semibold truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                          {item.name}
+                        </span>
+                        <span className={`text-xs flex-shrink-0 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                          ×{item.count} achat{item.count > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-red-400 whitespace-nowrap" title={`${item.count} achat${item.count > 1 ? 's' : ''} × prix moyen ${(item.totalInvested / item.count).toFixed(2)}€`}>
+                        -{item.totalInvested.toFixed(2)}€
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {!statsView ? (
+          <>
+            {/* Input Section */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="relative">
+                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Nom du jeu (optionnel)
+                  </label>
+                  <input
+                    type="text"
+                    value={gameName}
+                    onChange={(e) => handleGameNameChange(e.target.value)}
+                    onFocus={() => setShowSuggestions(gameName.length > 0)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    placeholder="Ex: FIFA 24"
+                    className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  />
+                  
+                  {/* Autocomplete suggestions */}
+                  {showSuggestions && filteredSuggestions.length > 0 && (
+                    <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                      darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                    }`}>
+                      {filteredSuggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          onClick={() => selectSuggestion(suggestion)}
+                          className={`w-full text-left px-4 py-2 hover:bg-indigo-500 hover:text-white transition ${
+                            darkMode ? 'text-gray-200' : 'text-gray-800'
+                          }`}
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Prix d'achat (€)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={buyPrice}
+                      onChange={(e) => setBuyPrice(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && addBuy()}
+                      placeholder="8 ou 8.5"
+                      className={`flex-1 px-4 py-3 rounded-lg border-2 focus:border-red-500 focus:outline-none transition ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                          : 'bg-white border-gray-200 text-gray-900'
+                      }`}
+                    />
+                    <button
+                      onClick={addBuy}
+                      className="px-6 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Prix de vente (€)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={sellPrice}
+                      onChange={(e) => setSellPrice(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && addSell()}
+                      placeholder="25 ou 25.5"
+                      className={`flex-1 px-4 py-3 rounded-lg border-2 focus:border-green-500 focus:outline-none transition ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                          : 'bg-white border-gray-200 text-gray-900'
+                      }`}
+                    />
+                    <button
+                      onClick={addSell}
+                      className="px-6 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Global Stats */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-4 mb-6 relative`}>
+              {/* Roue crantée en haut à gauche */}
+              <div className="absolute top-4 left-4">
+                <button
+                  onClick={() => setShowStatsFilterMenu(!showStatsFilterMenu)}
+                  className={`p-2 rounded-lg transition ${
+                    darkMode 
+                      ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300' 
+                      : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+                  }`}
+                  title="Filtrer les statistiques"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+
+                {/* Menu déroulant */}
+                {showStatsFilterMenu && (
+                  <div className={`absolute top-12 left-0 z-20 w-64 rounded-lg shadow-xl p-3 ${
+                    darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                  }`}>
+                    <div className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Période d'affichage
+                    </div>
+                    
+                    <button
+                      onClick={() => {
+                        setGlobalStatsFilter('all');
+                        setCustomMonth('');
+                        setCustomYear('');
+                        saveUserPreferences('all', '', '');
+                        setShowStatsFilterMenu(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition ${
+                        globalStatsFilter === 'all'
+                          ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
+                          : darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      📊 Toutes les données
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setGlobalStatsFilter('current-month');
+                        setCustomMonth('');
+                        setCustomYear('');
+                        saveUserPreferences('current-month', '', '');
+                        setShowStatsFilterMenu(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition ${
+                        globalStatsFilter === 'current-month'
+                          ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
+                          : darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      📅 Mois en cours
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setGlobalStatsFilter('current-year');
+                        setCustomMonth('');
+                        setCustomYear('');
+                        saveUserPreferences('current-year', '', '');
+                        setShowStatsFilterMenu(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-2 transition ${
+                        globalStatsFilter === 'current-year'
+                          ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
+                          : darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      📆 Année en cours
+                    </button>
+
+                    <div className={`border-t pt-2 mt-2 ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                      <div className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Mois spécifique
+                      </div>
+                      
+                      {availableMonthsYears.length > 0 ? (
+                        <div className="max-h-40 overflow-y-auto">
+                          {availableMonthsYears.map((my, index) => {
+                            const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                                              'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+                            return (
+                              <button
+                                key={index}
+                                onClick={() => {
+                                  setGlobalStatsFilter('custom');
+                                  setCustomMonth(my.month.toString());
+                                  setCustomYear(my.year);
+                                  saveUserPreferences('custom', my.month.toString(), my.year);
+                                  setShowStatsFilterMenu(false);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition ${
+                                  globalStatsFilter === 'custom' && customMonth === my.month.toString() && customYear === my.year
+                                    ? darkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'
+                                    : darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                                }`}
+                              >
+                                {monthNames[my.month]} {my.year}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className={`text-xs px-3 py-2 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                          Aucune donnée disponible
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Indicateur de filtre actif */}
+              {globalStatsFilter !== 'all' && (
+                <div className="text-center mb-2">
+                  <span className={`inline-block text-xs px-3 py-1 rounded-full ${
+                    darkMode ? 'bg-indigo-900 text-indigo-300' : 'bg-indigo-100 text-indigo-700'
+                  }`}>
+                    {globalStatsFilter === 'current-month' && '📅 Mois en cours'}
+                    {globalStatsFilter === 'current-year' && '📆 Année en cours'}
+                    {globalStatsFilter === 'custom' && customMonth && customYear && 
+                      `📊 ${['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][parseInt(customMonth)]} ${customYear}`
+                    }
+                  </span>
+                </div>
+              )}
+
+              {/* Ligne 1: Stats principales - toujours visible */}
+              <div className="grid md:grid-cols-4 gap-4 text-center">
+                <div>
+                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Total Achats
+                  </div>
+                  <div className="text-2xl font-bold text-red-500">
+                    {globalStats.totalBuy.toFixed(2)}€
+                  </div>
+                  <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {globalStats.buyCount} transactions
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Total Ventes
+                  </div>
+                  <div className="text-2xl font-bold text-green-500">
+                    {globalStats.totalSell.toFixed(2)}€
+                  </div>
+                  <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {globalStats.sellCount} transactions
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Bénéfice
+                  </div>
+                  <div className={`text-2xl font-bold ${globalStats.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {globalStats.profit >= 0 ? '+' : ''}{globalStats.profit.toFixed(2)}€
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Total Transactions
+                  </div>
+                  <div className={`text-2xl font-bold ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                    {globalStats.buyCount + globalStats.sellCount}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bouton pour afficher/masquer les prix moyens */}
+              <div className="text-center mt-3">
+                <button
+                  onClick={() => setExpandedSections(prev => ({ ...prev, avgPrices: !prev.avgPrices }))}
+                  className={`text-xs px-3 py-1 rounded-lg transition ${
+                    darkMode 
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {expandedSections.avgPrices ? '▲ Masquer prix moyens' : '▼ Afficher prix moyens'}
+                </button>
+              </div>
+
+              {/* Ligne 2: Prix moyens - masquée par défaut */}
+              {expandedSections.avgPrices && (
+                <div className={`grid md:grid-cols-2 gap-4 text-center mt-3 pt-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <div>
+                    <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Prix Achat Moyen
+                    </div>
+                    <div className="text-2xl font-bold text-orange-500">
+                      {globalStats.buyCount > 0 ? (globalStats.totalBuy / globalStats.buyCount).toFixed(2) : '0.00'}€
+                    </div>
+                    <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      par transaction
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className={`text-sm font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Prix Vente Moyen
+                    </div>
+                    <div className="text-2xl font-bold text-teal-500">
+                      {globalStats.sellCount > 0 ? (globalStats.totalSell / globalStats.sellCount).toFixed(2) : '0.00'}
+                    </div>
+                    <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      par transaction
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Barre de recherche de jeu - affichable/masquable */}
+            {showGameSearch && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-4 mb-6 relative`}>
+                <div className="flex items-center gap-3">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                  </svg>
+                  
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value={gameSearch}
+                      onChange={(e) => {
+                        setGameSearch(e.target.value);
+                        setShowSearchSuggestions(e.target.value.length > 0);
+                      }}
+                      onFocus={() => setShowSearchSuggestions(gameSearch.length > 0)}
+                      onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
+                      placeholder="Rechercher un jeu... (ex: Catan, Monopoly)"
+                      className={`w-full px-4 py-2 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-500'
+                      }`}
+                    />
+                    
+                    {/* Suggestions d'autocomplétion */}
+                    {showSearchSuggestions && gameSearch.length > 0 && (
+                      (() => {
+                        const searchSuggestions = gameNameSuggestions.filter(name => 
+                          name.toLowerCase().includes(gameSearch.toLowerCase())
+                        );
+                        
+                        return searchSuggestions.length > 0 && (
+                          <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                            darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                          }`}>
+                            {searchSuggestions.map((suggestion, index) => (
+                              <button
+                                key={index}
+                                onClick={() => {
+                                  setGameSearch(suggestion);
+                                  setShowSearchSuggestions(false);
+                                }}
+                                className={`w-full text-left px-4 py-2 hover:bg-indigo-500 hover:text-white transition ${
+                                  darkMode ? 'text-gray-200' : 'text-gray-800'
+                                }`}
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                  
+                  {gameSearch && (
+                    <button
+                      onClick={() => setGameSearch('')}
+                      className={`p-2 rounded-lg transition ${
+                        darkMode 
+                          ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300' 
+                          : 'hover:bg-gray-100 text-gray-600 hover:text-gray-800'
+                      }`}
+                      title="Effacer"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                
+                {gameSearch && filteredBySearch.buys.length === 0 && filteredBySearch.sells.length === 0 && (
+                  <div className={`mt-3 text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-600'}`}>
+                    Aucun résultat pour "{gameSearch}"
+                  </div>
+                )}
+                
+                {gameSearch && (filteredBySearch.buys.length > 0 || filteredBySearch.sells.length > 0) && (
+                  <div className={`mt-3 space-y-2`}>
+                    {/* Ligne 1: Nombre de transactions */}
+                    <div className={`flex items-center justify-center gap-4 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      <span>
+                        <span className="font-bold text-red-500">{filteredBySearch.buys.length}</span> achat{filteredBySearch.buys.length > 1 ? 's' : ''}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        <span className="font-bold text-green-500">{filteredBySearch.sells.length}</span> vente{filteredBySearch.sells.length > 1 ? 's' : ''}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Total: <span className="font-bold">{filteredBySearch.buys.length + filteredBySearch.sells.length}</span> transaction{(filteredBySearch.buys.length + filteredBySearch.sells.length) > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    
+                    {/* Ligne 2: Prix moyens */}
+                    <div className={`flex items-center justify-center gap-4 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {filteredBySearch.buys.length > 0 && (
+                        <>
+                          <span>
+                            Prix achat moyen: <span className="font-bold text-orange-500">
+                              {(filteredBySearch.buys.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.buys.length).toFixed(2)}€
+                            </span>
+                          </span>
+                          {filteredBySearch.sells.length > 0 && <span>•</span>}
+                        </>
+                      )}
+                      {filteredBySearch.sells.length > 0 && (
+                        <span>
+                          Prix vente moyen: <span className="font-bold text-teal-500">
+                            {(filteredBySearch.sells.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.sells.length).toFixed(2)}€
+                          </span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
             )}
-            <div className="flex gap-3">
-              <button onClick={() => setPendingDelete(null)} className={`flex-1 py-2.5 rounded-xl font-medium text-sm transition-colors ${btnGhost}`}>
-                Annuler
+
+            {/* Badge de recherche active */}
+            {!showGameSearch && gameSearch && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-3 mb-6 text-center`}>
+                <span className={`inline-flex items-center gap-2 text-sm px-3 py-1 rounded-full ${
+                  darkMode ? 'bg-indigo-900 text-indigo-300' : 'bg-indigo-100 text-indigo-700'
+                }`}>
+                  🔍 Filtré par: <span className="font-bold">{gameSearch}</span>
+                  <button
+                    onClick={() => setGameSearch('')}
+                    className="ml-1 hover:text-indigo-500"
+                  >
+                    ✕
+                  </button>
+                </span>
+              </div>
+            )}
+            
+            {/* Two Columns Layout */}
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Buy Column */}
+              <div>
+                <h2 className={`text-2xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
+                  <span className="text-red-500">📥</span> Achats
+                </h2>
+                <div className="space-y-4">
+                  {Object.keys(buyMonthlyGroups).sort().reverse().map(month => {
+                    const monthTransactions = buyMonthlyGroups[month];
+                    const isExpanded = expandedBuyMonths.has(month);
+                    const monthTotal = monthTransactions.reduce((sum, t) => sum + t.price, 0);
+
+                    return (
+                      <div key={month} className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg overflow-hidden`}>
+                        <button
+                          onClick={() => toggleMonth(month, 'buy')}
+                          className={`w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition ${
+                            darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                              {isExpanded ? '▼' : '▶'}
+                            </div>
+                            <div className="text-left">
+                              <h3 className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                                {formatMonthYear(month)}
+                              </h3>
+                              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {monthTransactions.length} transactions
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-red-500">
+                              -{monthTotal.toFixed(2)}€
+                            </div>
+                          </div>
+                        </button>
+
+                        {isExpanded && (
+                          <div className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                            <div className="p-4 space-y-2">
+                              {monthTransactions.map(transaction => (
+                                <div
+                                  key={transaction.id}
+                                  className={`flex items-center justify-between p-3 rounded-lg ${
+                                    darkMode ? 'bg-red-900 bg-opacity-20' : 'bg-red-50'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className={`font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                                      {transaction.game_name || 'Jeu non renseigné'}
+                                    </div>
+                                    <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                      {formatDate(transaction.created_at)}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    {editingTransaction?.id === transaction.id ? (
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="text"
+                                          defaultValue={transaction.price.toFixed(2)}
+                                          autoFocus
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') updateTransactionPrice(transaction.id, e.target.value);
+                                            if (e.key === 'Escape') setEditingTransaction(null);
+                                          }}
+                                          onBlur={(e) => updateTransactionPrice(transaction.id, e.target.value)}
+                                          className={`w-20 px-2 py-1 text-sm rounded border-2 focus:outline-none focus:border-red-400 ${
+                                            darkMode ? 'bg-gray-700 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                                          }`}
+                                        />
+                                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>€</span>
+                                      </div>
+                                    ) : (
+                                      <div className="font-bold text-red-500">
+                                        -{transaction.price.toFixed(2)}€
+                                      </div>
+                                    )}
+                                    <button
+                                      onClick={() => setEditingTransaction({ id: transaction.id, price: transaction.price })}
+                                      className={`p-1.5 rounded-lg transition ${
+                                        darkMode
+                                          ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300'
+                                          : 'hover:bg-gray-200 text-gray-600 hover:text-gray-800'
+                                      }`}
+                                      title="Modifier le prix"
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => deleteTransaction(transaction.id)}
+                                      className={`p-1.5 rounded-lg transition ${
+                                        darkMode 
+                                          ? 'hover:bg-gray-700 text-gray-400 hover:text-red-400' 
+                                          : 'hover:bg-gray-200 text-gray-600 hover:text-red-600'
+                                      }`}
+                                    >
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                      </svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {buyTransactions.length === 0 && (
+                    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-8 text-center`}>
+                      <div className={`text-4xl mb-2 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>📥</div>
+                      <p className={`${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        Aucun achat enregistré
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sell Column */}
+              <div>
+                <h2 className={`text-2xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
+                  <span className="text-green-500">📤</span> Ventes
+                </h2>
+                <div className="space-y-4">
+                  {Object.keys(sellMonthlyGroups).sort().reverse().map(month => {
+                    const monthTransactions = sellMonthlyGroups[month];
+                    const isExpanded = expandedSellMonths.has(month);
+                    const monthTotal = monthTransactions.reduce((sum, t) => sum + t.price, 0);
+
+                    return (
+                      <div key={month} className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg overflow-hidden`}>
+                        <button
+                          onClick={() => toggleMonth(month, 'sell')}
+                          className={`w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition ${
+                            darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                              {isExpanded ? '▼' : '▶'}
+                            </div>
+                            <div className="text-left">
+                              <h3 className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                                {formatMonthYear(month)}
+                              </h3>
+                              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {monthTransactions.length} transactions
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-green-500">
+                              +{monthTotal.toFixed(2)}€
+                            </div>
+                          </div>
+                        </button>
+
+                        {isExpanded && (
+                          <div className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                            <div className="p-4 space-y-2">
+                              {monthTransactions.map(transaction => (
+                                <div
+                                  key={transaction.id}
+                                  className={`flex items-center justify-between p-3 rounded-lg ${
+                                    darkMode ? 'bg-green-900 bg-opacity-20' : 'bg-green-50'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className={`font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                                      {transaction.game_name || 'Jeu non renseigné'}
+                                    </div>
+                                    <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                      {formatDate(transaction.created_at)}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    {editingTransaction?.id === transaction.id ? (
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="text"
+                                          defaultValue={transaction.price.toFixed(2)}
+                                          autoFocus
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') updateTransactionPrice(transaction.id, e.target.value);
+                                            if (e.key === 'Escape') setEditingTransaction(null);
+                                          }}
+                                          onBlur={(e) => updateTransactionPrice(transaction.id, e.target.value)}
+                                          className={`w-20 px-2 py-1 text-sm rounded border-2 focus:outline-none focus:border-green-400 ${
+                                            darkMode ? 'bg-gray-700 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                                          }`}
+                                        />
+                                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>€</span>
+                                      </div>
+                                    ) : (
+                                      <div className="font-bold text-green-500">
+                                        +{transaction.price.toFixed(2)}€
+                                      </div>
+                                    )}
+                                    <button
+                                      onClick={() => setEditingTransaction({ id: transaction.id, price: transaction.price })}
+                                      className={`p-1.5 rounded-lg transition ${
+                                        darkMode
+                                          ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300'
+                                          : 'hover:bg-gray-200 text-gray-600 hover:text-gray-800'
+                                      }`}
+                                      title="Modifier le prix"
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => deleteTransaction(transaction.id)}
+                                      className={`p-1.5 rounded-lg transition ${
+                                        darkMode 
+                                          ? 'hover:bg-gray-700 text-gray-400 hover:text-green-400' 
+                                          : 'hover:bg-gray-200 text-gray-600 hover:text-green-600'
+                                      }`}
+                                    >
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                      </svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {sellTransactions.length === 0 && (
+                    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-8 text-center`}>
+                      <div className={`text-4xl mb-2 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>📤</div>
+                      <p className={`${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        Aucune vente enregistrée
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* Statistics View with Charts */
+          <div className="space-y-6">
+            {/* Game Filter and Time Grouping */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Filtrer par jeu
+                  </label>
+                  <select
+                    value={selectedGameFilter}
+                    onChange={(e) => setSelectedGameFilter(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <option value="">Tous les jeux</option>
+                    {gameNameSuggestions.map((name, index) => (
+                      <option key={index} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Période d'affichage
+                  </label>
+                  <select
+                    value={timeGrouping}
+                    onChange={(e) => setTimeGrouping(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <option value="day">Par jour</option>
+                    <option value="month">Par mois</option>
+                    <option value="year">Par année</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            
+            {/* Line Chart - Evolution */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+              <button
+                onClick={() => toggleSection('evolution')}
+                className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                  darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                }`}
+              >
+                <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  📈 Évolution des transactions
+                </h2>
+                <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {expandedSections.evolution ? '▼' : '▶'}
+                </div>
               </button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 rounded-xl font-medium text-sm bg-red-500 hover:bg-red-600 text-white transition-colors">
-                Supprimer
+              
+              {expandedSections.evolution && (
+                <div className="p-6 pt-0">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                      <XAxis dataKey="month" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                          borderRadius: '8px',
+                          color: darkMode ? '#f3f4f6' : '#111827'
+                        }}
+                      />
+                      <Legend />
+                      <Line type="monotone" dataKey="achats" stroke="#ef4444" strokeWidth={2} name="Achats" />
+                      <Line type="monotone" dataKey="ventes" stroke="#22c55e" strokeWidth={2} name="Ventes" />
+                      <Line type="monotone" dataKey="benefice" stroke="#3b82f6" strokeWidth={2} name="Bénéfice" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Bar Chart - Comparaison */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+              <button
+                onClick={() => toggleSection('comparison')}
+                className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                  darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                }`}
+              >
+                <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  📊 Comparaison {timeGrouping === 'day' ? 'journalière' : timeGrouping === 'month' ? 'mensuelle' : 'annuelle'}
+                </h2>
+                <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {expandedSections.comparison ? '▼' : '▶'}
+                </div>
+              </button>
+              
+              {expandedSections.comparison && (
+                <div className="p-6 pt-0">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                      <XAxis dataKey="month" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                          borderRadius: '8px',
+                          color: darkMode ? '#f3f4f6' : '#111827'
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="achats" fill="#ef4444" name="Achats" />
+                      <Bar dataKey="ventes" fill="#22c55e" name="Ventes" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Pie Chart - Répartition */}
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('distribution')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    🎯 Répartition Achats/Ventes
+                  </h2>
+                  <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.distribution ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.distribution && (
+                  <div className="p-6 pt-0">
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Achats', value: globalStats.totalBuy },
+                            { name: 'Ventes', value: globalStats.totalSell }
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          <Cell fill="#ef4444" />
+                          <Cell fill="#22c55e" />
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+
+              {/* Monthly Stats Table */}
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <div className="p-6">
+                  <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📋 Statistiques détaillées
+                  </h2>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {chartData.map((data, index) => (
+                      <div key={index} className={`p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                        <div className={`font-bold mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                          {data.month}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          <div>
+                            <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Achats:</span>
+                            <div className="font-bold text-red-500">{data.achats.toFixed(2)}€</div>
+                          </div>
+                          <div>
+                            <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Ventes:</span>
+                            <div className="font-bold text-green-500">{data.ventes.toFixed(2)}€</div>
+                          </div>
+                          <div>
+                            <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Bénéfice:</span>
+                            <div className={`font-bold ${data.benefice >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {data.benefice >= 0 ? '+' : ''}{data.benefice.toFixed(2)}€
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Top 10 Charts */}
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Top 10 Most Bought Games */}
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('top10Bought')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    🔥 Top 10 Jeux les Plus Achetés
+                  </h2>
+                  <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.top10Bought ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.top10Bought && (
+                  <div className="p-6 pt-0">
+                    {top10MostBought.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={top10MostBought} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                          <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                              border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                              borderRadius: '8px',
+                              color: darkMode ? '#f3f4f6' : '#111827'
+                            }}
+                            labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                            itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                          />
+                          <Bar dataKey="count" fill="#ef4444" name="Nombre d'achats" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Aucun jeu avec nom renseigné
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Top 10 Most Profitable Games */}
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('top10Profitable')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    💰 Top 10 Jeux les Plus Rentables
+                  </h2>
+                  <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.top10Profitable ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.top10Profitable && (
+                  <div className="p-6 pt-0">
+                    {top10MostProfitable.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={top10MostProfitable} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                          <XAxis type="number" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <YAxis dataKey="name" type="category" width={100} stroke={darkMode ? '#9ca3af' : '#6b7280'} />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                              border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                              borderRadius: '8px',
+                              color: darkMode ? '#f3f4f6' : '#111827'
+                            }}
+                            labelStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                            itemStyle={{ color: darkMode ? '#f3f4f6' : '#111827' }}
+                            formatter={(value) => [`${value.toFixed(2)}€`, 'Bénéfice']}
+                          />
+                          <Bar dataKey="profit" name="Bénéfice">
+                            {top10MostProfitable.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Aucun jeu avec nom renseigné
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Detailed List of Top 10 Most Profitable Games */}
+            {top10MostProfitable.length > 0 && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('detailProfitable')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📋 Détail des Jeux les Plus Rentables
+                  </h2>
+                  <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.detailProfitable ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.detailProfitable && (
+                  <div className="p-6 pt-0">
+                    <div className="space-y-3">
+                      {top10MostProfitable.map((game, index) => {
+                        const maxProfit = Math.max(...top10MostProfitable.map(g => Math.abs(g.profit)));
+                        const barWidth = maxProfit > 0 ? (Math.abs(game.profit) / maxProfit) * 100 : 0;
+                        return (
+                    <div 
+                      key={index}
+                      className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} hover:shadow-md transition`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            #{index + 1}
+                          </div>
+                          <div className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                            {game.name}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-xl font-bold ${game.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {game.profit >= 0 ? '+' : ''}{game.profit.toFixed(2)}€
+                          </div>
+                          <div className={`text-sm font-semibold ${game.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            Marge: {game.margin >= 0 ? '+' : ''}{game.margin.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Barre de progression */}
+                      <div className={`w-full h-1.5 rounded-full mb-3 ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`}>
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-500 ${game.profit >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💰 Achats
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-red-500">{game.totalBuy.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.buyCount} transaction{game.buyCount > 1 ? 's' : ''}
+                          </div>
+                          {game.buyCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalBuy / game.buyCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💸 Ventes
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-green-500">{game.totalSell.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.sellCount} transaction{game.sellCount > 1 ? 's' : ''}
+                          </div>
+                          {game.sellCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalSell / game.sellCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ); })}
+                </div>
+              </div>
+                )}
+              </div>
+            )}
+
+            {/* Detailed List of Top 10 Least Profitable Games */}
+            {top10LeastProfitable.length > 0 && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('detailLosses')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📉 Top 10 des Pertes - Jeux les Moins Rentables
+                  </h2>
+                  <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.detailLosses ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.detailLosses && (
+                  <div className="p-6 pt-0">
+                    <div className="space-y-3">
+                      {top10LeastProfitable.map((game, index) => {
+                        const maxLoss = Math.max(...top10LeastProfitable.map(g => Math.abs(g.profit)));
+                        const barWidth = maxLoss > 0 ? (Math.abs(game.profit) / maxLoss) * 100 : 0;
+                        return (
+                    <div 
+                      key={index}
+                      className={`p-4 rounded-lg ${darkMode ? 'bg-red-900 bg-opacity-20 border-2 border-red-900' : 'bg-red-50 border-2 border-red-200'} hover:shadow-md transition`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            #{index + 1}
+                          </div>
+                          <div className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                            {game.name}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-red-500">
+                            {game.profit.toFixed(2)}€
+                          </div>
+                          <div className="text-sm font-semibold text-red-500">
+                            Perte: {game.margin.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Barre de progression */}
+                      <div className={`w-full h-1.5 rounded-full mb-3 ${darkMode ? 'bg-gray-700' : 'bg-red-100'}`}>
+                        <div
+                          className="h-1.5 rounded-full bg-red-500 transition-all duration-500"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💰 Achats
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-red-500">{game.totalBuy.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.buyCount} transaction{game.buyCount > 1 ? 's' : ''}
+                          </div>
+                          {game.buyCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalBuy / game.buyCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💸 Ventes
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-green-500">{game.totalSell.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.sellCount} transaction{game.sellCount > 1 ? 's' : ''}
+                          </div>
+                          {game.sellCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalSell / game.sellCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ); })}
+                </div>
+              </div>
+                )}
+              </div>
+            )}
+
+            {/* Detailed List of Top 10 Least Profitable Games WITH at least 1 sale */}
+            {top10LeastProfitableWithSales.length > 0 && (
+              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+                <button
+                  onClick={() => toggleSection('detailLossesWithSales')}
+                  className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    📉 Top 10 des Pertes - Jeux les Moins Rentables (avec au moins 1 vente)
+                  </h2>
+                  <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expandedSections.detailLossesWithSales ? '▼' : '▶'}
+                  </div>
+                </button>
+                
+                {expandedSections.detailLossesWithSales && (
+                  <div className="p-6 pt-0">
+                    <div className="space-y-3">
+                      {top10LeastProfitableWithSales.map((game, index) => {
+                        const maxLoss = Math.max(...top10LeastProfitableWithSales.map(g => Math.abs(g.profit)));
+                        const barWidth = maxLoss > 0 ? (Math.abs(game.profit) / maxLoss) * 100 : 0;
+                        return (
+                    <div 
+                      key={index}
+                      className={`p-4 rounded-lg ${darkMode ? 'bg-red-900 bg-opacity-20 border-2 border-red-900' : 'bg-red-50 border-2 border-red-200'} hover:shadow-md transition`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-2xl font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            #{index + 1}
+                          </div>
+                          <div className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                            {game.name}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-red-500">
+                            {game.profit.toFixed(2)}€
+                          </div>
+                          <div className="text-sm font-semibold text-red-500">
+                            Perte: {game.margin.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Barre de progression */}
+                      <div className={`w-full h-1.5 rounded-full mb-3 ${darkMode ? 'bg-gray-700' : 'bg-red-100'}`}>
+                        <div
+                          className="h-1.5 rounded-full bg-red-500 transition-all duration-500"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💰 Achats
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-red-500">{game.totalBuy.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.buyCount} transaction{game.buyCount > 1 ? 's' : ''}
+                          </div>
+                          {game.buyCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalBuy / game.buyCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>
+                            💸 Ventes
+                          </div>
+                          <div className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                            Total: <span className="font-bold text-green-500">{game.totalSell.toFixed(2)}€</span>
+                          </div>
+                          <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                            {game.sellCount} transaction{game.sellCount > 1 ? 's' : ''}
+                          </div>
+                          {game.sellCount > 0 && (
+                            <div className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                              Moy: {(game.totalSell / game.sellCount).toFixed(2)}€
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ); })}
+                </div>
+              </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Modale export PDF ── */}
+      {showPdfModal && (() => {
+        const years  = getAvailableYears();
+        const months = availableMonthsYears
+          .filter(my => String(my.year) === pdfSelectedYear)
+          .map(my => my.month);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+               onClick={() => setShowPdfModal(false)}>
+            <div
+              onClick={e => e.stopPropagation()}
+              className={`w-full max-w-sm mx-4 rounded-2xl shadow-2xl border p-6 ${
+                darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-lg font-bold">📄 Exporter en PDF</h2>
+                <button onClick={() => setShowPdfModal(false)}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition
+                          ${darkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-100'}`}>✕</button>
+              </div>
+
+              {/* Toggle mois / année */}
+              <div className={`flex rounded-xl p-1 mb-5 ${darkMode ? 'bg-slate-900' : 'bg-gray-100'}`}>
+                {['month','year'].map(t => (
+                  <button key={t}
+                    onClick={() => setPdfPeriodType(t)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+                      pdfPeriodType === t
+                        ? 'bg-indigo-600 text-white shadow'
+                        : darkMode ? 'text-slate-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >{t === 'month' ? 'Par mois' : 'Par année'}</button>
+                ))}
+              </div>
+
+              {/* Sélection année */}
+              <div className="mb-3">
+                <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wide ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                  Année
+                </label>
+                <select
+                  value={pdfSelectedYear}
+                  onChange={e => { setPdfSelectedYear(e.target.value); setPdfSelectedMonth(''); }}
+                  className={`w-full px-3 py-2.5 rounded-xl border text-sm font-medium outline-none transition ${
+                    darkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'
+                  }`}
+                >
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+
+              {/* Sélection mois (uniquement si mode mois) */}
+              {pdfPeriodType === 'month' && (
+                <div className="mb-5">
+                  <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wide ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    Mois
+                  </label>
+                  <select
+                    value={pdfSelectedMonth}
+                    onChange={e => setPdfSelectedMonth(e.target.value)}
+                    className={`w-full px-3 py-2.5 rounded-xl border text-sm font-medium outline-none transition ${
+                      darkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    {months.length > 0
+                      ? months.map(m => <option key={m} value={m}>{MONTH_NAMES[m]}</option>)
+                      : MONTH_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)
+                    }
+                  </select>
+                </div>
+              )}
+
+              {/* Aperçu période sélectionnée */}
+              <div className={`rounded-xl p-3 mb-5 text-sm text-center font-medium ${
+                darkMode ? 'bg-indigo-900/40 text-indigo-300' : 'bg-indigo-50 text-indigo-700'
+              }`}>
+                {pdfPeriodType === 'year'
+                  ? `Rapport annuel ${pdfSelectedYear}`
+                  : `Rapport ${MONTH_NAMES[parseInt(pdfSelectedMonth)] || ''} ${pdfSelectedYear}`
+                }
+              </div>
+
+              <button
+                onClick={generatePDF}
+                disabled={pdfGenerating || !pdfSelectedYear || (pdfPeriodType === 'month' && pdfSelectedMonth === '')}
+                className={`w-full py-3 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2 ${
+                  pdfGenerating || !pdfSelectedYear
+                    ? 'opacity-50 cursor-not-allowed bg-indigo-600 text-white'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
+                }`}
+              >
+                {pdfGenerating
+                  ? <><span className="animate-spin">⏳</span> Génération en cours…</>
+                  : <><span>📄</span> Générer le PDF</>
+                }
               </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* ── Toast ── */}
+      {/* Toast notification */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl font-medium text-sm flex items-center gap-2 max-w-sm text-center
-          ${toast.type === 'error' ? 'bg-red-500 text-white' : toast.type === 'success' ? 'bg-green-500 text-white' : darkMode ? 'bg-gray-700 text-white' : 'bg-gray-800 text-white'}`}>
-          {toast.type === 'success' && <Check className="w-4 h-4 flex-shrink-0" />}
-          {toast.type === 'error'   && <X     className="w-4 h-4 flex-shrink-0" />}
-          {toast.message}
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 ${
+          toast.type === 'buy'
+            ? darkMode ? 'bg-red-900/80 text-red-200 border border-red-700' : 'bg-red-50 text-red-700 border border-red-200'
+            : darkMode ? 'bg-green-900/80 text-green-200 border border-green-700' : 'bg-green-50 text-green-700 border border-green-200'
+        }`}>
+          <span>{toast.type === 'buy' ? '📥' : '📤'}</span>
+          <span>{toast.message}</span>
         </div>
       )}
     </div>
