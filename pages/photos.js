@@ -768,7 +768,8 @@ export default function PhotosManager() {
   // ── Lightbox ─────────────────────────────────────────────────
   const openLightbox = useCallback((photo, siblingPhotos) => {
     const index = siblingPhotos.findIndex(p => p.id === photo.id);
-    setLightbox({ photo, rotation: photo.rotation || 0, siblingPhotos, index });
+    const rot = photo.rotation || 0;
+    setLightbox({ photo, rotation: rot, displayRotation: rot, siblingPhotos, index });
   }, []);
   const closeLightbox = () => setLightbox(null);
   const lightboxNav = (dir) => {
@@ -780,11 +781,13 @@ export default function PhotosManager() {
     const base = curIdx >= 0 ? curIdx : lightbox.index;
     const idx = ((base + dir) % pool.length + pool.length) % pool.length;
     const ph = pool[idx];
-    setLightbox(prev => ({ ...prev, photo: ph, rotation: ph.rotation || 0, siblingPhotos: pool, index: idx }));
+    setLightbox(prev => ({ ...prev, photo: ph, rotation: ph.rotation || 0, displayRotation: ph.rotation || 0, siblingPhotos: pool, index: idx }));
   };
   const rotateLightbox = async (dir) => {
-    const newRot = ((lightbox.rotation + dir) + 360) % 360;
-    setLightbox(prev => ({ ...prev, rotation: newRot }));
+    // displayRotation s'accumule sans modulo → la transition CSS ne revient jamais en arrière
+    const newDisplay = (lightbox.displayRotation ?? lightbox.rotation ?? 0) + dir;
+    const newRot = ((newDisplay % 360) + 360) % 360; // normalisé pour la DB
+    setLightbox(prev => ({ ...prev, rotation: newRot, displayRotation: newDisplay }));
     const colId = lightbox.photo.status;
     setPhotos(prev => ({
       ...prev,
@@ -1243,10 +1246,14 @@ export default function PhotosManager() {
             const zoom       = colZoom[col.id] ?? 2;
             const gridCls    = zoomGridCls(zoom);
 
-            const colBgStyle     = darkMode ? { backgroundColor: isOver
+            const isVendu = col.id === 'vendu';
+
+            const colBgStyle     = isVendu ? {} : darkMode ? { backgroundColor: isOver
               ? col.darkRgba.replace('0.12','0.25').replace('0.13','0.25')
               : col.darkRgba } : {};
-            const colBorderStyle = darkMode ? { borderColor: isOver ? '#60a5fa' : col.darkBorderRgba } : {};
+            const colBorderStyle = isVendu
+              ? (darkMode ? { borderColor: 'transparent' } : {})
+              : darkMode ? { borderColor: isOver ? '#60a5fa' : col.darkBorderRgba } : {};
             const headerStyle    = darkMode ? { backgroundColor: col.darkHeaderRgba } : {};
 
             return (
@@ -1260,7 +1267,8 @@ export default function PhotosManager() {
                 className={[
                   'flex flex-col rounded-2xl border-2 transition-all duration-150',
                   isOver && !darkMode ? 'scale-[1.01] border-blue-300' : '',
-                  !darkMode ? `${col.lightBg} ${isOver ? 'border-blue-300' : col.lightBorder}` : '',
+                  !darkMode && !isVendu ? `${col.lightBg} ${isOver ? 'border-blue-300' : col.lightBorder}` : '',
+                  !darkMode && isVendu ? (isOver ? 'border-blue-300' : 'border-transparent') : '',
                   isFolderOver ? 'ring-2 ring-blue-400 ring-offset-1' : '',
                 ].join(' ')}
                 style={{ minHeight: '420px', position: 'relative', ...colBgStyle, ...(darkMode ? colBorderStyle : {}) }}
@@ -1597,7 +1605,7 @@ export default function PhotosManager() {
               src={lightbox.photo.image_url}
               alt={lightbox.photo.game_tag || 'photo'}
               className="max-w-full max-h-full object-contain rounded-xl shadow-2xl transition-transform duration-300"
-              style={{ transform: `rotate(${lightbox.rotation}deg)`, maxHeight: 'calc(100vh - 160px)' }}
+              style={{ transform: `rotate(${lightbox.displayRotation ?? lightbox.rotation}deg)`, maxHeight: 'calc(100vh - 160px)' }}
               draggable={false}
             />
             {lightbox.siblingPhotos.length > 1 && (
