@@ -556,6 +556,12 @@ export default function PhotosManager() {
       if (fromColId === toColumn) return;
       if (toColumn === 'vendu') { setPendingDelete({ photos: folderPhotos }); return; }
       await movePhotos(folderPhotos, toColumn, null);
+      // Replier le dossier dans la colonne de destination
+      setCollapsedFolders(prev => {
+        const s = new Set(prev[toColumn] || []);
+        s.add(tagLabel);
+        return { ...prev, [toColumn]: s };
+      });
       showToast(`Dossier "${baseGameName(tagLabel)}" déplacé`, 'success');
       return;
     }
@@ -758,9 +764,14 @@ export default function PhotosManager() {
   const closeLightbox = () => setLightbox(null);
   const lightboxNav = (dir) => {
     if (!lightbox) return;
-    const idx = (lightbox.index + dir + lightbox.siblingPhotos.length) % lightbox.siblingPhotos.length;
-    const ph = lightbox.siblingPhotos[idx];
-    setLightbox(prev => ({ ...prev, photo: ph, rotation: ph.rotation || 0, index: idx }));
+    // Si des photos sont sélectionnées, naviguer dans la sélection globale
+    const selPhotos = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
+    const pool = selPhotos.length > 1 ? selPhotos : lightbox.siblingPhotos;
+    const curIdx = pool.findIndex(p => p.id === lightbox.photo.id);
+    const base = curIdx >= 0 ? curIdx : lightbox.index;
+    const idx = ((base + dir) % pool.length + pool.length) % pool.length;
+    const ph = pool[idx];
+    setLightbox(prev => ({ ...prev, photo: ph, rotation: ph.rotation || 0, siblingPhotos: pool, index: idx }));
   };
   const rotateLightbox = async (dir) => {
     const newRot = ((lightbox.rotation + dir) + 360) % 360;
@@ -1092,7 +1103,18 @@ export default function PhotosManager() {
           <div className={`pointer-events-auto flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-2xl shadow-2xl border ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
             <span className={`text-sm font-medium ${subtext}`}>{totalSelected} photo{totalSelected > 1 ? 's' : ''}</span>
             <div className={`w-px h-4 ${divider}`} />
-            <button onClick={selectAll}              className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Tout</button>
+            {/* Bouton Ouvrir — principal, jaune et mis en avant */}
+            <button
+              onClick={() => {
+                const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
+                if (all.length) openPhotoPopup(all[0], all);
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-amber-400 hover:bg-amber-300 text-amber-900 shadow-md shadow-amber-400/30 transition-all"
+              title="Ouvrir dans une fenêtre pour glisser vers LeBonCoin / Vinted"
+            >
+              <Clipboard className="w-4 h-4" /> Ouvrir
+            </button>
+            <div className={`w-px h-4 ${divider}`} />
             <button onClick={() => setSelectedPhotos({})} className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Aucun</button>
             <div className={`w-px h-4 ${divider}`} />
             <button
@@ -1100,20 +1122,8 @@ export default function PhotosManager() {
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
             >
               {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-              Telecharger
+              Télécharger
             </button>
-            {totalSelected > 0 && (
-              <button
-                onClick={() => {
-                  const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
-                  if (all.length) openPhotoPopup(all[0], all);
-                }}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
-                title="Ouvrir dans une fenêtre pour glisser vers LeBonCoin"
-              >
-                <Clipboard className="w-3.5 h-3.5" /> Ouvrir
-              </button>
-            )}
             <button
               onClick={deleteSelected}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
@@ -1209,16 +1219,17 @@ export default function PhotosManager() {
           )}
         </div>
 
-        {/* ── Kanban ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {COLUMNS.map(col => {
+        {/* ── Kanban — 4 colonnes principales ── */}
+        {(() => {
+          const mainCols  = COLUMNS.filter(c => c.id !== 'vendu');
+          const venduCol  = COLUMNS.find(c => c.id === 'vendu');
+          const renderCol = (col) => {
             const colPhotos  = photos[col.id] || [];
             const isPhotoOver  = dragOverColumn === col.id;
             const isFolderOver = dragOverFolderCol === col.id;
             const isOver     = isPhotoOver || isFolderOver;
             const isFolded   = folderMode.has(col.id);
             const selCount   = selectedPhotos[col.id]?.size || 0;
-            const hasTagged  = colPhotos.some(p => p.game_tag);
             const { groups, ungrouped } = groupByTag(colPhotos);
             const zoom       = colZoom[col.id] ?? 2;
             const gridCls    = zoomGridCls(zoom);
@@ -1341,10 +1352,10 @@ export default function PhotosManager() {
                         const allSelected    = gPhotos.length > 0 && gSel === gPhotos.length;
                         const someSelected   = gSel > 0 && !allSelected;
 
-                        // Mise en évidence selon la recherche
+                        // Filtrage par recherche — masquer les non-matchés
                         const q = folderSearch.trim().toLowerCase();
-                        const isMatch  = !q || bName.toLowerCase().includes(q);
-                        const isDimmed = q && !isMatch;
+                        const isMatch = !q || bName.toLowerCase().includes(q);
+                        if (!isMatch) return null;
 
                         return (
                           <div
@@ -1356,7 +1367,6 @@ export default function PhotosManager() {
                             className={[
                               'rounded-xl overflow-hidden border transition-all duration-200',
                               isFolderBeingDragged ? 'opacity-40 scale-95' : '',
-                              isDimmed ? 'opacity-20 scale-[0.97] blur-[0.5px]' : '',
                               isMatch && q
                                 ? darkMode
                                   ? 'border-blue-400 bg-blue-500/15 shadow-lg shadow-blue-500/20 scale-[1.02]'
@@ -1461,13 +1471,33 @@ export default function PhotosManager() {
                 </div>
               </div>
             );
-          })}
-        </div>
+          }; // fin renderCol
+          return (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {mainCols.map(col => renderCol(col))}
+              </div>
+              {venduCol && (
+                <div>
+                  <div className={`flex items-center gap-2 mb-2 px-1`}>
+                    <div className={`w-2 h-2 rounded-full ${venduCol.dot}`} />
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${subtext}`}>{venduCol.label} — archives</span>
+                  </div>
+                  {renderCol(venduCol)}
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* ── Lightbox ── */}
       {lightbox && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm" onClick={closeLightbox}>
+        <div
+          className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm"
+          onClick={closeLightbox}
+          onWheel={e => { e.preventDefault(); lightboxNav(e.deltaY > 0 ? 1 : -1); }}
+        >
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2">
               <button onClick={closeLightbox} className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
@@ -1544,12 +1574,12 @@ export default function PhotosManager() {
                 <Trash2 className="w-5 h-5 text-red-500" />
               </div>
               <div>
-                <h3 className="font-bold text-base">Supprimer definitivement ?</h3>
+                <h3 className="font-bold text-base">Supprimer définitivement ?</h3>
                 <p className={`text-sm mt-1 ${subtext}`}>
                   {pendingDelete.photos.length > 1
-                    ? `${pendingDelete.photos.length} photos seront supprimees de Cloudinary et de la base de donnees.`
-                    : 'Cette photo sera supprimee de Cloudinary et de la base de donnees.'
-                  } Cette action est irreversible.
+                    ? `Ces ${pendingDelete.photos.length} photos seront supprimées et ne pourront pas être récupérées.`
+                    : 'Cette photo sera supprimée et ne pourra pas être récupérée.'
+                  }
                 </p>
               </div>
             </div>
