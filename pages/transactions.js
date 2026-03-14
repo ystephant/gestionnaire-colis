@@ -439,8 +439,6 @@ const loadUserPreferences = async () => {
       const dateStr = `Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
       setFont(C.lgray, 7);
       doc.text(dateStr, W - M, 22, { align: 'right' });
-      setFont(C.gray, 7);
-      doc.text(`@${username}`, W - M, 17, { align: 'right' });
 
       // ── KPI Cards ───────────────────────────────────────────
       let y = 38;
@@ -512,22 +510,29 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
         y += 5;
 
-        const chartH = 38, chartW = CW;
-        const maxVal = Math.max(...chartData.flatMap(d => [d.buy, d.sell]));
+        const yAxisW  = 18; // largeur réservée à l'axe Y
+        const chartH  = 42, chartW = CW - yAxisW;
+        const maxVal  = Math.max(...chartData.flatMap(d => [d.buy, d.sell]));
         const barAreaH = chartH - 8;
         const barCount = chartData.length;
         const barGroupW = Math.min(chartW / barCount, 14);
         const barW = (barGroupW - 2) / 2;
-        const chartX = M;
+        const chartX = M + yAxisW;
 
         // Fond du graphique
-        setFill(C.card); doc.roundedRect(chartX, y, chartW, chartH, 2, 2, 'F');
+        setFill(C.card); doc.roundedRect(M, y, CW, chartH, 2, 2, 'F');
 
-        // Lignes de grille
+        // Lignes de grille + étiquettes axe Y
         setDraw(C.border); doc.setLineWidth(0.2);
         [0.25, 0.5, 0.75, 1].forEach(pct => {
-          const gy = y + chartH - 8 - barAreaH * pct;
-          doc.line(chartX + 2, gy, chartX + chartW - 2, gy);
+          const gy  = y + chartH - 8 - barAreaH * pct;
+          const val = maxVal * pct;
+          // Ligne de grille
+          doc.line(chartX, gy, chartX + chartW - 2, gy);
+          // Label Y
+          setFont(C.lgray, 4.5);
+          const label = val >= 1000 ? `${(val/1000).toFixed(1)}k€` : `${val.toFixed(0)}€`;
+          doc.text(label, M + yAxisW - 2, gy + 1.2, { align: 'right' });
         });
 
         chartData.forEach((d, i) => {
