@@ -539,6 +539,21 @@ export default function MenuPrincipal() {
                   </svg>
                 ),
               },
+              {
+                path: '/photos',
+                title: 'Suivi des photos',
+                description: 'Gérez vos photos de vente par dossier et déposez-les sur LeBonCoin ou Vinted',
+                gradient: 'from-rose-500 to-pink-600',
+                tags: [{ label: '📸 Photos', bg: 'bg-rose-100', text: 'text-rose-700' }, { label: '🛒 Vente', bg: 'bg-pink-100', text: 'text-pink-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                ),
+              },
             ];
 
             if (viewMode === 'grid') {
