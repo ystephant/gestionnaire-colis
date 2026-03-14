@@ -435,8 +435,10 @@ export default function PhotosManager() {
   const loadGames = async () => {
     try {
       const { data, error } = await supabase
-        .from('transactions').select('game_name')
-        .eq('user_id', username).not('game_name', 'is', null);
+        .from('transactions')
+        .select('game_name')
+        .eq('user_id', username)
+        .not('game_name', 'is', null);
       if (error) throw error;
       const unique = [...new Set((data || []).map(t => t.game_name).filter(Boolean))].sort();
       setGamesList(unique);
@@ -671,6 +673,22 @@ export default function PhotosManager() {
     if (totalSelected === 0) return;
     const tagLabel = `${gameName} \u2022 ${formatTagTimestamp()}`;
     setShowTagDropdown(false); setTagSearch('');
+
+    // Si le jeu n'existe pas encore, l'enregistrer dans transactions (type game_ref)
+    // → disponible dans l'autocomplétion de transactions.js sans créer de nouvelle table
+    if (!gamesList.includes(gameName)) {
+      try {
+        await supabase.from('transactions').insert([{
+          user_id: username,
+          type: 'game_ref',
+          game_name: gameName,
+          price: 0,
+          created_at: new Date().toISOString(),
+        }]);
+        setGamesList(prev => [...prev, gameName].sort());
+      } catch (e) { console.error('Erreur enregistrement jeu:', e); }
+    }
+
     const updates = Object.entries(selectedPhotos)
       .filter(([, s]) => s && s.size > 0)
       .map(([colId, s]) => ({ colId, ids: [...s] }));
