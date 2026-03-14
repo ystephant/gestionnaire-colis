@@ -252,6 +252,8 @@ export default function PhotosManager() {
   const [collapsedFolders, setCollapsedFolders] = useState({});
   const [folderSearch, setFolderSearch]         = useState('');
   const [showFolderSuggestions, setShowFolderSuggestions] = useState(false);
+  // Onglet colonne actif sur mobile
+  const [mobileCol, setMobileCol] = useState('pas_encore_en_vente');
 
   // Lightbox
   const [lightbox, setLightbox] = useState(null);
@@ -267,8 +269,9 @@ export default function PhotosManager() {
   });
   const colRefs    = useRef({});
   const headerRefs = useRef({}); // wheel uniquement sur le header
-  const photosRef = useRef({});   // miroir de photos pour les handlers globaux
-  const lassoRef  = useRef(null); // miroir de lasso pour les handlers globaux
+  const photosRef  = useRef({});  // miroir de photos pour les handlers globaux
+  const lassoRef   = useRef(null); // miroir de lasso pour les handlers globaux
+  const swipeTouchX = useRef(null); // swipe lightbox mobile
 
   // Lasso — rectangle de sélection dessiné à la souris
   const [lasso, setLasso] = useState(null);
@@ -1038,19 +1041,18 @@ export default function PhotosManager() {
 
       {/* ── Header ── */}
       <div className={`sticky top-0 z-30 border-b backdrop-blur ${darkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
-        <div className="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={() => router.push('/')} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-2">
-              <ImageIcon className="w-5 h-5 text-blue-500" />
-              <span className="font-bold text-lg">Suivi des photos</span>
+            <div className="flex items-center gap-1.5">
+              <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
+              <span className="font-bold text-base sm:text-lg">Suivi des photos</span>
             </div>
           </div>
-          {/* Barre de recherche par nom de jeu */}
+          {/* Barre de recherche — desktop uniquement dans le header */}
           {(() => {
-            // Construire la liste unique de tous les noms de jeux présents dans les photos
             const allGameNames = [...new Set(
               COLUMNS.flatMap(col => (photos[col.id] || []).map(p => baseGameName(p.game_tag)).filter(Boolean))
             )].sort();
@@ -1058,7 +1060,7 @@ export default function PhotosManager() {
               ? allGameNames.filter(n => n.toLowerCase().includes(folderSearch.trim().toLowerCase()) && n.toLowerCase() !== folderSearch.trim().toLowerCase())
               : allGameNames;
             return (
-              <div className="flex-1 max-w-xs relative">
+              <div className="hidden sm:block flex-1 max-w-xs relative">
                 <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none z-10 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                 <input
                   type="text"
@@ -1067,29 +1069,18 @@ export default function PhotosManager() {
                   onChange={e => { setFolderSearch(e.target.value); setShowFolderSuggestions(true); }}
                   onFocus={() => setShowFolderSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowFolderSuggestions(false), 150)}
-                  className={`w-full pl-9 pr-9 py-1.5 text-sm rounded-xl border outline-none transition-colors ${
-                    darkMode
-                      ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500 focus:border-blue-500'
-                      : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-400'
-                  }`}
+                  className={`w-full pl-9 pr-9 py-1.5 text-sm rounded-xl border outline-none transition-colors ${darkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500 focus:border-blue-500' : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-400'}`}
                 />
                 {folderSearch && (
-                  <button onClick={() => { setFolderSearch(''); setShowFolderSuggestions(false); }}
-                    className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full transition-colors ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'}`}>
+                  <button onClick={() => { setFolderSearch(''); setShowFolderSuggestions(false); }} className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>
                     <X className="w-3 h-3" />
                   </button>
                 )}
-                {/* Dropdown autocomplétion */}
                 {showFolderSuggestions && suggestions.length > 0 && (
                   <div className={`absolute top-full mt-1 left-0 right-0 rounded-xl border shadow-2xl overflow-hidden z-50 max-h-52 overflow-y-auto ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
                     {suggestions.map(name => (
-                      <button
-                        key={name}
-                        onMouseDown={() => { setFolderSearch(name); setShowFolderSuggestions(false); }}
-                        className={`w-full text-left text-sm px-3 py-2 transition-colors border-b last:border-0 ${
-                          darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-blue-50 text-gray-700 border-gray-100'
-                        }`}
-                      >
+                      <button key={name} onMouseDown={() => { setFolderSearch(name); setShowFolderSuggestions(false); }}
+                        className={`w-full text-left text-sm px-3 py-2.5 border-b last:border-0 ${darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-blue-50 text-gray-700 border-gray-100'}`}>
                         {name}
                       </button>
                     ))}
@@ -1098,66 +1089,116 @@ export default function PhotosManager() {
               </div>
             );
           })()}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 ml-auto">
             <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
             </button>
             <button onClick={handleLogout} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
+        {/* Barre de recherche mobile — sous le header */}
+        {(() => {
+          const allGameNames = [...new Set(
+            COLUMNS.flatMap(col => (photos[col.id] || []).map(p => baseGameName(p.game_tag)).filter(Boolean))
+          )].sort();
+          const suggestions = folderSearch.trim()
+            ? allGameNames.filter(n => n.toLowerCase().includes(folderSearch.trim().toLowerCase()) && n.toLowerCase() !== folderSearch.trim().toLowerCase())
+            : allGameNames;
+          return (
+            <div className={`sm:hidden px-3 pb-2 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <div className="relative mt-2">
+                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none z-10 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+                <input
+                  type="text"
+                  placeholder="Rechercher un jeu..."
+                  value={folderSearch}
+                  onChange={e => { setFolderSearch(e.target.value); setShowFolderSuggestions(true); }}
+                  onFocus={() => setShowFolderSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowFolderSuggestions(false), 150)}
+                  className={`w-full pl-9 pr-9 py-2 text-sm rounded-xl border outline-none ${darkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400'}`}
+                />
+                {folderSearch && (
+                  <button onClick={() => { setFolderSearch(''); setShowFolderSuggestions(false); }} className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                    <X className="w-3 h-3 text-gray-400" />
+                  </button>
+                )}
+                {showFolderSuggestions && suggestions.length > 0 && (
+                  <div className={`absolute top-full mt-1 left-0 right-0 rounded-xl border shadow-2xl overflow-hidden z-50 max-h-48 overflow-y-auto ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
+                    {suggestions.map(name => (
+                      <button key={name} onMouseDown={() => { setFolderSearch(name); setShowFolderSuggestions(false); }}
+                        className={`w-full text-left text-sm px-3 py-3 border-b last:border-0 ${darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-blue-50 text-gray-700 border-gray-100'}`}>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Barre flottante de sélection ── */}
       {selectMode && totalSelected > 0 && (
-        <div className="sticky top-[57px] z-20 flex justify-center px-4 py-2 pointer-events-none">
-          <div className={`pointer-events-auto flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-2xl shadow-2xl border ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
-            <span className={`text-sm font-medium ${subtext}`}>{totalSelected} photo{totalSelected > 1 ? 's' : ''}</span>
+        <div className="sticky top-[57px] sm:top-[57px] z-20 flex justify-center px-2 sm:px-4 py-1.5 sm:py-2 pointer-events-none">
+          <div className={`pointer-events-auto flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-2xl border ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+            <span className={`text-xs sm:text-sm font-medium ${subtext}`}>{totalSelected}<span className="hidden sm:inline"> photo{totalSelected > 1 ? 's' : ''}</span></span>
             <div className={`w-px h-4 ${divider}`} />
-            {/* Bouton Ouvrir — principal, jaune et mis en avant */}
+            {/* Bouton Ouvrir — principal, jaune */}
             <button
               onClick={() => {
                 const all = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
                 if (all.length) openPhotoPopup(all[0], all);
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-amber-400 hover:bg-amber-300 text-amber-900 shadow-md shadow-amber-400/30 transition-all"
-              title="Ouvrir dans une fenêtre pour glisser vers LeBonCoin / Vinted"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl font-bold text-xs sm:text-sm bg-amber-400 hover:bg-amber-300 text-amber-900 shadow-md shadow-amber-400/30 transition-all"
+              title="Ouvrir pour LeBonCoin / Vinted"
             >
-              <Clipboard className="w-4 h-4" /> Ouvrir
+              <Clipboard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Ouvrir</span>
             </button>
             <div className={`w-px h-4 ${divider}`} />
-            <button onClick={() => setSelectedPhotos({})} className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${btnGhost}`}>Aucun</button>
+            <button onClick={() => setSelectedPhotos({})} className={`text-xs px-2 py-1 rounded-lg font-medium transition-colors ${btnGhost}`} title="Désélectionner tout">
+              <span className="hidden sm:inline">Aucun</span>
+              <X className="w-3.5 h-3.5 sm:hidden" />
+            </button>
             <div className={`w-px h-4 ${divider}`} />
             <button
               onClick={downloadSelected} disabled={downloading}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
+              className={`flex items-center gap-1 sm:gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
+              title="Télécharger"
             >
               {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-              Télécharger
+              <span className="hidden sm:inline">Télécharger</span>
             </button>
             <button
               onClick={deleteSelected}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+              className="flex items-center gap-1 sm:gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+              title="Supprimer"
             >
-              <Trash2 className="w-3.5 h-3.5" /> Supprimer
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Supprimer</span>
             </button>
             <div className={`w-px h-4 ${divider}`} />
-            {/* Retirer le tag */}
             <button
               onClick={removeTag}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
-              title="Retirer le tag des photos sélectionnées"
+              className={`flex items-center gap-1 sm:gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}
+              title="Retirer le tag"
             >
-              <X className="w-3.5 h-3.5" /> Retirer tag
+              <X className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Retirer tag</span>
             </button>
             {/* Dropdown tag */}
             <div className="relative">
               <button
                 onClick={() => setShowTagDropdown(p => !p)}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+                className="flex items-center gap-1 sm:gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+                title="Tagger"
               >
-                <Tag className="w-3.5 h-3.5" /> Tagger <ChevronDown className="w-3 h-3" />
+                <Tag className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Tagger</span>
+                <ChevronDown className="w-3 h-3" />
               </button>
               {showTagDropdown && (
                 <div className={`absolute top-full mt-1 right-0 w-64 rounded-xl border shadow-2xl overflow-hidden z-50 ${cardBg} ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
@@ -1196,7 +1237,7 @@ export default function PhotosManager() {
         </div>
       )}
 
-      <div className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-3 sm:space-y-6">
 
         {/* ── Zone d'upload ── */}
         <div
@@ -1204,7 +1245,7 @@ export default function PhotosManager() {
           onDragLeave={onDropZoneDragLeave}
           onDrop={onDropZoneDrop}
           onClick={() => !uploading && fileInputRef.current?.click()}
-          className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200
+          className={`relative border-2 border-dashed rounded-2xl p-4 sm:p-8 text-center cursor-pointer transition-all duration-200
             ${isDraggingFile && !draggingPhoto && !draggingFolder
               ? 'border-blue-400 bg-blue-50 scale-[1.01]'
               : darkMode
@@ -1229,6 +1270,44 @@ export default function PhotosManager() {
               <p className={`text-sm ${subtext}`}>ou cliquer pour selectionner — JPG, PNG, WEBP</p>
             </div>
           )}
+        </div>
+
+        {/* ── Onglets colonnes sur mobile ── */}
+        <div className={`sm:hidden flex overflow-x-auto gap-1 pb-1 -mx-1 px-1`}>
+          {COLUMNS.filter(c => c.id !== 'vendu').map(c => (
+            <button
+              key={c.id}
+              onClick={() => setMobileCol(c.id)}
+              className={[
+                'flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap border',
+                mobileCol === c.id
+                  ? 'bg-blue-500 text-white border-blue-500'
+                  : darkMode ? 'bg-gray-800 text-gray-400 border-gray-700' : 'bg-white text-gray-600 border-gray-200',
+              ].join(' ')}
+            >
+              <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${c.dot}`} />
+              {c.label}
+              {(photos[c.id] || []).length > 0 && (
+                <span className="ml-1 opacity-60">({photos[c.id].length})</span>
+              )}
+            </button>
+          ))}
+          <button
+            key="vendu"
+            onClick={() => setMobileCol('vendu')}
+            className={[
+              'flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap border',
+              mobileCol === 'vendu'
+                ? 'bg-blue-500 text-white border-blue-500'
+                : darkMode ? 'bg-gray-800 text-gray-400 border-gray-700' : 'bg-white text-gray-600 border-gray-200',
+            ].join(' ')}
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 bg-red-500" />
+            Vendu
+            {(photos['vendu'] || []).length > 0 && (
+              <span className="ml-1 opacity-60">({photos['vendu'].length})</span>
+            )}
+          </button>
         </div>
 
         {/* ── Kanban — 4 colonnes principales ── */}
@@ -1535,18 +1614,26 @@ export default function PhotosManager() {
           }; // fin renderCol
           return (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Desktop : grille 4 cols + vendu en dessous */}
+              <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {mainCols.map(col => renderCol(col))}
               </div>
-              {venduCol && (
-                <div>
-                  <div className={`flex items-center gap-2 mb-2 px-1`}>
-                    <div className={`w-2 h-2 rounded-full ${venduCol.dot}`} />
-                    <span className={`text-xs font-semibold uppercase tracking-wide ${subtext}`}>{venduCol.label} — archives</span>
+              {/* Desktop : vendu pleine largeur */}
+              <div className="hidden sm:block">
+                {venduCol && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2 px-1">
+                      <div className={`w-2 h-2 rounded-full ${venduCol.dot}`} />
+                      <span className={`text-xs font-semibold uppercase tracking-wide ${subtext}`}>{venduCol.label} — archives</span>
+                    </div>
+                    {renderCol(venduCol)}
                   </div>
-                  {renderCol(venduCol)}
-                </div>
-              )}
+                )}
+              </div>
+              {/* Mobile : colonne active uniquement */}
+              <div className="sm:hidden">
+                {renderCol(COLUMNS.find(c => c.id === mobileCol) || COLUMNS[0])}
+              </div>
             </>
           );
         })()}
@@ -1595,10 +1682,19 @@ export default function PhotosManager() {
               </button>
             </div>
           </div>
-          <div className="flex-1 flex items-center justify-center relative min-h-0 px-16" onClick={e => e.stopPropagation()}>
+          <div className="flex-1 flex items-center justify-center relative min-h-0 px-10 sm:px-16"
+            onClick={e => e.stopPropagation()}
+            onTouchStart={e => { swipeTouchX.current = e.touches[0].clientX; }}
+            onTouchEnd={e => {
+              if (swipeTouchX.current === null) return;
+              const dx = e.changedTouches[0].clientX - swipeTouchX.current;
+              swipeTouchX.current = null;
+              if (Math.abs(dx) > 40) lightboxNav(dx < 0 ? 1 : -1);
+            }}
+          >
             {lightbox.siblingPhotos.length > 1 && (
-              <button onClick={() => lightboxNav(-1)} className="absolute left-3 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors z-10">
-                <ChevronLeft className="w-6 h-6" />
+              <button onClick={() => lightboxNav(-1)} className="absolute left-1 sm:left-3 w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors z-10">
+                <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             )}
             <img
@@ -1609,8 +1705,8 @@ export default function PhotosManager() {
               draggable={false}
             />
             {lightbox.siblingPhotos.length > 1 && (
-              <button onClick={() => lightboxNav(1)} className="absolute right-3 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors z-10">
-                <ChevronLeft className="w-6 h-6 rotate-180" />
+              <button onClick={() => lightboxNav(1)} className="absolute right-1 sm:right-3 w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors z-10">
+                <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 rotate-180" />
               </button>
             )}
           </div>
