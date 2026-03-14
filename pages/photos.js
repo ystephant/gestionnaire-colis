@@ -1425,8 +1425,15 @@ export default function PhotosManager() {
                     <div className="flex items-center gap-2 min-w-0">
                       <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${col.dot}`} />
                       <span className="font-semibold text-sm">{col.label}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-black/20 text-gray-300' : 'bg-white/70 text-gray-600'}`}>
-                        {colPhotos.length}{selCount > 0 && <span className="text-blue-400 ml-0.5">·{selCount}</span>}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-black/20' : 'bg-white/70'}`}>
+                        {Object.keys(groups).length > 0 && (
+                          <span className="text-yellow-400 font-bold">{Object.keys(groups).length}</span>
+                        )}
+                        {Object.keys(groups).length > 0 && (
+                          <span className={darkMode ? 'text-gray-500' : 'text-gray-400'}> — </span>
+                        )}
+                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>{colPhotos.length}</span>
+                        {selCount > 0 && <span className="text-blue-400 ml-0.5">·{selCount}</span>}
                       </span>
                       {/* Indicateur + boutons de zoom */}
                       <div className="flex items-center gap-0.5 flex-shrink-0 ml-1">
