@@ -1358,11 +1358,18 @@ export default function PhotosManager() {
                     <span className={`text-[10px] font-semibold text-center leading-tight ${isActive ? 'text-blue-500' : darkMode ? 'text-gray-400' : 'text-gray-600'}`} style={{fontSize:'9px'}}>
                       {c.label.replace('Pas encore en vente','Pas encore').replace('En cours de vente','En cours').replace('En attente reception','En attente').replace(' ✓','')}
                     </span>
-                    {(photos[c.id] || []).length > 0 && (
-                      <span className={`text-[9px] font-mono mt-0.5 ${isMatch && q ? 'text-blue-500 font-bold' : darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                        {photos[c.id].length}
-                      </span>
-                    )}
+                    {(photos[c.id] || []).length > 0 && (() => {
+                      const folderCount = Object.keys(
+                        (photos[c.id] || []).reduce((acc, p) => { if (p.game_tag) acc[p.game_tag] = true; return acc; }, {})
+                      ).length;
+                      return (
+                        <span className={`text-[9px] font-mono mt-0.5 ${isMatch && q ? 'text-blue-500 font-bold' : ''}`}>
+                          {folderCount > 0 && <span className="text-yellow-400 font-bold">{folderCount}</span>}
+                          {folderCount > 0 && <span className={darkMode ? 'text-gray-600' : 'text-gray-400'}>-</span>}
+                          <span className={isMatch && q ? 'text-blue-500' : darkMode ? 'text-gray-500' : 'text-gray-400'}>{photos[c.id].length}</span>
+                        </span>
+                      );
+                    })()}
                   </div>
                 );
               })}
