@@ -1101,7 +1101,7 @@ export default function PhotosManager() {
               ? allGameNames.filter(n => n.toLowerCase().includes(folderSearch.trim().toLowerCase()) && n.toLowerCase() !== folderSearch.trim().toLowerCase())
               : allGameNames;
             return (
-              <div className="hidden sm:block absolute left-1/2 -translate-x-1/2 w-72 relative">
+              <div className="hidden sm:block fixed left-1/2 -translate-x-1/2 w-72 z-10 relative">
                 <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none z-10 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                 <input
                   type="text"
@@ -1819,10 +1819,7 @@ export default function PhotosManager() {
       {toast && (
         <div
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl font-medium text-sm flex items-center gap-2 max-w-sm text-center text-white transition-all"
-          style={toast.color
-            ? { backgroundColor: toast.color, boxShadow: `0 8px 32px ${toast.color}60, 0 2px 8px ${toast.color}40` }
-            : {}
-          }
+          style={toast.color ? { backgroundColor: toast.color } : {}}
         >
           {!toast.color && (
             <span className={`absolute inset-0 rounded-xl ${toast.type === 'error' ? 'bg-red-500' : toast.type === 'success' ? 'bg-green-500' : darkMode ? 'bg-gray-700' : 'bg-gray-800'}`} />
