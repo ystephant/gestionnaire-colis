@@ -54,6 +54,13 @@ export default function TransactionsTracker() {
     
   });
 
+  // ── États export PDF ─────────────────────────────────────────
+  const [showPdfModal,     setShowPdfModal]     = useState(false);
+  const [pdfPeriodType,    setPdfPeriodType]    = useState('month'); // 'month' | 'year'
+  const [pdfSelectedMonth, setPdfSelectedMonth] = useState('');
+  const [pdfSelectedYear,  setPdfSelectedYear]  = useState('');
+  const [pdfGenerating,    setPdfGenerating]    = useState(false);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -343,6 +350,341 @@ const loadUserPreferences = async () => {
       }
     } catch (error) {
       console.error('Erreur d\'archivage:', error);
+    }
+  };
+
+  // ── Génération PDF ───────────────────────────────────────────
+  const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  const getAvailableYears = () => {
+    const all = [...buyTransactions, ...sellTransactions];
+    return [...new Set(all.map(t => new Date(t.created_at).getFullYear()))].sort().reverse();
+  };
+
+  const loadJsPDF = () => new Promise((resolve, reject) => {
+    if (window.jspdf?.jsPDF) { resolve(window.jspdf.jsPDF); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = () => resolve(window.jspdf.jsPDF);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+
+  const generatePDF = async () => {
+    setPdfGenerating(true);
+    try {
+      const JsPDF = await loadJsPDF();
+      const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const W = 210, H = 297, M = 14;
+      const CW = W - M * 2;
+
+      // ── Filtrage des transactions selon la période ──────────
+      const targetYear  = parseInt(pdfPeriodType === 'year' ? pdfSelectedYear : pdfSelectedYear);
+      const targetMonth = pdfPeriodType === 'month' ? parseInt(pdfSelectedMonth) : null;
+
+      const filterTx = (txs) => txs.filter(t => {
+        const d = new Date(t.created_at);
+        if (pdfPeriodType === 'year') return d.getFullYear() === targetYear;
+        return d.getFullYear() === targetYear && d.getMonth() === targetMonth;
+      });
+
+      const buys  = filterTx(buyTransactions);
+      const sells = filterTx(sellTransactions);
+      const stats = calculateStats(buys, sells);
+      const avgBuy  = stats.buyCount  > 0 ? stats.totalBuy  / stats.buyCount  : 0;
+      const avgSell = stats.sellCount > 0 ? stats.totalSell / stats.sellCount : 0;
+
+      const periodLabel = pdfPeriodType === 'year'
+        ? `Année ${pdfSelectedYear}`
+        : `${MONTH_NAMES[targetMonth]} ${pdfSelectedYear}`;
+
+      // ── Palette ─────────────────────────────────────────────
+      const C = {
+        bg:      [15,  23,  42],   // slate-900
+        card:    [30,  41,  59],   // slate-800
+        border:  [51,  65,  85],   // slate-700
+        indigo:  [99,  102, 241],  // indigo-500
+        green:   [16,  185, 129],  // emerald-500
+        amber:   [245, 158, 11],   // amber-500
+        red:     [239, 68,  68],   // red-500
+        blue:    [59,  130, 246],  // blue-500
+        white:   [255, 255, 255],
+        gray:    [148, 163, 184],  // slate-400
+        lgray:   [100, 116, 139],  // slate-500
+      };
+
+      const setFill = (col) => doc.setFillColor(...col);
+      const setDraw = (col) => doc.setDrawColor(...col);
+      const setFont = (col, size, style='normal') => {
+        doc.setTextColor(...col);
+        doc.setFontSize(size);
+        doc.setFont('helvetica', style);
+      };
+
+      // ── Fond page ───────────────────────────────────────────
+      setFill(C.bg); doc.rect(0, 0, W, H, 'F');
+
+      // ── Header ──────────────────────────────────────────────
+      // Bande de fond
+      setFill(C.card); doc.roundedRect(M, 8, CW, 22, 3, 3, 'F');
+      // Accent gauche
+      setFill(C.indigo); doc.rect(M, 8, 3, 22, 'F');
+
+      setFont(C.white, 14, 'bold');
+      doc.text('Rapport de Transactions', M + 8, 16);
+      setFont(C.gray, 8);
+      doc.text(periodLabel, M + 8, 22);
+
+      const now = new Date();
+      const dateStr = `Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
+      setFont(C.lgray, 7);
+      doc.text(dateStr, W - M, 22, { align: 'right' });
+      setFont(C.gray, 7);
+      doc.text(`@${username}`, W - M, 17, { align: 'right' });
+
+      // ── KPI Cards ───────────────────────────────────────────
+      let y = 38;
+      const kpis = [
+        { label: 'Total Achats',       value: `${stats.totalBuy.toFixed(2)} €`,  sub: `${stats.buyCount} transaction${stats.buyCount>1?'s':''}`,  color: C.blue   },
+        { label: 'Total Ventes',       value: `${stats.totalSell.toFixed(2)} €`, sub: `${stats.sellCount} transaction${stats.sellCount>1?'s':''}`, color: C.green  },
+        { label: stats.profit >= 0 ? 'Bénéfice' : 'Perte',
+                                       value: `${stats.profit >= 0 ? '+' : ''}${stats.profit.toFixed(2)} €`,
+                                       sub: `${stats.profit >= 0 ? '+' : ''}${stats.profitPercent.toFixed(1)} %`,
+                                       color: stats.profit >= 0 ? C.green : C.red },
+        { label: 'Nb Transactions',    value: `${stats.buyCount + stats.sellCount}`, sub: `${stats.buyCount} achats · ${stats.sellCount} ventes`, color: C.indigo },
+        { label: 'Prix Achat Moyen',   value: `${avgBuy.toFixed(2)} €`,          sub: 'par achat',                                                color: C.amber  },
+        { label: 'Prix Vente Moyen',   value: `${avgSell.toFixed(2)} €`,         sub: 'par vente',                                                color: C.amber  },
+      ];
+
+      const cols   = 3;
+      const cw     = (CW - 4) / cols;
+      const ch     = 20;
+      const gutter = 2;
+
+      kpis.forEach((k, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = M + col * (cw + gutter);
+        const cy = y + row * (ch + gutter);
+
+        setFill(C.card); doc.roundedRect(x, cy, cw, ch, 2, 2, 'F');
+        // Barre de couleur en haut
+        setFill(k.color); doc.roundedRect(x, cy, cw, 2.5, 1, 1, 'F');
+
+        setFont(C.gray, 6.5);
+        doc.text(k.label.toUpperCase(), x + 4, cy + 7);
+        setFont(C.white, 11, 'bold');
+        doc.text(k.value, x + 4, cy + 13.5);
+        setFont(C.lgray, 6);
+        doc.text(k.sub, x + 4, cy + 18);
+      });
+
+      y += 2 * (ch + gutter) + 8;
+
+      // ── Graphique en barres ──────────────────────────────────
+      // Construire les données par période
+      let chartData = [];
+      if (pdfPeriodType === 'year') {
+        for (let m = 0; m < 12; m++) {
+          const mb = buys.filter(t => new Date(t.created_at).getMonth() === m);
+          const ms = sells.filter(t => new Date(t.created_at).getMonth() === m);
+          const tb = mb.reduce((s,t) => s+t.price, 0);
+          const ts = ms.reduce((s,t) => s+t.price, 0);
+          if (tb > 0 || ts > 0) chartData.push({ label: MONTH_NAMES[m].slice(0,3), buy: tb, sell: ts });
+        }
+      } else {
+        // Par jour du mois
+        const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        for (let d = 1; d <= daysInMonth; d++) {
+          const db = buys.filter(t => new Date(t.created_at).getDate() === d);
+          const ds = sells.filter(t => new Date(t.created_at).getDate() === d);
+          const tb = db.reduce((s,t) => s+t.price, 0);
+          const ts = ds.reduce((s,t) => s+t.price, 0);
+          if (tb > 0 || ts > 0) chartData.push({ label: `${d}`, buy: tb, sell: ts });
+        }
+      }
+
+      if (chartData.length > 0) {
+        // Titre section
+        setFont(C.white, 9, 'bold');
+        doc.text('Évolution', M, y);
+        setFont(C.gray, 7);
+        doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
+        y += 5;
+
+        const chartH = 38, chartW = CW;
+        const maxVal = Math.max(...chartData.flatMap(d => [d.buy, d.sell]));
+        const barAreaH = chartH - 8;
+        const barCount = chartData.length;
+        const barGroupW = Math.min(chartW / barCount, 14);
+        const barW = (barGroupW - 2) / 2;
+        const chartX = M;
+
+        // Fond du graphique
+        setFill(C.card); doc.roundedRect(chartX, y, chartW, chartH, 2, 2, 'F');
+
+        // Lignes de grille
+        setDraw(C.border); doc.setLineWidth(0.2);
+        [0.25, 0.5, 0.75, 1].forEach(pct => {
+          const gy = y + chartH - 8 - barAreaH * pct;
+          doc.line(chartX + 2, gy, chartX + chartW - 2, gy);
+        });
+
+        chartData.forEach((d, i) => {
+          const bx = chartX + 3 + i * barGroupW;
+          const buyH  = maxVal > 0 ? (d.buy  / maxVal) * barAreaH : 0;
+          const sellH = maxVal > 0 ? (d.sell / maxVal) * barAreaH : 0;
+          const baseY = y + chartH - 8;
+
+          if (d.buy > 0) {
+            setFill(C.blue);
+            doc.roundedRect(bx, baseY - buyH, barW, buyH, 0.5, 0.5, 'F');
+          }
+          if (d.sell > 0) {
+            setFill(C.green);
+            doc.roundedRect(bx + barW + 0.5, baseY - sellH, barW, sellH, 0.5, 0.5, 'F');
+          }
+
+          // Label
+          if (barGroupW >= 6) {
+            setFont(C.lgray, 4.5);
+            doc.text(d.label, bx + barGroupW / 2 - barGroupW * 0.1, y + chartH - 2, { align: 'center' });
+          }
+        });
+
+        // Légende
+        const legX = chartX + chartW - 40;
+        setFill(C.blue); doc.roundedRect(legX, y + 3, 4, 2.5, 0.5, 0.5, 'F');
+        setFont(C.gray, 6); doc.text('Achats', legX + 5.5, y + 5.5);
+        setFill(C.green); doc.roundedRect(legX + 18, y + 3, 4, 2.5, 0.5, 0.5, 'F');
+        doc.text('Ventes', legX + 23.5, y + 5.5);
+
+        y += chartH + 8;
+      }
+
+      // ── Top 5 jeux rentables ─────────────────────────────────
+      const top5 = getTop10MostProfitableGames()
+        .filter(g => {
+          if (pdfPeriodType === 'year') {
+            return [...buys,...sells].some(t => t.game_name === g.name);
+          }
+          return [...buys,...sells].some(t => t.game_name === g.name);
+        })
+        .slice(0, 5);
+
+      if (top5.length > 0) {
+        setFont(C.white, 9, 'bold');
+        doc.text('Top 5 — Jeux les plus rentables', M, y);
+        y += 5;
+
+        const cols5 = ['Jeu', 'Achat', 'Vente', 'Bénéfice', 'Marge'];
+        const colW5 = [65, 25, 25, 28, 22];
+        let cx = M;
+
+        // Entête tableau
+        setFill(C.card); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+        setFill(C.indigo); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+        cols5.forEach((c, i) => {
+          setFont(C.white, 6.5, 'bold');
+          doc.text(c, cx + 2, y + 4.7);
+          cx += colW5[i];
+        });
+        y += 7;
+
+        top5.forEach((g, ri) => {
+          if (ri % 2 === 0) { setFill([22, 33, 51]); } else { setFill(C.card); }
+          doc.rect(M, y, CW, 7, 'F');
+          cx = M;
+          const profit = g.profit;
+          const margin = g.margin;
+          const row = [
+            g.name.length > 28 ? g.name.slice(0,27)+'…' : g.name,
+            `${g.totalBuy.toFixed(2)} €`,
+            `${g.totalSell.toFixed(2)} €`,
+            `${profit >= 0 ? '+' : ''}${profit.toFixed(2)} €`,
+            `${margin >= 0 ? '+' : ''}${margin.toFixed(1)} %`,
+          ];
+          row.forEach((v, ci) => {
+            const color = ci === 3 ? (profit >= 0 ? C.green : C.red)
+                        : ci === 4 ? (margin >= 0 ? C.green : C.red)
+                        : C.white;
+            setFont(color, 6.5);
+            doc.text(v, cx + 2, y + 4.7);
+            cx += colW5[ci];
+          });
+          y += 7;
+        });
+        y += 6;
+      }
+
+      // ── Liste des transactions de la période ─────────────────
+      const allPeriodTx = [
+        ...buys.map(t => ({ ...t, typeLabel: 'Achat' })),
+        ...sells.map(t => ({ ...t, typeLabel: 'Vente' })),
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      if (allPeriodTx.length > 0) {
+        // Nouvelle page si peu de place
+        if (y > H - 60) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
+
+        setFont(C.white, 9, 'bold');
+        doc.text('Détail des transactions', M, y);
+        y += 5;
+
+        const colsTx = ['Date', 'Type', 'Jeu', 'Prix'];
+        const colWTx = [28, 18, 108, 26];
+        let cx2 = M;
+
+        setFill(C.indigo); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+        colsTx.forEach((c, i) => {
+          setFont(C.white, 6.5, 'bold');
+          doc.text(c, cx2 + 2, y + 4.7);
+          cx2 += colWTx[i];
+        });
+        y += 7;
+
+        for (const t of allPeriodTx) {
+          if (y > H - 14) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
+          const ri = allPeriodTx.indexOf(t);
+          if (ri % 2 === 0) { setFill([22, 33, 51]); } else { setFill(C.card); }
+          doc.rect(M, y, CW, 6.5, 'F');
+          cx2 = M;
+          const date = new Date(t.created_at).toLocaleDateString('fr-FR');
+          const row = [
+            date,
+            t.typeLabel,
+            (t.game_name || '—').length > 42 ? (t.game_name||'—').slice(0,41)+'…' : (t.game_name || '—'),
+            `${t.price.toFixed(2)} €`,
+          ];
+          row.forEach((v, ci) => {
+            const color = ci === 1 ? (t.typeLabel === 'Achat' ? C.blue : C.green) : C.white;
+            setFont(color, 6);
+            doc.text(v, cx2 + 2, y + 4.5);
+            cx2 += colWTx[ci];
+          });
+          y += 6.5;
+        }
+      }
+
+      // ── Footer sur chaque page ───────────────────────────────
+      const pageCount = doc.getNumberOfPages();
+      for (let p = 1; p <= pageCount; p++) {
+        doc.setPage(p);
+        setFill(C.card); doc.rect(0, H - 8, W, 8, 'F');
+        setFont(C.lgray, 6);
+        doc.text(`Page ${p} / ${pageCount}`, W / 2, H - 3, { align: 'center' });
+        doc.text('Suivi des transactions — généré automatiquement', M, H - 3);
+      }
+
+      // ── Téléchargement ───────────────────────────────────────
+      const filename = `transactions_${periodLabel.replace(' ', '_').toLowerCase()}.pdf`;
+      doc.save(filename);
+      setShowPdfModal(false);
+    } catch (e) {
+      console.error('Erreur PDF:', e);
+      alert('Erreur lors de la génération du PDF : ' + e.message);
+    } finally {
+      setPdfGenerating(false);
     }
   };
 
@@ -956,6 +1298,23 @@ const loadUserPreferences = async () => {
                 title="Exporter en CSV"
               >
                 📥 Exporter
+              </button>
+
+              <button
+                onClick={() => {
+                  const years = getAvailableYears();
+                  if (years.length > 0 && !pdfSelectedYear) setPdfSelectedYear(String(years[0]));
+                  if (!pdfSelectedMonth) setPdfSelectedMonth(String(new Date().getMonth()));
+                  setShowPdfModal(true);
+                }}
+                className={`px-3 py-2 md:px-4 rounded-xl font-semibold transition text-xs md:text-sm ${
+                  darkMode
+                    ? 'bg-indigo-700 text-white hover:bg-indigo-600'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                }`}
+                title="Exporter en PDF"
+              >
+                📄 PDF
               </button>
               
               <button
@@ -2427,6 +2786,108 @@ const loadUserPreferences = async () => {
           </div>
         )}
       </div>
+
+      {/* ── Modale export PDF ── */}
+      {showPdfModal && (() => {
+        const years  = getAvailableYears();
+        const months = availableMonthsYears
+          .filter(my => String(my.year) === pdfSelectedYear)
+          .map(my => my.month);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+               onClick={() => setShowPdfModal(false)}>
+            <div
+              onClick={e => e.stopPropagation()}
+              className={`w-full max-w-sm mx-4 rounded-2xl shadow-2xl border p-6 ${
+                darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-lg font-bold">📄 Exporter en PDF</h2>
+                <button onClick={() => setShowPdfModal(false)}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition
+                          ${darkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-100'}`}>✕</button>
+              </div>
+
+              {/* Toggle mois / année */}
+              <div className={`flex rounded-xl p-1 mb-5 ${darkMode ? 'bg-slate-900' : 'bg-gray-100'}`}>
+                {['month','year'].map(t => (
+                  <button key={t}
+                    onClick={() => setPdfPeriodType(t)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+                      pdfPeriodType === t
+                        ? 'bg-indigo-600 text-white shadow'
+                        : darkMode ? 'text-slate-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >{t === 'month' ? 'Par mois' : 'Par année'}</button>
+                ))}
+              </div>
+
+              {/* Sélection année */}
+              <div className="mb-3">
+                <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wide ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                  Année
+                </label>
+                <select
+                  value={pdfSelectedYear}
+                  onChange={e => { setPdfSelectedYear(e.target.value); setPdfSelectedMonth(''); }}
+                  className={`w-full px-3 py-2.5 rounded-xl border text-sm font-medium outline-none transition ${
+                    darkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'
+                  }`}
+                >
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+
+              {/* Sélection mois (uniquement si mode mois) */}
+              {pdfPeriodType === 'month' && (
+                <div className="mb-5">
+                  <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wide ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    Mois
+                  </label>
+                  <select
+                    value={pdfSelectedMonth}
+                    onChange={e => setPdfSelectedMonth(e.target.value)}
+                    className={`w-full px-3 py-2.5 rounded-xl border text-sm font-medium outline-none transition ${
+                      darkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    {months.length > 0
+                      ? months.map(m => <option key={m} value={m}>{MONTH_NAMES[m]}</option>)
+                      : MONTH_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)
+                    }
+                  </select>
+                </div>
+              )}
+
+              {/* Aperçu période sélectionnée */}
+              <div className={`rounded-xl p-3 mb-5 text-sm text-center font-medium ${
+                darkMode ? 'bg-indigo-900/40 text-indigo-300' : 'bg-indigo-50 text-indigo-700'
+              }`}>
+                {pdfPeriodType === 'year'
+                  ? `Rapport annuel ${pdfSelectedYear}`
+                  : `Rapport ${MONTH_NAMES[parseInt(pdfSelectedMonth)] || ''} ${pdfSelectedYear}`
+                }
+              </div>
+
+              <button
+                onClick={generatePDF}
+                disabled={pdfGenerating || !pdfSelectedYear || (pdfPeriodType === 'month' && pdfSelectedMonth === '')}
+                className={`w-full py-3 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2 ${
+                  pdfGenerating || !pdfSelectedYear
+                    ? 'opacity-50 cursor-not-allowed bg-indigo-600 text-white'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
+                }`}
+              >
+                {pdfGenerating
+                  ? <><span className="animate-spin">⏳</span> Génération en cours…</>
+                  : <><span>📄</span> Générer le PDF</>
+                }
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Toast notification */}
       {toast && (
