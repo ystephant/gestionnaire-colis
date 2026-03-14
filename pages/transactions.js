@@ -106,7 +106,15 @@ export default function TransactionsTracker() {
       setSellTransactions(sells || []);
 
       // Extract unique game names for autocomplete
-      const allTransactions = [...(buys || []), ...(sells || [])];
+      // Inclut les jeux créés depuis photos.js (type='game_ref')
+      const { data: gameRefs } = await supabase
+        .from('transactions')
+        .select('game_name')
+        .eq('user_id', username)
+        .eq('type', 'game_ref')
+        .not('game_name', 'is', null);
+
+      const allTransactions = [...(buys || []), ...(sells || []), ...(gameRefs || [])];
       const uniqueNames = [...new Set(allTransactions
         .map(t => t.game_name)
         .filter(name => name && name.trim() !== '')
