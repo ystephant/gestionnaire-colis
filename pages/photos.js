@@ -1327,7 +1327,7 @@ export default function PhotosManager() {
           ) : new Set();
 
           return (
-            <div className="sm:hidden grid grid-cols-5 gap-1">
+            <div className="sm:hidden grid grid-cols-4 gap-1">
               {COLUMNS.map(c => {
                 const isActive  = mobileCol === c.id;
                 const isMatch   = matchingCols.has(c.id);
