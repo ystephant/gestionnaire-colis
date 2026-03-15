@@ -807,11 +807,17 @@ export default function PhotosManager() {
     return { ...prev, [colId]: s };
   });
   const groupByTag = (colPhotos) => {
-    const groups = {}; const ungrouped = [];
+    const raw = {}; const ungrouped = [];
     colPhotos.forEach(p => {
-      if (p.game_tag) { if (!groups[p.game_tag]) groups[p.game_tag] = []; groups[p.game_tag].push(p); }
+      if (p.game_tag) { if (!raw[p.game_tag]) raw[p.game_tag] = []; raw[p.game_tag].push(p); }
       else ungrouped.push(p);
     });
+    // Tri alphabétique par nom de jeu (sans l'horodatage)
+    const groups = Object.fromEntries(
+      Object.entries(raw).sort(([a], [b]) =>
+        baseGameName(a).localeCompare(baseGameName(b), 'fr', { sensitivity: 'base' })
+      )
+    );
     return { groups, ungrouped };
   };
 
@@ -1510,7 +1516,9 @@ export default function PhotosManager() {
                   ) : isFolded ? (
                     <>
                       {/* ── Dossiers tagués ── */}
-                      {Object.entries(groups).map(([tagLabel, gPhotos]) => {
+                      {Object.entries(groups).sort(([a], [b]) =>
+                        baseGameName(a).localeCompare(baseGameName(b), 'fr', { sensitivity: 'base' })
+                      ).map(([tagLabel, gPhotos]) => {
                         const isCollapsed    = collapsedFolders[col.id]?.has(tagLabel);
                         const isFolderBeingDragged = draggingFolder?.tagLabel === tagLabel && draggingFolder?.fromColId === col.id;
                         const [bName, ts]    = tagLabel.split(' \u2022 ');
