@@ -23,35 +23,28 @@ const COLUMNS = [
     lightBg: 'bg-rose-50', lightBorder: 'border-rose-200', lightHeader: 'bg-rose-100/70',
     darkRgba: 'rgba(159,18,57,0.12)', darkBorderRgba: 'rgba(159,18,57,0.35)', darkHeaderRgba: 'rgba(159,18,57,0.18)',
     dot: 'bg-rose-400',
-    toastBg: '#f43f5e', // rose-500
-  },
-  {
-    id: 'en_cours_de_vente', label: 'En cours de vente',
-    lightBg: 'bg-emerald-50', lightBorder: 'border-emerald-200', lightHeader: 'bg-emerald-100/70',
-    darkRgba: 'rgba(6,78,59,0.13)', darkBorderRgba: 'rgba(6,78,59,0.35)', darkHeaderRgba: 'rgba(6,78,59,0.20)',
-    dot: 'bg-emerald-500',
-    toastBg: '#10b981', // emerald-500
+    toastBg: '#f43f5e',
   },
   {
     id: 'en_vente', label: 'En vente',
     lightBg: 'bg-sky-50', lightBorder: 'border-sky-200', lightHeader: 'bg-sky-100/70',
     darkRgba: 'rgba(7,89,133,0.13)', darkBorderRgba: 'rgba(7,89,133,0.35)', darkHeaderRgba: 'rgba(7,89,133,0.20)',
     dot: 'bg-sky-400',
-    toastBg: '#0ea5e9', // sky-500
+    toastBg: '#0ea5e9',
   },
   {
     id: 'en_attente_reception', label: 'En attente reception',
     lightBg: 'bg-violet-50', lightBorder: 'border-violet-200', lightHeader: 'bg-violet-100/70',
     darkRgba: 'rgba(76,29,149,0.13)', darkBorderRgba: 'rgba(76,29,149,0.35)', darkHeaderRgba: 'rgba(76,29,149,0.20)',
     dot: 'bg-violet-400',
-    toastBg: '#8b5cf6', // violet-500
+    toastBg: '#8b5cf6',
   },
   {
     id: 'vendu', label: 'Vendu \u2713',
     lightBg: 'bg-red-50', lightBorder: 'border-red-200', lightHeader: 'bg-red-100/70',
     darkRgba: 'rgba(153,27,27,0.13)', darkBorderRgba: 'rgba(153,27,27,0.35)', darkHeaderRgba: 'rgba(153,27,27,0.20)',
     dot: 'bg-red-500',
-    toastBg: '#ef4444', // red-500
+    toastBg: '#ef4444',
   },
 ];
 
@@ -224,7 +217,7 @@ export default function PhotosManager() {
   const [loading, setLoading]       = useState(true);
 
   const [photos, setPhotos] = useState({
-    pas_encore_en_vente: [], en_cours_de_vente: [],
+    pas_encore_en_vente: [],
     en_vente: [], en_attente_reception: [], vendu: [],
   });
 
@@ -452,7 +445,7 @@ export default function PhotosManager() {
           .eq('user_id', username).order('position', { ascending: true })
           .then(({ data }) => {
             if (!data) return;
-            const next = { pas_encore_en_vente:[], en_cours_de_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
+            const next = { pas_encore_en_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
             data.forEach(p => { if (next[p.status]) next[p.status].push(p); });
             setPhotos(next);
             // Replier les nouveaux dossiers apparus
@@ -482,7 +475,7 @@ export default function PhotosManager() {
         .from('sale_photos').select('*')
         .eq('user_id', username).order('position', { ascending: true });
       if (error) throw error;
-      const g = { pas_encore_en_vente:[], en_cours_de_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
+      const g = { pas_encore_en_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
       (data || []).forEach(p => { if (g[p.status]) g[p.status].push(p); });
       setPhotos(g);
       // Replier tous les dossiers par défaut
@@ -1356,7 +1349,7 @@ export default function PhotosManager() {
                   >
                     <div className={`w-2 h-2 rounded-full mb-1 ${c.dot}`} />
                     <span className={`text-[10px] font-semibold text-center leading-tight ${isActive ? 'text-blue-500' : darkMode ? 'text-gray-400' : 'text-gray-600'}`} style={{fontSize:'9px'}}>
-                      {c.label.replace('Pas encore en vente','Pas encore').replace('En cours de vente','En cours').replace('En attente reception','En attente').replace(' ✓','')}
+                      {c.label.replace('Pas encore en vente','Pas encore').replace('En attente reception','En attente').replace(' ✓','')}
                     </span>
                     {(photos[c.id] || []).length > 0 && (() => {
                       const folderCount = Object.keys(
