@@ -1685,7 +1685,7 @@ export default function PhotosManager() {
           return (
             <>
               {/* Desktop : grille 4 cols + vendu en dessous */}
-              <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="hidden sm:grid sm:grid-cols-3 gap-4">
                 {mainCols.map(col => renderCol(col))}
               </div>
               {/* Desktop : vendu pleine largeur */}
