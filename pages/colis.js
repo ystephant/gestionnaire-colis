@@ -320,6 +320,36 @@ useEffect(() => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [isLoggedIn, username]);
+
+  // 🔄 Reset automatique du filtre si tous les colis de l'endroit filtré sont récupérés
+  useEffect(() => {
+    if (filterLocation === 'all' && filterLockerType === 'all') return;
+
+    const pending = parcels.filter(p => !p.collected);
+    if (pending.length === 0) return; // aucun colis en attente du tout, rien à faire
+
+    // Appliquer les filtres actifs
+    let filtered = pending;
+    if (filterLockerType !== 'all') {
+      filtered = filtered.filter(p => p.locker_type === filterLockerType);
+    }
+    if (filterLocation !== 'all') {
+      if (filterLocation === 'custom') {
+        filtered = filtered.filter(p => p.location.startsWith('custom:'));
+      } else {
+        filtered = filtered.filter(p => p.location === filterLocation);
+      }
+    }
+
+    // Si le filtre ne donne aucun résultat mais qu'il existe des colis en attente ailleurs, on reset
+    if (filtered.length === 0) {
+      if (filterLocation !== 'all') setFilterLocation('all');
+      if (filterLockerType !== 'all') setFilterLockerType('all');
+      setToastMessage('✅ Tous récupérés ici — filtre réinitialisé');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    }
+  }, [parcels, filterLocation, filterLockerType]);
   
   const checkAuth = async () => {
     const startTime = Date.now();
