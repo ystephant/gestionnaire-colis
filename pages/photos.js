@@ -384,9 +384,11 @@ export default function PhotosManager() {
     const allKeys = [...taggedKeys, ...(hasUngrouped ? ['__ungrouped__'] : [])];
     if (!allKeys.length) return;
     if (e.deltaY > 0) {
-      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set(allKeys) }));
-    } else {
+      // Scroll bas → tout fermer → vider le Set (Set vide = tout fermé)
       setCollapsedFolders(prev => ({ ...prev, [colId]: new Set() }));
+    } else {
+      // Scroll haut → tout ouvrir → ajouter toutes les clés
+      setCollapsedFolders(prev => ({ ...prev, [colId]: new Set(allKeys) }));
     }
   }, []);
 
@@ -451,21 +453,6 @@ export default function PhotosManager() {
             const next = { pas_encore_en_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
             data.forEach(p => { if (next[p.status]) next[p.status].push(p); });
             setPhotos(next);
-            // Replier les nouveaux dossiers apparus
-            setCollapsedFolders(prev => {
-              const updated = { ...prev };
-              COLUMNS.forEach(col => {
-                const tags = [...new Set((next[col.id] || []).filter(p => p.game_tag).map(p => p.game_tag))];
-                const hasUngrouped = (next[col.id] || []).some(p => !p.game_tag);
-                const allKeys = [...tags, ...(hasUngrouped ? ['__ungrouped__'] : [])];
-                const existing = updated[col.id] || new Set();
-                // Ajouter seulement les nouveaux tags pas encore connus
-                const merged = new Set(existing);
-                allKeys.forEach(k => { if (!existing.has || !existing.has(k)) merged.add(k); });
-                updated[col.id] = merged;
-              });
-              return updated;
-            });
           });
       })
       .subscribe();
@@ -481,14 +468,8 @@ export default function PhotosManager() {
       const g = { pas_encore_en_vente:[], en_vente:[], en_attente_reception:[], vendu:[] };
       (data || []).forEach(p => { if (g[p.status]) g[p.status].push(p); });
       setPhotos(g);
-      // Replier tous les dossiers par défaut
-      const collapsed = {};
-      COLUMNS.forEach(col => {
-        const tags = [...new Set((g[col.id] || []).filter(p => p.game_tag).map(p => p.game_tag))];
-        const hasUngrouped = (g[col.id] || []).some(p => !p.game_tag);
-        collapsed[col.id] = new Set([...tags, ...(hasUngrouped ? ['__ungrouped__'] : [])]);
-      });
-      setCollapsedFolders(collapsed);
+      // Réinitialiser les dossiers ouverts — tout fermé par défaut (Set vide)
+      setCollapsedFolders({});
     } catch { showToast('Erreur chargement photos', 'error'); }
   };
 
@@ -804,6 +785,7 @@ export default function PhotosManager() {
     if (n.has(colId)) n.delete(colId); else n.add(colId);
     return n;
   });
+  // collapsedFolders contient désormais les dossiers OUVERTS (Set vide = tout fermé par défaut)
   const toggleFolder = (colId, tagLabel) => setCollapsedFolders(prev => {
     const s = new Set(prev[colId] || []);
     if (s.has(tagLabel)) s.delete(tagLabel); else s.add(tagLabel);
@@ -1554,8 +1536,28 @@ export default function PhotosManager() {
                           : filteredEntries;
                         return (
                           <>
+                            {/* ── Pagination haut ── */}
+                            {isPaginated && totalPages > 1 && (
+                              <div className="flex items-center justify-center gap-1.5 pb-1" data-noclr>
+                                <button
+                                  onClick={() => setEnVentePage(p => Math.max(p - 1, 1))}
+                                  disabled={safePage <= 1}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold ${safePage <= 1 ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
+                                ><ChevronLeft className="w-4 h-4" /></button>
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                                  <button key={p} onClick={() => setEnVentePage(p)}
+                                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${p === safePage ? 'bg-sky-500 text-white shadow' : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-sky-100 text-sky-700'}`}
+                                  >{p}</button>
+                                ))}
+                                <button
+                                  onClick={() => setEnVentePage(p => Math.min(p + 1, totalPages))}
+                                  disabled={safePage >= totalPages}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold ${safePage >= totalPages ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
+                                ><ChevronRight className="w-4 h-4" /></button>
+                              </div>
+                            )}
                             {pageEntries.map(([tagLabel, gPhotos]) => {
-                        const isCollapsed    = collapsedFolders[col.id]?.has(tagLabel);
+                        const isCollapsed = !collapsedFolders[col.id]?.has(tagLabel);
                         const isFolderBeingDragged = draggingFolder?.tagLabel === tagLabel && draggingFolder?.fromColId === col.id;
                         const [bName, ts]    = tagLabel.split(' \u2022 ');
                         const gSel           = gPhotos.filter(p => selectedPhotos[col.id]?.has(p.id)).length;
@@ -1580,7 +1582,7 @@ export default function PhotosManager() {
                                 ? darkMode
                                   ? 'border-blue-400 bg-blue-500/15 shadow-lg shadow-blue-500/20 scale-[1.02]'
                                   : 'border-blue-400 bg-blue-50 shadow-lg shadow-blue-200 scale-[1.02]'
-                                : darkMode ? 'border-amber-500/20 bg-amber-500/5' : 'border-amber-200 bg-amber-50/60',
+                                : darkMode ? 'border-amber-500/40 bg-amber-500/15' : 'border-amber-300 bg-amber-100/80',
                             ].join(' ')}
                           >
                             {/* En-tête du dossier */}
@@ -1588,7 +1590,7 @@ export default function PhotosManager() {
                               className={[
                                 'flex items-start gap-2 px-2.5 py-2.5 select-none',
                                 'cursor-grab active:cursor-grabbing transition-colors',
-                                darkMode ? 'hover:bg-amber-500/10' : 'hover:bg-amber-100/60',
+                                darkMode ? 'hover:bg-amber-500/25' : 'hover:bg-amber-200/90',
                               ].join(' ')}
                               onClick={() => toggleFolder(col.id, tagLabel)}
                             >
@@ -1716,7 +1718,7 @@ export default function PhotosManager() {
                                 {ugAll && <Check className="w-3 h-3 text-white" />}
                                 {ugSome && <div className="w-2 h-0.5 bg-blue-500 rounded" />}
                               </button>
-                              {collapsedFolders[col.id]?.has('__ungrouped__')
+                              {!collapsedFolders[col.id]?.has('__ungrouped__')
                                 ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
                                 : <ChevronDown  className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
                               }
@@ -1742,7 +1744,7 @@ export default function PhotosManager() {
                                 {ungrouped.length}{ugSel > 0 && <span className="text-blue-400 ml-0.5">·{ugSel}</span>}
                               </span>
                             </div>
-                            {!collapsedFolders[col.id]?.has('__ungrouped__') && (
+                            {collapsedFolders[col.id]?.has('__ungrouped__') && (
                               <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
                                 {ungrouped.map(photo => renderCard(col.id, photo, ungrouped, true))}
                               </div>
