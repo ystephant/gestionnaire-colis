@@ -249,6 +249,8 @@ export default function PhotosManager() {
   const [folderMode, setFolderMode]             = useState(new Set(COLUMNS.map(c => c.id)));
   const [collapsedFolders, setCollapsedFolders] = useState({});
   const [folderSearch, setFolderSearch]         = useState('');
+  const [enVentePage, setEnVentePage]           = useState(1);
+  const [collapsedColumns, setCollapsedColumns] = useState(new Set());
   const [showFolderSuggestions, setShowFolderSuggestions] = useState(false);
   // Onglet colonne actif sur mobile
   const [mobileCol, setMobileCol] = useState('pas_encore_en_vente');
@@ -278,6 +280,7 @@ export default function PhotosManager() {
   // Sync refs
   useEffect(() => { photosRef.current = photos; }, [photos]);
   useEffect(() => { lassoRef.current  = lasso;  }, [lasso]);
+  useEffect(() => { setEnVentePage(1); }, [folderSearch]);
 
   // Handlers globaux mousemove / mouseup pour le lasso
   useEffect(() => {
@@ -1392,6 +1395,7 @@ export default function PhotosManager() {
             const gridCls    = zoomGridCls(zoom);
 
             const isVendu = col.id === 'vendu';
+            const isColCollapsed = !isVendu && collapsedColumns.has(col.id);
             const qCol = folderSearch.trim().toLowerCase();
             const colHasMatch = qCol && (photos[col.id] || []).some(p => p.game_tag && baseGameName(p.game_tag).toLowerCase().includes(qCol));
 
@@ -1465,6 +1469,22 @@ export default function PhotosManager() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      {!isVendu && (
+                        <button
+                          onClick={() => setCollapsedColumns(prev => {
+                            const s = new Set(prev);
+                            if (s.has(col.id)) s.delete(col.id); else s.add(col.id);
+                            return s;
+                          })}
+                          title={isColCollapsed ? 'Déplier la colonne' : 'Plier la colonne'}
+                          className={`p-1 rounded-lg transition-colors ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-white text-gray-500'}`}
+                        >
+                          {isColCollapsed
+                            ? <ChevronRight className="w-3.5 h-3.5" />
+                            : <ChevronDown  className="w-3.5 h-3.5" />
+                          }
+                        </button>
+                      )}
                       {colPhotos.length > 0 && (
                         <button
                           onClick={() => downloadMultiple(colPhotos)}
@@ -1496,6 +1516,7 @@ export default function PhotosManager() {
                 })()}
 
                 {/* Zone de photos */}
+                {!isColCollapsed && (
                 <div
                   className="flex-1 p-2 space-y-2 overflow-y-auto select-none"
                   onMouseDown={e => onZoneMouseDown(e, col.id)}
@@ -1516,9 +1537,24 @@ export default function PhotosManager() {
                   ) : isFolded ? (
                     <>
                       {/* ── Dossiers tagués ── */}
-                      {Object.entries(groups).sort(([a], [b]) =>
-                        baseGameName(a).localeCompare(baseGameName(b), 'fr', { sensitivity: 'base' })
-                      ).map(([tagLabel, gPhotos]) => {
+                      {(() => {
+                        const FOLDERS_PER_PAGE = 15;
+                        const sortedEntries = Object.entries(groups).sort(([a], [b]) =>
+                          baseGameName(a).localeCompare(baseGameName(b), 'fr', { sensitivity: 'base' })
+                        );
+                        const q2 = folderSearch.trim().toLowerCase();
+                        const filteredEntries = q2
+                          ? sortedEntries.filter(([tagLabel]) => baseGameName(tagLabel).toLowerCase().includes(q2))
+                          : sortedEntries;
+                        const isPaginated = col.id === 'en_vente' && !q2;
+                        const totalPages  = isPaginated ? Math.ceil(filteredEntries.length / FOLDERS_PER_PAGE) : 1;
+                        const safePage    = Math.min(Math.max(enVentePage, 1), totalPages || 1);
+                        const pageEntries = isPaginated
+                          ? filteredEntries.slice((safePage - 1) * FOLDERS_PER_PAGE, safePage * FOLDERS_PER_PAGE)
+                          : filteredEntries;
+                        return (
+                          <>
+                            {pageEntries.map(([tagLabel, gPhotos]) => {
                         const isCollapsed    = collapsedFolders[col.id]?.has(tagLabel);
                         const isFolderBeingDragged = draggingFolder?.tagLabel === tagLabel && draggingFolder?.fromColId === col.id;
                         const [bName, ts]    = tagLabel.split(' \u2022 ');
@@ -1529,7 +1565,6 @@ export default function PhotosManager() {
                         // Filtrage par recherche — masquer les non-matchés
                         const q = folderSearch.trim().toLowerCase();
                         const isMatch = !q || bName.toLowerCase().includes(q);
-                        if (!isMatch) return null;
 
                         return (
                           <div
@@ -1609,6 +1644,42 @@ export default function PhotosManager() {
                           </div>
                         );
                       })}
+                            {/* ── Pagination en_vente ── */}
+                            {isPaginated && totalPages > 1 && (
+                              <div className={`flex items-center justify-center gap-1.5 pt-1 pb-0.5`} data-noclr>
+                                <button
+                                  onClick={() => setEnVentePage(p => Math.max(p - 1, 1))}
+                                  disabled={safePage <= 1}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold
+                                    ${safePage <= 1 ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
+                                >
+                                  <ChevronLeft className="w-4 h-4" />
+                                </button>
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                                  <button
+                                    key={p}
+                                    onClick={() => setEnVentePage(p)}
+                                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-colors
+                                      ${p === safePage
+                                        ? 'bg-sky-500 text-white shadow'
+                                        : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-sky-100 text-sky-700'}`}
+                                  >
+                                    {p}
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={() => setEnVentePage(p => Math.min(p + 1, totalPages))}
+                                  disabled={safePage >= totalPages}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold
+                                    ${safePage >= totalPages ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
+                                >
+                                  <ChevronRight className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
 
                       {/* ── Photos sans tag ── */}
                       {ungrouped.length > 0 && (() => {
@@ -1687,6 +1758,7 @@ export default function PhotosManager() {
                     </div>
                   )}
                 </div>
+                )} {/* fin !isColCollapsed */}
               </div>
             );
           }; // fin renderCol
