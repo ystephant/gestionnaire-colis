@@ -512,7 +512,7 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
         y += 5;
 
-        const legW    = 10; // largeur de la légende à gauche
+        const legW    = 6; // largeur de la légende à gauche
         const yAxisW  = 18; // largeur axe Y (labels €)
         const leftW   = legW + yAxisW; // total espace gauche
         const chartH  = 48, chartW = CW - leftW;
@@ -534,7 +534,7 @@ const loadUserPreferences = async () => {
         setFill(C.green); doc.roundedRect(M + 2, legBaseY + 5,  4, 2.5, 0.5, 0.5, 'F');
         setFont(C.gray, 5.5); doc.text('Ventes',  M + 7.5, legBaseY + 7);
 
-        // ── Lignes de grille + étiquettes axe Y ──
+        // ── Lignes de grille horizontales + étiquettes axe Y ──
         setDraw(C.border); doc.setLineWidth(0.2);
         [0.25, 0.5, 0.75, 1].forEach(pct => {
           const gy  = y + chartH - 8 - barAreaH * pct;
@@ -544,6 +544,17 @@ const loadUserPreferences = async () => {
           const label = val >= 1000 ? `${(val/1000).toFixed(1)}k€` : `${val.toFixed(0)}€`;
           doc.text(label, M + leftW - 2, gy + 1.2, { align: 'right' });
         });
+
+        // ── Pointillés verticaux entre les groupes de barres ──
+        doc.setLineDashPattern([0.5, 1], 0);
+        doc.setLineWidth(0.15);
+        setDraw([51, 65, 85]);
+        chartData.forEach((d, i) => {
+          if (i === 0) return;
+          const vx = chartX + 3 + i * barGroupW - 1;
+          doc.line(vx, y + topPad, vx, y + chartH - 8);
+        });
+        doc.setLineDashPattern([], 0); // reset pointillés
 
         chartData.forEach((d, i) => {
           const bx = chartX + 3 + i * barGroupW;
@@ -597,7 +608,7 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 54, y);
         y += 5;
 
-        const legW2   = 10;
+        const legW2   = 6;
         const yAxisW2 = 14;
         const leftW2  = legW2 + yAxisW2;
         const chartH2 = 40, chartW2 = CW - leftW2;
@@ -617,7 +628,7 @@ const loadUserPreferences = async () => {
         setFill(C.green); doc.roundedRect(M + 2, legBaseY2 + 5, 4, 2.5, 0.5, 0.5, 'F');
         setFont(C.gray, 5.5); doc.text('Ventes', M + 7.5, legBaseY2 + 7);
 
-        // Grille + labels Y (nombre entier)
+        // Grille horizontale + labels Y (nombre entier)
         setDraw(C.border); doc.setLineWidth(0.2);
         [0.25, 0.5, 0.75, 1].forEach(pct => {
           const gy  = y + chartH2 - 8 - barAreaH2 * pct;
@@ -626,6 +637,17 @@ const loadUserPreferences = async () => {
           setFont(C.lgray, 4.5);
           doc.text(`${val}`, M + leftW2 - 2, gy + 1.2, { align: 'right' });
         });
+
+        // Pointillés verticaux entre groupes
+        doc.setLineDashPattern([0.5, 1], 0);
+        doc.setLineWidth(0.15);
+        setDraw([51, 65, 85]);
+        countData.forEach((d, i) => {
+          if (i === 0) return;
+          const vx = chartX2 + 3 + i * barGroupW2 - 1;
+          doc.line(vx, y + topPad2, vx, y + chartH2 - 8);
+        });
+        doc.setLineDashPattern([], 0);
 
         // Barres
         countData.forEach((d, i) => {
