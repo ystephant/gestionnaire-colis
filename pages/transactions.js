@@ -823,7 +823,9 @@ const loadUserPreferences = async () => {
       const buyTotal = buyMonth.reduce((sum, t) => sum + t.price, 0);
       const sellTotal = sellMonth.reduce((sum, t) => sum + t.price, 0);
       const profit = sellTotal - buyTotal;
-      const margin = buyTotal > 0 ? ((profit / buyTotal) * 100) : 0;
+      const avgBuy  = buyMonth.length  > 0 ? buyTotal  / buyMonth.length  : null;
+      const avgSell = sellMonth.length > 0 ? sellTotal / sellMonth.length : null;
+      const margin  = (avgBuy !== null && avgSell !== null) ? ((avgSell - avgBuy) / avgBuy * 100) : null;
       
       csvRows.push([
         formatMonthYear(month),
@@ -832,7 +834,7 @@ const loadUserPreferences = async () => {
         sellTotal.toFixed(2),
         sellMonth.length,
         (profit >= 0 ? '+' : '') + profit.toFixed(2),
-        (margin >= 0 ? '+' : '') + margin.toFixed(1)
+        margin !== null ? (margin >= 0 ? '+' : '') + margin.toFixed(1) : 'N/A'
       ]);
     });
     
@@ -2621,7 +2623,7 @@ const loadUserPreferences = async () => {
                           <div className={`text-xl font-bold ${game.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                             {game.profit >= 0 ? '+' : ''}{game.profit.toFixed(2)}€
                           </div>
-                          <div className={`text-sm font-semibold ${game.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          <div className={`text-sm font-semibold ${game.margin === null ? '' : game.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                             {game.margin !== null ? `Marge: ${game.margin >= 0 ? '+' : ''}${game.margin.toFixed(1)}%` : null}
                           </div>
                         </div>
