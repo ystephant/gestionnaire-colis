@@ -587,10 +587,11 @@ export default function PhotosManager() {
       if (fromColId === toColumn) return;
       if (toColumn === 'vendu') { setPendingDelete({ photos: folderPhotos }); return; }
       await movePhotos(folderPhotos, toColumn, null);
-      // Replier le dossier dans la colonne de destination
+      // S'assurer que le dossier reste replié dans la colonne de destination
+      // (collapsedFolders contient les dossiers OUVERTS — on supprime pour garder replié)
       setCollapsedFolders(prev => {
         const s = new Set(prev[toColumn] || []);
-        s.add(tagLabel);
+        s.delete(tagLabel);
         return { ...prev, [toColumn]: s };
       });
       const destCol  = COLUMNS.find(c => c.id === toColumn);
@@ -627,11 +628,12 @@ export default function PhotosManager() {
     });
     setSelectedPhotos({});
     // Garder "__ungrouped__" replié dans la colonne de destination si des photos sans tag arrivent
+    // (collapsedFolders contient les dossiers OUVERTS — on supprime pour garder replié)
     const hasUntaggedInMove = ptm.some(p => !p.game_tag);
     if (hasUntaggedInMove) {
       setCollapsedFolders(prev => {
         const s = new Set(prev[toColumn] || []);
-        s.add('__ungrouped__');
+        s.delete('__ungrouped__');
         return { ...prev, [toColumn]: s };
       });
     }
