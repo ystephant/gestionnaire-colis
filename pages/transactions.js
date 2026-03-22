@@ -648,7 +648,7 @@ const loadUserPreferences = async () => {
         doc.text(title, M, y);
         y += 5;
         const cols5 = ['Jeu', 'Moy. Achat', 'Moy. Vente', 'Bénéfice', 'Marge'];
-        const colW5 = [62, 28, 28, 28, 22];
+        const colW5 = [55, 36, 36, 28, 22];
         let cx = M;
         setFill(headerColor); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
         cols5.forEach((c, i) => {
@@ -668,8 +668,8 @@ const loadUserPreferences = async () => {
           const avgS = g.sellCount > 0 ? g.totalSell / g.sellCount : null;
           const row = [
             g.name.length > 26 ? g.name.slice(0,25)+'…' : g.name,
-            avgB !== null ? `${avgB.toFixed(2)} €` : '—',
-            avgS !== null ? `${avgS.toFixed(2)} €` : '—',
+            avgB !== null ? `${avgB.toFixed(2)} € (×${g.buyCount})` : '—',
+            avgS !== null ? `${avgS.toFixed(2)} € (×${g.sellCount})` : '—',
             `${profit >= 0 ? '+' : ''}${profit.toFixed(2)} €`,
             margin !== null ? `${margin >= 0 ? '+' : ''}${margin.toFixed(1)} %` : '—',
           ];
