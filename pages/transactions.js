@@ -923,8 +923,6 @@ const loadUserPreferences = async () => {
     return Object.entries(gameStats)
       .map(([name, stats]) => {
         const profit = stats.sells - stats.buys;
-        // Marge = (prix vente moyen - prix achat moyen) / prix achat moyen
-        // null si aucun achat renseigné sur cette période (marge non pertinente)
         const avgBuy  = stats.buyCount  > 0 ? stats.buys  / stats.buyCount  : null;
         const avgSell = stats.sellCount > 0 ? stats.sells / stats.sellCount : null;
         const margin  = (avgBuy !== null && avgSell !== null) ? ((avgSell - avgBuy) / avgBuy * 100) : null;
@@ -938,6 +936,7 @@ const loadUserPreferences = async () => {
           sellCount: stats.sellCount
         };
       })
+      .filter(game => game.buyCount > 0) // Exclure les jeux sans achat renseigné (marge non pertinente)
       .sort((a, b) => b.profit - a.profit)
       .slice(0, 10);
   };
