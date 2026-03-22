@@ -640,45 +640,36 @@ const loadUserPreferences = async () => {
         y += chartH2 + 8;
       }
 
-      // ── Top 5 jeux rentables ─────────────────────────────────
-      const top5 = getTop10MostProfitableGames()
-        .filter(g => {
-          if (pdfPeriodType === 'year') {
-            return [...buys,...sells].some(t => t.game_name === g.name);
-          }
-          return [...buys,...sells].some(t => t.game_name === g.name);
-        })
-        .slice(0, 5);
-
-      if (top5.length > 0) {
+      // ── Helpers tableaux jeux ────────────────────────────────
+      const drawGameTable = (title, games, headerColor) => {
+        if (games.length === 0) return;
+        if (y > H - 50) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
         setFont(C.white, 9, 'bold');
-        doc.text('Top 5 — Jeux les plus rentables', M, y);
+        doc.text(title, M, y);
         y += 5;
-
-        const cols5 = ['Jeu', 'Achat', 'Vente', 'Bénéfice', 'Marge'];
-        const colW5 = [65, 25, 25, 28, 22];
+        const cols5 = ['Jeu', 'Moy. Achat', 'Moy. Vente', 'Bénéfice', 'Marge'];
+        const colW5 = [62, 28, 28, 28, 22];
         let cx = M;
-
-        // Entête tableau
-        setFill(C.card); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
-        setFill(C.indigo); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+        setFill(headerColor); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
         cols5.forEach((c, i) => {
           setFont(C.white, 6.5, 'bold');
           doc.text(c, cx + 2, y + 4.7);
           cx += colW5[i];
         });
         y += 7;
-
-        top5.forEach((g, ri) => {
+        games.forEach((g, ri) => {
+          if (y > H - 14) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
           if (ri % 2 === 0) { setFill([22, 33, 51]); } else { setFill(C.card); }
           doc.rect(M, y, CW, 7, 'F');
           cx = M;
           const profit = g.profit;
           const margin = g.margin;
+          const avgB = g.buyCount > 0 ? g.totalBuy / g.buyCount : null;
+          const avgS = g.sellCount > 0 ? g.totalSell / g.sellCount : null;
           const row = [
-            g.name.length > 28 ? g.name.slice(0,27)+'…' : g.name,
-            `${g.totalBuy.toFixed(2)} €`,
-            `${g.totalSell.toFixed(2)} €`,
+            g.name.length > 26 ? g.name.slice(0,25)+'…' : g.name,
+            avgB !== null ? `${avgB.toFixed(2)} €` : '—',
+            avgS !== null ? `${avgS.toFixed(2)} €` : '—',
             `${profit >= 0 ? '+' : ''}${profit.toFixed(2)} €`,
             margin !== null ? `${margin >= 0 ? '+' : ''}${margin.toFixed(1)} %` : '—',
           ];
@@ -692,38 +683,26 @@ const loadUserPreferences = async () => {
           });
           y += 7;
         });
-        y += 6;
-      }
-
-      // ── Liste des transactions de la période ─────────────────
-      const allPeriodTx = [
-        ...buys.map(t => ({ ...t, typeLabel: 'Achat' })),
-        ...sells.map(t => ({ ...t, typeLabel: 'Vente' })),
-      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-      if (allPeriodTx.length > 0) {
-        // Nouvelle page si peu de place
-        if (y > H - 60) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
-
-        setFont(C.white, 9, 'bold');
-        doc.text('Détail des transactions', M, y);
         y += 5;
+      };
 
+      // ── Helper liste transactions ────────────────────────────
+      const drawTxTable = (txList, showHeader = true) => {
+        if (txList.length === 0) return;
         const colsTx = ['Date', 'Type', 'Jeu', 'Prix'];
         const colWTx = [28, 18, 108, 26];
         let cx2 = M;
-
-        setFill(C.indigo); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
-        colsTx.forEach((c, i) => {
-          setFont(C.white, 6.5, 'bold');
-          doc.text(c, cx2 + 2, y + 4.7);
-          cx2 += colWTx[i];
-        });
-        y += 7;
-
-        for (const t of allPeriodTx) {
+        if (showHeader) {
+          setFill(C.indigo); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+          colsTx.forEach((c, i) => {
+            setFont(C.white, 6.5, 'bold');
+            doc.text(c, cx2 + 2, y + 4.7);
+            cx2 += colWTx[i];
+          });
+          y += 7;
+        }
+        txList.forEach((t, ri) => {
           if (y > H - 14) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
-          const ri = allPeriodTx.indexOf(t);
           if (ri % 2 === 0) { setFill([22, 33, 51]); } else { setFill(C.card); }
           doc.rect(M, y, CW, 6.5, 'F');
           cx2 = M;
@@ -741,6 +720,105 @@ const loadUserPreferences = async () => {
             cx2 += colWTx[ci];
           });
           y += 6.5;
+        });
+      };
+
+      // ── Top 5 jeux les plus rentables ───────────────────────
+      const buildGameStatsFromTx = (bList, sList) => {
+        const gs = {};
+        bList.filter(t => t.game_name?.trim()).forEach(t => {
+          const n = t.game_name.trim();
+          if (!gs[n]) gs[n] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+          gs[n].buys += t.price; gs[n].buyCount++;
+        });
+        sList.filter(t => t.game_name?.trim()).forEach(t => {
+          const n = t.game_name.trim();
+          if (!gs[n]) gs[n] = { buys: 0, sells: 0, buyCount: 0, sellCount: 0 };
+          gs[n].sells += t.price; gs[n].sellCount++;
+        });
+        return Object.entries(gs).map(([name, s]) => {
+          const profit = s.sells - s.buys;
+          const avgB = s.buyCount > 0 ? s.buys / s.buyCount : null;
+          const avgS = s.sellCount > 0 ? s.sells / s.sellCount : null;
+          const margin = (avgB !== null && avgS !== null) ? ((avgS - avgB) / avgB * 100) : null;
+          return { name, profit, margin, totalBuy: s.buys, totalSell: s.sells, buyCount: s.buyCount, sellCount: s.sellCount };
+        });
+      };
+
+      const allGameStats = buildGameStatsFromTx(buys, sells);
+      const top5 = allGameStats.filter(g => g.buyCount > 0).sort((a,b) => b.profit - a.profit).slice(0,5);
+      const bot5 = allGameStats.filter(g => g.buyCount > 0 && g.profit < 0).sort((a,b) => a.profit - b.profit).slice(0,5);
+
+      drawGameTable('Top 5 — Jeux les plus rentables', top5, C.indigo);
+      drawGameTable('Top 5 — Jeux les moins rentables', bot5, C.red);
+
+      // ── Transactions : par mois (année) ou liste plate (mois) ─
+      if (pdfPeriodType === 'year') {
+        // Une section par mois
+        for (let m = 0; m < 12; m++) {
+          const mb = buys.filter(t => new Date(t.created_at).getMonth() === m);
+          const ms = sells.filter(t => new Date(t.created_at).getMonth() === m);
+          if (mb.length === 0 && ms.length === 0) continue;
+
+          const mStats = calculateStats(mb, ms);
+          const mAvgB = mStats.buyCount > 0 ? mStats.totalBuy / mStats.buyCount : 0;
+          const mAvgS = mStats.sellCount > 0 ? mStats.totalSell / mStats.sellCount : 0;
+
+          if (y > H - 60) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
+
+          // ── Bandeau mois ──
+          setFill(C.card); doc.roundedRect(M, y, CW, 22, 2, 2, 'F');
+          setFill(C.indigo); doc.rect(M, y, 3, 22, 'F');
+          setFont(C.white, 9, 'bold');
+          doc.text(MONTH_NAMES[m], M + 7, y + 6);
+
+          // Ligne 1 : achats | ventes | bénéfice
+          const kpiY1 = y + 12;
+          const kpiY2 = y + 18;
+          const kCol = CW / 5;
+          const kDefs = [
+            { label: 'Achats',    value: `${mStats.totalBuy.toFixed(2)} €`,  color: C.blue  },
+            { label: 'Ventes',    value: `${mStats.totalSell.toFixed(2)} €`, color: C.green },
+            { label: mStats.profit >= 0 ? 'Bénéfice' : 'Perte',
+              value: `${mStats.profit >= 0 ? '+' : ''}${mStats.profit.toFixed(2)} €`,
+              color: mStats.profit >= 0 ? C.green : C.red },
+            { label: 'Moy. Achat',  value: `${mAvgB.toFixed(2)} €`,         color: C.amber },
+            { label: 'Moy. Vente',  value: `${mAvgS.toFixed(2)} €`,         color: C.amber },
+          ];
+          kDefs.forEach((k, i) => {
+            const kx = M + 7 + i * kCol;
+            setFont(C.gray, 5.5);
+            doc.text(k.label, kx + (i === 0 ? 18 : 0), kpiY1);
+            setFont(k.color, 7, 'bold');
+            doc.text(k.value, kx + (i === 0 ? 18 : 0), kpiY2);
+          });
+          // Nb transactions en haut à droite
+          setFont(C.lgray, 6);
+          doc.text(`${mb.length + ms.length} tx (${mb.length} achats · ${ms.length} ventes)`, W - M - 4, y + 6, { align: 'right' });
+
+          y += 26;
+
+          const mTx = [
+            ...mb.map(t => ({ ...t, typeLabel: 'Achat' })),
+            ...ms.map(t => ({ ...t, typeLabel: 'Vente' })),
+          ].sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+          drawTxTable(mTx);
+          y += 6;
+        }
+      } else {
+        // Mode mois : liste plate classique
+        const allPeriodTx = [
+          ...buys.map(t => ({ ...t, typeLabel: 'Achat' })),
+          ...sells.map(t => ({ ...t, typeLabel: 'Vente' })),
+        ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        if (allPeriodTx.length > 0) {
+          if (y > H - 60) { doc.addPage(); setFill(C.bg); doc.rect(0, 0, W, H, 'F'); y = 14; }
+          setFont(C.white, 9, 'bold');
+          doc.text('Détail des transactions', M, y);
+          y += 5;
+          drawTxTable(allPeriodTx);
         }
       }
 
