@@ -794,7 +794,7 @@ const loadUserPreferences = async () => {
           });
           // Nb transactions en haut à droite
           setFont(C.lgray, 6);
-          doc.text(`${mb.length + ms.length} tx (${mb.length} achats · ${ms.length} ventes)`, W - M - 4, y + 6, { align: 'right' });
+          doc.text(`${mb.length + ms.length} transactions (${mb.length} achats · ${ms.length} ventes)`, W - M - 4, y + 6, { align: 'right' });
 
           y += 26;
 
