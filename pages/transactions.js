@@ -512,7 +512,7 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
         y += 5;
 
-        const legW    = 22; // largeur de la légende à gauche
+        const legW    = 14; // largeur de la légende à gauche
         const yAxisW  = 18; // largeur axe Y (labels €)
         const leftW   = legW + yAxisW; // total espace gauche
         const chartH  = 48, chartW = CW - leftW;
@@ -520,7 +520,7 @@ const loadUserPreferences = async () => {
         const maxVal  = Math.max(...chartData.flatMap(d => [d.buy, d.sell]));
         const barAreaH = chartH - 8 - topPad;
         const barCount = chartData.length;
-        const barGroupW = Math.min(chartW / barCount, 14);
+        const barGroupW = Math.min((chartW - 4) / barCount, 14);
         const barW = (barGroupW - 2) / 2;
         const chartX = M + leftW;
 
@@ -596,14 +596,14 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 54, y);
         y += 5;
 
-        const legW2   = 22;
+        const legW2   = 14;
         const yAxisW2 = 14;
         const leftW2  = legW2 + yAxisW2;
         const chartH2 = 40, chartW2 = CW - leftW2;
         const topPad2 = 4;
         const maxCount = Math.max(...countData.flatMap(d => [d.buy, d.sell]));
         const barAreaH2 = chartH2 - 8 - topPad2;
-        const barGroupW2 = Math.min(chartW2 / countData.length, 14);
+        const barGroupW2 = Math.min((chartW2 - 4) / countData.length, 14);
         const barW2 = (barGroupW2 - 2) / 2;
         const chartX2 = M + leftW2;
 
