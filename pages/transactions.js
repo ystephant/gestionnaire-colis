@@ -512,7 +512,7 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
         y += 5;
 
-        const legW    = 14; // largeur de la légende à gauche
+        const legW    = 10; // largeur de la légende à gauche
         const yAxisW  = 18; // largeur axe Y (labels €)
         const leftW   = legW + yAxisW; // total espace gauche
         const chartH  = 48, chartW = CW - leftW;
@@ -560,10 +560,11 @@ const loadUserPreferences = async () => {
             doc.roundedRect(bx + barW + 0.5, baseY - sellH, barW, sellH, 0.5, 0.5, 'F');
           }
 
-          // Label
-          if (barGroupW >= 6) {
-            setFont(C.lgray, 4.5);
-            doc.text(d.label, bx + barGroupW / 2 - barGroupW * 0.1, y + chartH - 2, { align: 'center' });
+          // Label jour — affiche tous les labels ou 1 sur N si trop serré
+          const labelStep = barGroupW < 4 ? Math.ceil(4 / barGroupW) : 1;
+          if (i % labelStep === 0) {
+            setFont(C.lgray, 4);
+            doc.text(d.label, bx + barGroupW / 2, y + chartH - 2, { align: 'center' });
           }
         });
 
@@ -596,7 +597,7 @@ const loadUserPreferences = async () => {
         doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 54, y);
         y += 5;
 
-        const legW2   = 14;
+        const legW2   = 10;
         const yAxisW2 = 14;
         const leftW2  = legW2 + yAxisW2;
         const chartH2 = 40, chartW2 = CW - leftW2;
@@ -634,7 +635,8 @@ const loadUserPreferences = async () => {
           const baseY = y + chartH2 - 8;
           if (d.buy > 0)  { setFill(C.blue);  doc.roundedRect(bx,            baseY - buyH,  barW2, buyH,  0.5, 0.5, 'F'); }
           if (d.sell > 0) { setFill(C.green); doc.roundedRect(bx + barW2 + 0.5, baseY - sellH, barW2, sellH, 0.5, 0.5, 'F'); }
-          if (barGroupW2 >= 6) { setFont(C.lgray, 4.5); doc.text(d.label, bx + barGroupW2 / 2 - barGroupW2 * 0.1, y + chartH2 - 2, { align: 'center' }); }
+          const labelStep2 = barGroupW2 < 4 ? Math.ceil(4 / barGroupW2) : 1;
+          if (i % labelStep2 === 0) { setFont(C.lgray, 4); doc.text(d.label, bx + barGroupW2 / 2, y + chartH2 - 2, { align: 'center' }); }
         });
 
         y += chartH2 + 8;
