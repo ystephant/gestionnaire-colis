@@ -565,10 +565,16 @@ const loadUserPreferences = async () => {
           if (d.buy > 0) {
             setFill(C.blue);
             doc.roundedRect(bx, baseY - buyH, barW, buyH, 0.5, 0.5, 'F');
+            setFont(C.blue, 3.5);
+            const buyLabel = d.buy >= 1000 ? `${(d.buy/1000).toFixed(1)}k` : `${d.buy.toFixed(0)}€`;
+            doc.text(buyLabel, bx + barW / 2, baseY - buyH - 1, { align: 'center' });
           }
           if (d.sell > 0) {
             setFill(C.green);
             doc.roundedRect(bx + barW + 0.5, baseY - sellH, barW, sellH, 0.5, 0.5, 'F');
+            setFont(C.green, 3.5);
+            const sellLabel = d.sell >= 1000 ? `${(d.sell/1000).toFixed(1)}k` : `${d.sell.toFixed(0)}€`;
+            doc.text(sellLabel, bx + barW + 0.5 + barW / 2, baseY - sellH - 1, { align: 'center' });
           }
 
           // Label jour — affiche tous les labels ou 1 sur N si trop serré
@@ -655,8 +661,16 @@ const loadUserPreferences = async () => {
           const buyH  = maxCount > 0 ? (d.buy  / maxCount) * barAreaH2 : 0;
           const sellH = maxCount > 0 ? (d.sell / maxCount) * barAreaH2 : 0;
           const baseY = y + chartH2 - 8;
-          if (d.buy > 0)  { setFill(C.blue);  doc.roundedRect(bx,            baseY - buyH,  barW2, buyH,  0.5, 0.5, 'F'); }
-          if (d.sell > 0) { setFill(C.green); doc.roundedRect(bx + barW2 + 0.5, baseY - sellH, barW2, sellH, 0.5, 0.5, 'F'); }
+          if (d.buy > 0)  {
+            setFill(C.blue);  doc.roundedRect(bx, baseY - buyH, barW2, buyH, 0.5, 0.5, 'F');
+            setFont(C.blue, 3.5);
+            doc.text(`${d.buy}`, bx + barW2 / 2, baseY - buyH - 1, { align: 'center' });
+          }
+          if (d.sell > 0) {
+            setFill(C.green); doc.roundedRect(bx + barW2 + 0.5, baseY - sellH, barW2, sellH, 0.5, 0.5, 'F');
+            setFont(C.green, 3.5);
+            doc.text(`${d.sell}`, bx + barW2 + 0.5 + barW2 / 2, baseY - sellH - 1, { align: 'center' });
+          }
           const labelStep2 = barGroupW2 < 4 ? Math.ceil(4 / barGroupW2) : 1;
           if (i % labelStep2 === 0) { setFont(C.lgray, 4); doc.text(d.label, bx + barGroupW2 / 2, y + chartH2 - 2, { align: 'center' }); }
         });
