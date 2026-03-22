@@ -249,7 +249,8 @@ export default function PhotosManager() {
   const [folderMode, setFolderMode]             = useState(new Set(COLUMNS.map(c => c.id)));
   const [collapsedFolders, setCollapsedFolders] = useState({});
   const [folderSearch, setFolderSearch]         = useState('');
-  const [enVentePage, setEnVentePage]           = useState(1);
+  const [enVentePage, setEnVentePage]                     = useState(1);
+  const [enAttenteReceptionPage, setEnAttenteReceptionPage] = useState(1);
   const [collapsedColumns, setCollapsedColumns] = useState(new Set());
   const [showFolderSuggestions, setShowFolderSuggestions] = useState(false);
   // Onglet colonne actif sur mobile
@@ -280,7 +281,7 @@ export default function PhotosManager() {
   // Sync refs
   useEffect(() => { photosRef.current = photos; }, [photos]);
   useEffect(() => { lassoRef.current  = lasso;  }, [lasso]);
-  useEffect(() => { setEnVentePage(1); }, [folderSearch]);
+  useEffect(() => { setEnVentePage(1); setEnAttenteReceptionPage(1); }, [folderSearch]);
 
   // Handlers globaux mousemove / mouseup pour le lasso
   useEffect(() => {
@@ -1379,6 +1380,7 @@ export default function PhotosManager() {
             const gridCls    = zoomGridCls(zoom);
 
             const isVendu = col.id === 'vendu';
+            const isCompact = col.id === 'en_attente_reception' || col.id === 'vendu';
             const isColCollapsed = !isVendu && collapsedColumns.has(col.id);
             const qCol = folderSearch.trim().toLowerCase();
             const colHasMatch = qCol && (photos[col.id] || []).some(p => p.game_tag && baseGameName(p.game_tag).toLowerCase().includes(qCol));
@@ -1407,7 +1409,7 @@ export default function PhotosManager() {
                   !darkMode && isVendu ? (isOver ? 'border-blue-300' : 'border-transparent') : '',
                   isFolderOver ? 'ring-2 ring-blue-400 ring-offset-1' : '',
                 ].join(' ')}
-                style={{ minHeight: '420px', position: 'relative', ...colBgStyle, ...(darkMode ? colBorderStyle : {}) }}
+                style={{ minHeight: isVendu ? '120px' : isCompact ? '180px' : '420px', position: 'relative', ...colBgStyle, ...(darkMode ? colBorderStyle : {}) }}
               >
                 {/* En-tête de colonne */}
                 <div
@@ -1522,7 +1524,7 @@ export default function PhotosManager() {
                     <>
                       {/* ── Dossiers tagués ── */}
                       {(() => {
-                        const FOLDERS_PER_PAGE = 15;
+                        const FOLDERS_PER_PAGE = col.id === 'en_attente_reception' ? 8 : 15;
                         const sortedEntries = Object.entries(groups).sort(([a], [b]) =>
                           baseGameName(a).localeCompare(baseGameName(b), 'fr', { sensitivity: 'base' })
                         );
@@ -1530,9 +1532,11 @@ export default function PhotosManager() {
                         const filteredEntries = q2
                           ? sortedEntries.filter(([tagLabel]) => baseGameName(tagLabel).toLowerCase().includes(q2))
                           : sortedEntries;
-                        const isPaginated = col.id === 'en_vente' && !q2;
+                        const isPaginated = (col.id === 'en_vente' || col.id === 'en_attente_reception') && !q2;
+                        const currentPage    = col.id === 'en_attente_reception' ? enAttenteReceptionPage : enVentePage;
+                        const setCurrentPage = col.id === 'en_attente_reception' ? setEnAttenteReceptionPage : setEnVentePage;
                         const totalPages  = isPaginated ? Math.ceil(filteredEntries.length / FOLDERS_PER_PAGE) : 1;
-                        const safePage    = Math.min(Math.max(enVentePage, 1), totalPages || 1);
+                        const safePage    = Math.min(Math.max(currentPage, 1), totalPages || 1);
                         const pageEntries = isPaginated
                           ? filteredEntries.slice((safePage - 1) * FOLDERS_PER_PAGE, safePage * FOLDERS_PER_PAGE)
                           : filteredEntries;
@@ -1542,17 +1546,17 @@ export default function PhotosManager() {
                             {isPaginated && totalPages > 1 && (
                               <div className="flex items-center justify-center gap-1.5 pb-1" data-noclr>
                                 <button
-                                  onClick={() => setEnVentePage(p => Math.max(p - 1, 1))}
+                                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
                                   disabled={safePage <= 1}
                                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold ${safePage <= 1 ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
                                 ><ChevronLeft className="w-4 h-4" /></button>
                                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                                  <button key={p} onClick={() => setEnVentePage(p)}
+                                  <button key={p} onClick={() => setCurrentPage(p)}
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${p === safePage ? 'bg-sky-500 text-white shadow' : darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-sky-100 text-sky-700'}`}
                                   >{p}</button>
                                 ))}
                                 <button
-                                  onClick={() => setEnVentePage(p => Math.min(p + 1, totalPages))}
+                                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
                                   disabled={safePage >= totalPages}
                                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold ${safePage >= totalPages ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
                                 ><ChevronRight className="w-4 h-4" /></button>
@@ -1648,11 +1652,11 @@ export default function PhotosManager() {
                           </div>
                         );
                       })}
-                            {/* ── Pagination en_vente ── */}
+                            {/* ── Pagination bas ── */}
                             {isPaginated && totalPages > 1 && (
                               <div className={`flex items-center justify-center gap-1.5 pt-1 pb-0.5`} data-noclr>
                                 <button
-                                  onClick={() => setEnVentePage(p => Math.max(p - 1, 1))}
+                                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
                                   disabled={safePage <= 1}
                                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold
                                     ${safePage <= 1 ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
@@ -1662,7 +1666,7 @@ export default function PhotosManager() {
                                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
                                   <button
                                     key={p}
-                                    onClick={() => setEnVentePage(p)}
+                                    onClick={() => setCurrentPage(p)}
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-colors
                                       ${p === safePage
                                         ? 'bg-sky-500 text-white shadow'
@@ -1672,7 +1676,7 @@ export default function PhotosManager() {
                                   </button>
                                 ))}
                                 <button
-                                  onClick={() => setEnVentePage(p => Math.min(p + 1, totalPages))}
+                                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
                                   disabled={safePage >= totalPages}
                                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-xs font-bold
                                     ${safePage >= totalPages ? 'opacity-25 cursor-not-allowed' : darkMode ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-sky-100 text-sky-700'}`}
@@ -1766,23 +1770,17 @@ export default function PhotosManager() {
               </div>
             );
           }; // fin renderCol
+          const leftCols = mainCols.filter(c => c.id !== 'en_attente_reception');
+          const attenteCol = mainCols.find(c => c.id === 'en_attente_reception');
           return (
             <>
-              {/* Desktop : grille 4 cols + vendu en dessous */}
-              <div className="hidden sm:grid sm:grid-cols-3 gap-4">
-                {mainCols.map(col => renderCol(col))}
-              </div>
-              {/* Desktop : vendu pleine largeur */}
-              <div className="hidden sm:block">
-                {venduCol && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-2 px-1">
-                      <div className={`w-2 h-2 rounded-full ${venduCol.dot}`} />
-                      <span className={`text-xs font-semibold uppercase tracking-wide ${subtext}`}>{venduCol.label} — archives</span>
-                    </div>
-                    {renderCol(venduCol)}
-                  </div>
-                )}
+              {/* Desktop : 2 grandes colonnes + colonne droite compacte (en attente + vendu) */}
+              <div className="hidden sm:grid sm:grid-cols-[1fr_1fr_1fr] gap-4 items-start">
+                {leftCols.map(col => renderCol(col))}
+                <div className="flex flex-col gap-4">
+                  {attenteCol && renderCol(attenteCol)}
+                  {venduCol && renderCol(venduCol)}
+                </div>
               </div>
               {/* Mobile : colonne active uniquement */}
               <div className="sm:hidden">
