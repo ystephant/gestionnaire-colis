@@ -2619,11 +2619,13 @@ const loadUserPreferences = async () => {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className={`text-xl font-bold ${game.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {game.margin !== null ? (
+                            <div className={`text-xl font-bold ${game.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              Marge: {game.margin >= 0 ? '+' : ''}{game.margin.toFixed(1)}%
+                            </div>
+                          ) : null}
+                          <div className={`text-sm font-semibold ${game.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                             {game.profit >= 0 ? '+' : ''}{game.profit.toFixed(2)}€
-                          </div>
-                          <div className={`text-sm font-semibold ${game.margin === null ? '' : game.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {game.margin !== null ? `Marge: ${game.margin >= 0 ? '+' : ''}${game.margin.toFixed(1)}%` : null}
                           </div>
                         </div>
                       </div>
@@ -2717,11 +2719,13 @@ const loadUserPreferences = async () => {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xl font-bold text-red-500">
-                            {game.profit.toFixed(2)}€
-                          </div>
+                          {game.margin !== null ? (
+                            <div className="text-xl font-bold text-red-500">
+                              Perte: {game.margin.toFixed(1)}%
+                            </div>
+                          ) : null}
                           <div className="text-sm font-semibold text-red-500">
-                            {game.margin !== null ? `Perte: ${game.margin.toFixed(1)}%` : null}
+                            {game.profit.toFixed(2)}€
                           </div>
                         </div>
                       </div>
@@ -2815,11 +2819,13 @@ const loadUserPreferences = async () => {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xl font-bold text-red-500">
-                            {game.profit.toFixed(2)}€
-                          </div>
+                          {game.margin !== null ? (
+                            <div className="text-xl font-bold text-red-500">
+                              Perte: {game.margin.toFixed(1)}%
+                            </div>
+                          ) : null}
                           <div className="text-sm font-semibold text-red-500">
-                            {game.margin !== null ? `Perte: ${game.margin.toFixed(1)}%` : null}
+                            {game.profit.toFixed(2)}€
                           </div>
                         </div>
                       </div>
