@@ -447,7 +447,9 @@ const loadUserPreferences = async () => {
         { label: 'Total Ventes',       value: `${stats.totalSell.toFixed(2)} €`, sub: `${stats.sellCount} transaction${stats.sellCount>1?'s':''}`, color: C.green  },
         { label: stats.profit >= 0 ? 'Bénéfice' : 'Perte',
                                        value: `${stats.profit >= 0 ? '+' : ''}${stats.profit.toFixed(2)} €`,
-                                       sub: `${stats.profit >= 0 ? '+' : ''}${stats.profitPercent.toFixed(1)} %`,
+                                       sub: stats.profitPercent !== null
+                                         ? `${stats.profitPercent >= 0 ? '+' : ''}${stats.profitPercent.toFixed(1)} %`
+                                         : 'Marge N/A',
                                        color: stats.profit >= 0 ? C.green : C.red },
         { label: 'Nb Transactions',    value: `${stats.buyCount + stats.sellCount}`, sub: `${stats.buyCount} achats · ${stats.sellCount} ventes`, color: C.indigo },
         { label: 'Prix Achat Moyen',   value: `${avgBuy.toFixed(2)} €`,          sub: 'par achat',                                                color: C.amber  },
@@ -678,11 +680,11 @@ const loadUserPreferences = async () => {
             `${g.totalBuy.toFixed(2)} €`,
             `${g.totalSell.toFixed(2)} €`,
             `${profit >= 0 ? '+' : ''}${profit.toFixed(2)} €`,
-            `${margin >= 0 ? '+' : ''}${margin.toFixed(1)} %`,
+            margin !== null ? `${margin >= 0 ? '+' : ''}${margin.toFixed(1)} %` : '—',
           ];
           row.forEach((v, ci) => {
             const color = ci === 3 ? (profit >= 0 ? C.green : C.red)
-                        : ci === 4 ? (margin >= 0 ? C.green : C.red)
+                        : ci === 4 ? (margin === null ? C.gray : margin >= 0 ? C.green : C.red)
                         : C.white;
             setFont(color, 6.5);
             doc.text(v, cx + 2, y + 4.7);
@@ -919,7 +921,11 @@ const loadUserPreferences = async () => {
     return Object.entries(gameStats)
       .map(([name, stats]) => {
         const profit = stats.sells - stats.buys;
-        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        // Marge = (prix vente moyen - prix achat moyen) / prix achat moyen
+        // null si aucun achat renseigné sur cette période (marge non pertinente)
+        const avgBuy  = stats.buyCount  > 0 ? stats.buys  / stats.buyCount  : null;
+        const avgSell = stats.sellCount > 0 ? stats.sells / stats.sellCount : null;
+        const margin  = (avgBuy !== null && avgSell !== null) ? ((avgSell - avgBuy) / avgBuy * 100) : null;
         return {
           name,
           profit,
@@ -961,7 +967,9 @@ const loadUserPreferences = async () => {
     return Object.entries(gameStats)
       .map(([name, stats]) => {
         const profit = stats.sells - stats.buys;
-        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        const avgBuy  = stats.buyCount  > 0 ? stats.buys  / stats.buyCount  : null;
+        const avgSell = stats.sellCount > 0 ? stats.sells / stats.sellCount : null;
+        const margin  = (avgBuy !== null && avgSell !== null) ? ((avgSell - avgBuy) / avgBuy * 100) : null;
         return {
           name,
           profit,
@@ -1001,7 +1009,9 @@ const loadUserPreferences = async () => {
     return Object.entries(gameStats)
       .map(([name, stats]) => {
         const profit = stats.sells - stats.buys;
-        const margin = stats.buys > 0 ? ((profit / stats.buys) * 100) : 0;
+        const avgBuy  = stats.buyCount  > 0 ? stats.buys  / stats.buyCount  : null;
+        const avgSell = stats.sellCount > 0 ? stats.sells / stats.sellCount : null;
+        const margin  = (avgBuy !== null && avgSell !== null) ? ((avgSell - avgBuy) / avgBuy * 100) : null;
         return {
           name,
           profit,
@@ -1106,7 +1116,11 @@ const loadUserPreferences = async () => {
     const totalBuy = buys.reduce((sum, t) => sum + t.price, 0);
     const totalSell = sells.reduce((sum, t) => sum + t.price, 0);
     const profit = totalSell - totalBuy;
-    const profitPercent = totalBuy > 0 ? ((profit / totalBuy) * 100) : 0;
+    // Marge basée sur la moyenne d'achat vs moyenne de vente (pas sur le total des achats)
+    // Si aucun achat renseigné sur la période, la marge n'est pas pertinente (null)
+    const avgBuy  = buys.length  > 0 ? totalBuy  / buys.length  : null;
+    const avgSell = sells.length > 0 ? totalSell / sells.length : null;
+    const profitPercent = (avgBuy !== null && avgSell !== null) ? ((avgSell - avgBuy) / avgBuy * 100) : null;
 
     return {
       totalBuy,
@@ -2608,7 +2622,7 @@ const loadUserPreferences = async () => {
                             {game.profit >= 0 ? '+' : ''}{game.profit.toFixed(2)}€
                           </div>
                           <div className={`text-sm font-semibold ${game.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            Marge: {game.margin >= 0 ? '+' : ''}{game.margin.toFixed(1)}%
+                            {game.margin !== null ? `Marge: ${game.margin >= 0 ? '+' : ''}${game.margin.toFixed(1)}%` : null}
                           </div>
                         </div>
                       </div>
@@ -2706,7 +2720,7 @@ const loadUserPreferences = async () => {
                             {game.profit.toFixed(2)}€
                           </div>
                           <div className="text-sm font-semibold text-red-500">
-                            Perte: {game.margin.toFixed(1)}%
+                            {game.margin !== null ? `Perte: ${game.margin.toFixed(1)}%` : null}
                           </div>
                         </div>
                       </div>
@@ -2804,7 +2818,7 @@ const loadUserPreferences = async () => {
                             {game.profit.toFixed(2)}€
                           </div>
                           <div className="text-sm font-semibold text-red-500">
-                            Perte: {game.margin.toFixed(1)}%
+                            {game.margin !== null ? `Perte: ${game.margin.toFixed(1)}%` : null}
                           </div>
                         </div>
                       </div>
