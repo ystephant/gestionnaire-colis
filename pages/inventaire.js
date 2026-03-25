@@ -15,11 +15,7 @@ const getOptimizedImage = (url, width = 400) => {
   return url.replace('/upload/', `/upload/w_${width},q_auto,f_auto/`);
 };
 
-// 📄 Corriger l'URL Cloudinary pour les PDFs (image/upload → raw/upload)
-const getPdfUrl = (url) => {
-  if (!url) return url;
-  return url.replace('/image/upload/', '/raw/upload/');
-};
+
 
 // ⚙️ CONFIGURATION CLOUDINARY
 const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey';
@@ -1207,7 +1203,6 @@ const resetInventory = async () => {
             uploadingPhotos={uploadingPhotos}
             uploadProgress={uploadProgress}
             getOptimizedImage={getOptimizedImage}
-            getPdfUrl={getPdfUrl}
             photoRotations={photoRotations} 
             rotatePhoto={rotatePhoto}
           />
@@ -2198,7 +2193,7 @@ function DetailedViewComponent({
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto, addDetailPdf,
   checkedItems, toggleDetailPhoto,
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
-  uploadingPhotos, uploadProgress, getOptimizedImage, getPdfUrl,
+  uploadingPhotos, uploadProgress, getOptimizedImage,
   photoRotations, rotatePhoto
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
@@ -2344,7 +2339,7 @@ function DetailedViewComponent({
                   {photo.type === 'pdf' ? (
                     <div className="relative">
                       <a
-                        href={getPdfUrl(photo.image)}
+                        href={photo.image}
                         target="_blank"
                         rel="noopener noreferrer"
                         className={`aspect-square flex flex-col items-center justify-center gap-2 cursor-pointer transition ${
@@ -2492,7 +2487,7 @@ function DetailedViewComponent({
                       {currentDetailPhotos.filter(p => p.type === 'pdf').map(pdf => (
                         <a
                           key={pdf.id}
-                          href={getPdfUrl(pdf.image)}
+                          href={pdf.image}
                           target="_blank"
                           rel="noopener noreferrer"
                           className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 font-medium text-sm transition ${
