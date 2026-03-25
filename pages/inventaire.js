@@ -11,7 +11,14 @@ const supabase = createClient(
 // 📸 Optimiser les images Cloudinary
 const getOptimizedImage = (url, width = 400) => {
   if (!url) return url;
+  if (url.toLowerCase().endsWith('.pdf')) return url; // Ne pas transformer les PDFs
   return url.replace('/upload/', `/upload/w_${width},q_auto,f_auto/`);
+};
+
+// 📄 Corriger l'URL Cloudinary pour les PDFs (image/upload → raw/upload)
+const getPdfUrl = (url) => {
+  if (!url) return url;
+  return url.replace('/image/upload/', '/raw/upload/');
 };
 
 // ⚙️ CONFIGURATION CLOUDINARY
@@ -1200,6 +1207,7 @@ const resetInventory = async () => {
             uploadingPhotos={uploadingPhotos}
             uploadProgress={uploadProgress}
             getOptimizedImage={getOptimizedImage}
+            getPdfUrl={getPdfUrl}
             photoRotations={photoRotations} 
             rotatePhoto={rotatePhoto}
           />
@@ -2190,7 +2198,7 @@ function DetailedViewComponent({
   removeDetailPhoto, updateDetailPhotoName, addDetailPhoto, addDetailPdf,
   checkedItems, toggleDetailPhoto,
   isDragging, handleDragEnter, handleDragLeave, handleDragOver, handleDrop,
-  uploadingPhotos, uploadProgress, getOptimizedImage,
+  uploadingPhotos, uploadProgress, getOptimizedImage, getPdfUrl,
   photoRotations, rotatePhoto
 }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
@@ -2336,7 +2344,7 @@ function DetailedViewComponent({
                   {photo.type === 'pdf' ? (
                     <div className="relative">
                       <a
-                        href={photo.image}
+                        href={getPdfUrl(photo.image)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className={`aspect-square flex flex-col items-center justify-center gap-2 cursor-pointer transition ${
@@ -2484,7 +2492,7 @@ function DetailedViewComponent({
                       {currentDetailPhotos.filter(p => p.type === 'pdf').map(pdf => (
                         <a
                           key={pdf.id}
-                          href={pdf.image}
+                          href={getPdfUrl(pdf.image)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 font-medium text-sm transition ${
