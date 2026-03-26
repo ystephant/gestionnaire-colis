@@ -11,11 +11,8 @@ const supabase = createClient(
 // 📸 Optimiser les images Cloudinary
 const getOptimizedImage = (url, width = 400) => {
   if (!url) return url;
-  if (url.toLowerCase().endsWith('.pdf')) return url; // Ne pas transformer les PDFs
   return url.replace('/upload/', `/upload/w_${width},q_auto,f_auto/`);
 };
-
-
 
 // ⚙️ CONFIGURATION CLOUDINARY
 const CLOUDINARY_CLOUD_NAME = 'dfnwxqjey';
@@ -128,7 +125,7 @@ export default function InventaireJeux() {
     formData.append('folder', folder);
 
     const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`,
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`,
       { method: 'POST', body: formData }
     );
 
@@ -661,7 +658,12 @@ const resetInventory = async () => {
 
   const getDetailPhotoCount = (itemIndex) => {
     const photos = itemDetails[itemIndex] || [];
-    return photos.filter(p => p.image).length;
+    return photos.filter(p => p.image && p.type !== 'pdf').length;
+  };
+
+  const getDetailPdfCount = (itemIndex) => {
+    const photos = itemDetails[itemIndex] || [];
+    return photos.filter(p => p.type === 'pdf').length;
   };
 
   // Fonctions pour les modales
@@ -1137,6 +1139,7 @@ const resetInventory = async () => {
             toggleItem={toggleItem}
             itemDetails={itemDetails}
             getDetailPhotoCount={getDetailPhotoCount}
+            getDetailPdfCount={getDetailPdfCount}
             openDetailedView={openDetailedView}
             supabase={supabase}
             setSyncStatus={setSyncStatus}
@@ -1442,7 +1445,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
 }
 
 // Composant GameInventorySection avec AGRÉGATION
-function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, showResetModal, setShowResetModal, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems }) {
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, showResetModal, setShowResetModal, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, getDetailPdfCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems }) {
   const StarSelector = ({ rating, setRating }) => {
     return (
       <div className="flex gap-1">
@@ -1630,6 +1633,9 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
         <div className="space-y-2">
           {getSortedItems().map(({ item, index }) => {
             const photoCount = getDetailPhotoCount(index);
+            const pdfCount = getDetailPdfCount(index);
+            const onlyPdf = pdfCount > 0 && photoCount === 0;
+            const hasContent = photoCount > 0 || pdfCount > 0;
             return (
               <div key={index} className="flex items-center gap-2">
                 <button
@@ -1637,9 +1643,19 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
                   className={`p-2 rounded-lg transition ${
                     photoCount > 0
                       ? darkMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-purple-500 hover:bg-purple-600 text-white'
-                      : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+                      : onlyPdf
+                        ? darkMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-500 hover:bg-red-600 text-white'
+                        : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
                   }`}
-                  title={photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Ajouter des photos'}
+                  title={
+                    photoCount > 0 && pdfCount > 0
+                      ? `${photoCount} photo${photoCount > 1 ? 's' : ''} · ${pdfCount} PDF`
+                      : photoCount > 0
+                        ? `${photoCount} photo${photoCount > 1 ? 's' : ''}`
+                        : onlyPdf
+                          ? `${pdfCount} PDF`
+                          : 'Ajouter des photos'
+                  }
                 >
                   <Grid size={16} />
                 </button>
@@ -1665,9 +1681,18 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
                     }`}>
                       {item}
                     </span>
-                    {photoCount > 0 && (
-                      <div className={`text-xs mt-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
-                        📸 {photoCount} photo{photoCount > 1 ? 's' : ''}
+                    {hasContent && (
+                      <div className="flex gap-2 mt-1 flex-wrap">
+                        {photoCount > 0 && (
+                          <span className={`text-xs ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                            📸 {photoCount} photo{photoCount > 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {pdfCount > 0 && (
+                          <span className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
+                            📄 {pdfCount} PDF
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
