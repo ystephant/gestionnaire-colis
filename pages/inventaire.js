@@ -1010,14 +1010,14 @@ const resetInventory = async () => {
 
         {showCompletionModal && (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 px-4">
-            <div className={`${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'} rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-green-500`}>
+            <div className={`${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'} rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-orange-500`}>
               <div className="text-center mb-4">
                 <div className="text-5xl mb-3">🎉</div>
                 <h3 className="text-xl font-bold leading-snug mb-2">
                   Hey ! Bravo !
                 </h3>
                 <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Visiblement tu as compté l'ensemble des éléments de ce jeu, <strong>BRAVO !</strong> Veux-tu réinitialiser l'inventaire maintenant ?
+                  Visiblement tu as compté l'ensemble des éléments de ce jeu. Veux-tu réinitialiser l'inventaire maintenant ?
                 </p>
               </div>
               <div className="flex gap-3">
@@ -1032,7 +1032,7 @@ const resetInventory = async () => {
                     setShowCompletionModal(false);
                     resetInventory();
                   }}
-                  className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition text-lg"
+                  className="flex-1 bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 transition text-lg"
                 >
                   Oui
                 </button>
@@ -1074,8 +1074,8 @@ const resetInventory = async () => {
 
         {/* 🆕 HEADER MODIFIÉ avec bouton "Revenir à la recherche" */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3 flex-1 flex-wrap">
               <button
                 onClick={() => window.location.href = '/'}
                 className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
@@ -1137,7 +1137,7 @@ const resetInventory = async () => {
 
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`p-3 rounded-xl transition-all ml-4 ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+              className={`p-3 rounded-xl transition-all ml-4 flex-shrink-0 ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
               title={darkMode ? 'Mode clair' : 'Mode sombre'}
             >
               {darkMode ? '☀️' : '🌙'}
