@@ -91,6 +91,7 @@ export default function InventaireJeux() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('default');
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteGame, setPendingDeleteGame] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -208,6 +209,15 @@ export default function InventaireJeux() {
   useEffect(() => {
     localStorage.setItem('darkMode', darkMode.toString());
   }, [darkMode]);
+
+  // 3️⃣ Détection de l'inventaire complet → popin de félicitation
+  useEffect(() => {
+    if (!selectedGame || Object.keys(checkedItems).length === 0) return;
+    const progress = getProgress();
+    if (progress === 100) {
+      setShowCompletionModal(true);
+    }
+  }, [checkedItems, selectedGame, itemDetails]);
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -998,6 +1008,39 @@ const resetInventory = async () => {
           </div>
         )}
 
+        {showCompletionModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 px-4">
+            <div className={`${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'} rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-green-500`}>
+              <div className="text-center mb-4">
+                <div className="text-5xl mb-3">🎉</div>
+                <h3 className="text-xl font-bold leading-snug mb-2">
+                  Hey ! Bravo !
+                </h3>
+                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Visiblement tu as compté l'ensemble des éléments de ce jeu, <strong>BRAVO !</strong> Veux-tu réinitialiser l'inventaire maintenant ?
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCompletionModal(false)}
+                  className={`flex-1 py-3 rounded-xl font-bold transition text-lg ${darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                >
+                  Non
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCompletionModal(false);
+                    resetInventory();
+                  }}
+                  className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition text-lg"
+                >
+                  Oui
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showDeleteModal && pendingDeleteGame && (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 px-4">
             <div className={`${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'} rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-red-500`}>
@@ -1053,7 +1096,7 @@ const resetInventory = async () => {
                     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Ici, vérifie le matos !</p>
                   </div>
                   {selectedGame && !editMode && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {detailedView && (
                         <button
                           onClick={changeGame}
