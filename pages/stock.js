@@ -251,6 +251,24 @@ export default function StockManager() {
     }
   };
 
+  // ── Ajout rapide +1 inline ────────────────────────────────────
+  const handleAddOne = async (gameName) => {
+    try {
+      const { error } = await supabase.from('transactions').insert({
+        user_id:   username,
+        type:      'stock_add',
+        game_name: gameName,
+        price:     0,
+      });
+      if (error) throw error;
+      showToast('1 "' + gameName + '" ajouté au stock');
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("Erreur lors de l'ajout", 'error');
+    }
+  };
+
   // ── Données dérivées ─────────────────────────────────────────
   const stockItems = computeStock();
 
@@ -442,98 +460,75 @@ export default function StockManager() {
               >
                 {/* Bannière alerte "peut mettre en vente" */}
                 {g.canList && (
-                  <div className={`px-4 py-2.5 flex items-center gap-2 border-b-2 border-amber-400 ${
+                  <div className={`px-4 py-2 flex items-center gap-2 border-b-2 border-amber-400 ${
                     dm ? 'bg-amber-900/25 text-amber-300' : 'bg-amber-50 text-amber-700'
                   }`}>
-                    <span className="text-base">🏷️</span>
-                    <span className="text-sm font-semibold">
-                      Tu peux mettre un nouveau{' '}
-                      <span className="font-black">"{g.name}"</span>{' '}
-                      en vente !
+                    <span className="text-sm">🏷️</span>
+                    <span className="text-xs font-semibold">
+                      Tu peux mettre un nouveau <span className="font-black">"{g.name}"</span> en vente !
                     </span>
                   </div>
                 )}
 
-                <div className="p-4 flex items-start gap-3">
-                  {/* Contenu principal */}
+                {/* Ligne principale */}
+                <div className="px-4 py-3 flex items-center gap-3">
+
+                  {/* Nom + badges */}
                   <div className="flex-1 min-w-0">
-                    <div className={`font-bold text-base truncate ${dm ? 'text-white' : 'text-gray-900'}`}>
+                    <div className={`font-bold text-sm truncate ${dm ? 'text-white' : 'text-gray-900'}`}>
                       {g.name}
                     </div>
-
-                    {/* Badges état */}
-                    <div className="flex flex-wrap gap-1.5 mt-2">
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                      {g.isEnVente && (
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                          dm ? 'bg-green-500/15 text-green-400 border-green-500/30' : 'bg-green-50 text-green-600 border-green-200'
+                        }`}>🟢 En vente</span>
+                      )}
                       {g.incomingCount > 0 && (
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          dm
-                            ? 'bg-orange-500/15 text-orange-400 border-orange-500/30'
-                            : 'bg-orange-50 text-orange-600 border-orange-200'
+                          dm ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' : 'bg-orange-50 text-orange-600 border-orange-200'
                         }`}>
-                          🚚 {g.incomingCount} en transit
-                        </span>
-                      )}
-                      {g.isEnVente && (
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                          dm
-                            ? 'bg-green-500/15 text-green-400 border-green-500/30'
-                            : 'bg-green-50 text-green-600 border-green-200'
-                        }`}>
-                          🟢 En vente
+                          🚚 {g.incomingCount} en transit{g.daysLeft > 0 ? ` (~${g.daysLeft}j)` : ''}
                         </span>
                       )}
                       {g.confirmedStock > 0 && (
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          dm
-                            ? 'bg-green-500/15 text-green-400 border-green-500/30'
-                            : 'bg-green-50 text-green-600 border-green-200'
-                        }`}>
-                          ✅ {g.confirmedStock} en stock
-                        </span>
+                          dm ? 'bg-slate-600/40 text-slate-300 border-slate-600' : 'bg-gray-50 text-gray-500 border-gray-200'
+                        }`}>✅ {g.confirmedStock} dispo</span>
                       )}
                     </div>
-
-                    {/* Méta-infos */}
-                    <div className={`mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs ${dm ? 'text-slate-400' : 'text-gray-400'}`}>
-                      <span>📥 {g.buys} achat{g.buys > 1 ? 's' : ''}</span>
-                      <span>📤 {g.sells} vente{g.sells > 1 ? 's' : ''}</span>
-                      {g.lastBuyDate && (
-                        <span>Dernier achat : {formatDate(g.lastBuyDate)}</span>
-                      )}
-                    </div>
-
-                    {/* Délai restant en transit */}
-                    {g.daysLeft !== null && g.incomingCount > 0 && (
-                      <div className={`mt-1.5 text-xs font-medium ${dm ? 'text-orange-400' : 'text-orange-600'}`}>
-                        ⏳ Disponible dans{' '}
-                        {g.daysLeft === 0
-                          ? 'moins d\'un jour'
-                          : `~${g.daysLeft} jour${g.daysLeft > 1 ? 's' : ''}`}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Compteur stock + bouton retrait */}
-                  <div className="flex-shrink-0 flex flex-col items-center gap-2">
-                    <div className={`text-4xl font-black leading-none ${
-                      g.net >= 3 ? 'text-indigo-500' :
-                      g.net === 2 ? 'text-blue-500'  :
-                      g.net === 1 ? 'text-amber-500' :
-                      dm ? 'text-slate-500' : 'text-gray-300'
-                    }`}>
-                      {g.net}
-                    </div>
-                    <div className={`text-xs ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
-                      {g.net > 1 ? 'copies' : 'copie'}
-                    </div>
+                  {/* − N + sur une ligne */}
+                  <div className="flex-shrink-0 flex items-center gap-1">
                     <button
                       onClick={() => handleRemoveOne(g.name)}
                       title="Retirer 1 du stock"
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg font-bold transition border ${
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold transition ${
                         dm
-                          ? 'border-slate-600 hover:border-red-500 hover:bg-red-900/30 text-slate-400 hover:text-red-400'
-                          : 'border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-400 hover:text-red-500'
+                          ? 'bg-slate-700 hover:bg-red-900/50 text-slate-400 hover:text-red-400'
+                          : 'bg-gray-100 hover:bg-red-50 text-gray-400 hover:text-red-500'
                       }`}
                     >−</button>
+
+                    <div className="w-10 text-center">
+                      <span className={`text-xl font-black ${
+                        g.net >= 3 ? 'text-indigo-500' :
+                        g.net === 2 ? 'text-blue-500'  :
+                        g.net === 1 ? 'text-amber-500' :
+                        dm ? 'text-slate-500' : 'text-gray-300'
+                      }`}>{g.net}</span>
+                    </div>
+
+                    <button
+                      onClick={() => handleAddOne(g.name)}
+                      title="Ajouter 1 au stock"
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold transition ${
+                        dm
+                          ? 'bg-slate-700 hover:bg-indigo-900/50 text-slate-400 hover:text-indigo-400'
+                          : 'bg-gray-100 hover:bg-indigo-50 text-gray-400 hover:text-indigo-500'
+                      }`}
+                    >+</button>
                   </div>
                 </div>
               </div>
