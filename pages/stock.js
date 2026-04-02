@@ -178,20 +178,19 @@ export default function StockManager() {
     });
 
     // Jeux avec au moins 1 photo strictement "En vente" dans sale_photos
-    // game_tag peut être "Catan" ou "Catan_1704067200000" (dossier avec horodatage)
-    // → on vérifie si un game_tag commence par le nom du jeu (insensible à la casse)
-    const enVenteTags = (salePhotos || [])
-      .filter(p => p.status === 'En vente' && p.game_tag)
-      .map(p => p.game_tag.trim().toLowerCase());
+    // game_tag a le format "Squadro • 11/03 14:32" dans sale_photos
+    // → on extrait la partie avant le " • " pour obtenir le nom du jeu
+    const enVenteNames = new Set(
+      (salePhotos || [])
+        .filter(p => p.status === 'En vente' && p.game_tag)
+        .map(p => p.game_tag.split(' • ')[0].trim().toLowerCase())
+    );
 
     return Object.values(map)
       .map(g => {
         const net            = g.buys - g.sells - g.manualRemovals;
         const confirmedStock = Math.max(0, net - g.incomingCount);
-        const nameNorm       = g.name.trim().toLowerCase();
-        const isEnVente      = enVenteTags.some(tag =>
-          tag === nameNorm || tag.startsWith(nameNorm + '_') || tag.startsWith(nameNorm + ' ')
-        );
+        const isEnVente      = enVenteNames.has(g.name.trim().toLowerCase());
         const canList        = confirmedStock > 0 && !isEnVente;
         const daysLeft       = g.oldestIncomingDate
           ? Math.max(0, INCOMING_DAYS - daysAgo(g.oldestIncomingDate))
