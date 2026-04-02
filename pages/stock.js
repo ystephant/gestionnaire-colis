@@ -182,7 +182,7 @@ export default function StockManager() {
     // → on extrait la partie avant le " • " pour obtenir le nom du jeu
     const enVenteNames = new Set(
       (salePhotos || [])
-        .filter(p => p.status === 'En vente' && p.game_tag)
+        .filter(p => p.status === 'en_vente' && p.game_tag)
         .map(p => p.game_tag.split(' • ')[0].trim().toLowerCase())
     );
 
