@@ -75,7 +75,7 @@ export default function StockManager() {
         .from('transactions')
         .select('id, type, game_name, price, created_at')
         .eq('user_id', username)
-        .in('type', ['buy', 'sell', 'stock_add', 'game_ref'])
+        .in('type', ['buy', 'sell', 'stock_add', 'game_ref', 'stock_remove'])
         .order('created_at', { ascending: false });
 
       if (txErr) throw txErr;
@@ -127,6 +127,11 @@ export default function StockManager() {
   }, []);
 
   // ── Calcul du stock ─────────────────────────────────────────
+  //
+  //  canList (alerte amber) = stock confirmé > 0 ET aucune photo "En vente"
+  //    → l'alerte disparaît dès qu'une photo passe à "En vente" dans photos.js
+  //    → elle réapparaît si la photo passe à "En attente réception" / "Vendu" / supprimée
+  //
   const computeStock = () => {
     const now = Date.now();
     const LIMIT = INCOMING_DAYS * 24 * 60 * 60 * 1000;
@@ -140,6 +145,7 @@ export default function StockManager() {
           name: n,
           buys: 0,
           sells: 0,
+          manualRemovals: 0,
           incomingCount: 0,
           oldestIncomingDate: null,
           lastBuyDate: null,
@@ -151,49 +157,44 @@ export default function StockManager() {
 
       if (t.type === 'buy') {
         g.buys++;
-        const age = now - d.getTime();
-        if (age < LIMIT) {
+        if (now - d.getTime() < LIMIT) {
           g.incomingCount++;
-          if (!g.oldestIncomingDate || d < new Date(g.oldestIncomingDate)) {
+          if (!g.oldestIncomingDate || d < new Date(g.oldestIncomingDate))
             g.oldestIncomingDate = t.created_at;
-          }
         }
         if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
 
       } else if (t.type === 'stock_add') {
-        // Ajout manuel : compte immédiatement dans le stock confirmé
         g.buys++;
         if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
 
       } else if (t.type === 'sell') {
         g.sells++;
         if (!g.lastSellDate || d > new Date(g.lastSellDate)) g.lastSellDate = t.created_at;
+
+      } else if (t.type === 'stock_remove') {
+        g.manualRemovals++;
       }
-      // game_ref : juste pour l'autocomplétion, pas de stock
     });
 
-    // Jeux actuellement "En vente" dans sale_photos
-    const enVenteMap = {};
+    // Jeux avec au moins 1 photo strictement "En vente" dans sale_photos
+    const enVenteSet = new Set();
     (salePhotos || []).forEach(p => {
-      if (p.status === 'En vente' && p.game_tag) {
-        enVenteMap[p.game_tag] = (enVenteMap[p.game_tag] || 0) + 1;
-      }
+      if (p.status === 'En vente' && p.game_tag) enVenteSet.add(p.game_tag);
     });
 
     return Object.values(map)
       .map(g => {
-        const net = g.buys - g.sells;
+        const net            = g.buys - g.sells - g.manualRemovals;
         const confirmedStock = Math.max(0, net - g.incomingCount);
-        const enVenteCount = enVenteMap[g.name] || 0;
-        // Alerte : j'ai du stock ET rien n'est actuellement en vente
-        const canList = net > 0 && enVenteCount === 0;
-        // Jours restants avant que le plus ancien "en transit" soit confirmé
-        const daysLeft = g.oldestIncomingDate
+        const isEnVente      = enVenteSet.has(g.name);
+        const canList        = confirmedStock > 0 && !isEnVente;
+        const daysLeft       = g.oldestIncomingDate
           ? Math.max(0, INCOMING_DAYS - daysAgo(g.oldestIncomingDate))
           : null;
-        return { ...g, net, confirmedStock, enVenteCount, canList, daysLeft };
+        return { ...g, net, confirmedStock, isEnVente, canList, daysLeft };
       })
-      .filter(g => g.net > 0 || g.incomingCount > 0);
+      .filter(g => g.net > 0);
   };
 
   // ── Ajout manuel ─────────────────────────────────────────────
@@ -229,14 +230,33 @@ export default function StockManager() {
     }
   };
 
+  // ── Retrait manuel d'1 copie
+  const handleRemoveOne = async (gameName) => {
+    try {
+      const { error } = await supabase.from('transactions').insert({
+        user_id:   username,
+        type:      'stock_remove',
+        game_name: gameName,
+        price:     0,
+      });
+      if (error) throw error;
+      showToast('1 "' + gameName + '" retiré du stock');
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast('Erreur lors du retrait', 'error');
+    }
+  };
+
   // ── Données dérivées ─────────────────────────────────────────
   const stockItems = computeStock();
 
   const filteredItems = stockItems
     .filter(g => {
       if (search && !g.name.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filter === 'incoming')  return g.incomingCount > 0;
+      if (filter === 'en_vente')  return g.isEnVente;
       if (filter === 'available') return g.canList;
+      if (filter === 'incoming')  return g.incomingCount > 0;
       if (filter === 'low')       return g.net === 1;
       return true;
     })
@@ -252,6 +272,7 @@ export default function StockManager() {
     games:     stockItems.length,
     copies:    stockItems.reduce((s, g) => s + g.net, 0),
     incoming:  stockItems.reduce((s, g) => s + g.incomingCount, 0),
+    enVente:   stockItems.filter(g => g.isEnVente).length,
     available: stockItems.filter(g => g.canList).length,
   };
 
@@ -315,6 +336,7 @@ export default function StockManager() {
             { label: 'Copies totales',  value: kpis.copies,    icon: '📦', cls: 'text-blue-500' },
             { label: 'En transit',      value: kpis.incoming,  icon: '🚚', cls: 'text-orange-500' },
             { label: 'À mettre en vente', value: kpis.available, icon: '🏷️', cls: 'text-amber-500' },
+            { label: 'En vente',           value: kpis.enVente,   icon: '🟢', cls: 'text-green-500' },
           ].map(({ label, value, icon, cls }) => (
             <div key={label} className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
               <div className="text-xl mb-1">{icon}</div>
@@ -369,9 +391,10 @@ export default function StockManager() {
         <div className={`flex p-1 rounded-xl gap-1 ${dm ? 'bg-slate-800' : 'bg-gray-100'}`}>
           {[
             { id: 'all',       label: 'Tout' },
-            { id: 'incoming',  label: `🚚 Transit${kpis.incoming > 0 ? ` (${kpis.incoming})` : ''}` },
-            { id: 'available', label: `🏷️ À mettre en vente${kpis.available > 0 ? ` (${kpis.available})` : ''}` },
-            { id: 'low',       label: '⚠️ Stock bas' },
+            { id: 'available', label: 'À mettre en vente' + (kpis.available > 0 ? ' (' + kpis.available + ')' : '') },
+            { id: 'en_vente',  label: 'En vente' + (kpis.enVente > 0 ? ' (' + kpis.enVente + ')' : '') },
+            { id: 'incoming',  label: 'Transit' + (kpis.incoming > 0 ? ' (' + kpis.incoming + ')' : '') },
+            { id: 'low',       label: 'Stock bas' },
           ].map(f => (
             <button
               key={f.id}
@@ -446,13 +469,13 @@ export default function StockManager() {
                           🚚 {g.incomingCount} en transit
                         </span>
                       )}
-                      {g.enVenteCount > 0 && (
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                      {g.isEnVente && (
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
                           dm
-                            ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
-                            : 'bg-blue-50 text-blue-600 border-blue-200'
+                            ? 'bg-green-500/15 text-green-400 border-green-500/30'
+                            : 'bg-green-50 text-green-600 border-green-200'
                         }`}>
-                          🏷️ {g.enVenteCount} en vente
+                          🟢 En vente
                         </span>
                       )}
                       {g.confirmedStock > 0 && (
@@ -486,19 +509,28 @@ export default function StockManager() {
                     )}
                   </div>
 
-                  {/* Compteur stock */}
-                  <div className="flex-shrink-0 text-right">
+                  {/* Compteur stock + bouton retrait */}
+                  <div className="flex-shrink-0 flex flex-col items-center gap-2">
                     <div className={`text-4xl font-black leading-none ${
                       g.net >= 3 ? 'text-indigo-500' :
-                      g.net === 2 ? 'text-blue-500' :
+                      g.net === 2 ? 'text-blue-500'  :
                       g.net === 1 ? 'text-amber-500' :
                       dm ? 'text-slate-500' : 'text-gray-300'
                     }`}>
                       {g.net}
                     </div>
-                    <div className={`text-xs mt-0.5 ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <div className={`text-xs ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
                       {g.net > 1 ? 'copies' : 'copie'}
                     </div>
+                    <button
+                      onClick={() => handleRemoveOne(g.name)}
+                      title="Retirer 1 du stock"
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg font-bold transition border ${
+                        dm
+                          ? 'border-slate-600 hover:border-red-500 hover:bg-red-900/30 text-slate-400 hover:text-red-400'
+                          : 'border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-400 hover:text-red-500'
+                      }`}
+                    >−</button>
                   </div>
                 </div>
               </div>
