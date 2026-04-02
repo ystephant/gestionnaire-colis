@@ -370,7 +370,7 @@ export default function StockManager() {
           {[
             { id: 'all',       label: 'Tout' },
             { id: 'incoming',  label: `🚚 Transit${kpis.incoming > 0 ? ` (${kpis.incoming})` : ''}` },
-            { id: 'available', label: `🏷️ À vendre${kpis.available > 0 ? ` (${kpis.available})` : ''}` },
+            { id: 'available', label: `🏷️ À mettre en vente${kpis.available > 0 ? ` (${kpis.available})` : ''}` },
             { id: 'low',       label: '⚠️ Stock bas' },
           ].map(f => (
             <button
