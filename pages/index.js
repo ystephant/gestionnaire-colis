@@ -317,6 +317,24 @@ export default function MenuPrincipal() {
                           Imprimer des étiquettes
                         </button>
 
+                        {/* 🔒 Masquage PDF */}
+                        <button
+                          onClick={() => { setSettingsOpen(false); router.push('/masquage-pdf'); }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors duration-150 ${
+                            darkMode
+                              ? 'text-gray-300 hover:bg-gray-700'
+                              : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <rect x="8" y="12" width="8" height="2"></rect>
+                            <rect x="8" y="16" width="8" height="2"></rect>
+                          </svg>
+                          Masquage PDF
+                        </button>
+
                         {/* Emplacement pour futurs menus */}
                       </div>
                     </>
@@ -511,18 +529,17 @@ export default function MenuPrincipal() {
                 ),
               },
               {
-                path: '/masquage-pdf',
-                title: 'Masquage PDF',
-                description: 'Masquez les informations sensibles sur vos étiquettes',
-                gradient: 'from-red-500 to-orange-600',
-                tags: [{ label: '📄 PDF', bg: 'bg-red-100', text: 'text-red-700' }, { label: '🔒 Confidentialité', bg: 'bg-orange-100', text: 'text-orange-700' }],
+                path: '/stock',
+                title: 'Gestion de Stock',
+                description: 'Suivez votre stock de jeux, gérez les achats, ventes et jeux en cours de mise en vente',
+                gradient: 'from-indigo-500 to-blue-600',
+                tags: [{ label: '📦 Stock', bg: 'bg-indigo-100', text: 'text-indigo-700' }, { label: '📊 Suivi', bg: 'bg-blue-100', text: 'text-blue-700' }],
                 badge: null,
                 icon: (size) => (
                   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <rect x="8" y="12" width="8" height="2" fill="white"></rect>
-                    <rect x="8" y="16" width="8" height="2" fill="white"></rect>
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
                   </svg>
                 ),
               },
