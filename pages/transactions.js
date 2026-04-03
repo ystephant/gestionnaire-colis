@@ -73,6 +73,12 @@ export default function TransactionsTracker() {
       return cleanup;
     }
   }, [isLoggedIn, username]);
+
+  useEffect(() => {
+    if (router.query.search) {
+      setGameSearch(router.query.search);
+    }
+  }, [router.query.search]);
   
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
