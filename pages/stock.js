@@ -266,7 +266,7 @@ export default function StockManager() {
           n.includes(nameLow) || nameLow.includes(n)
         );
 
-        return { ...g, incomingCount, daysLeft, incompletCount, net, confirmedStock, isEnVente, canList, hasTxLooseMatch };
+        return { ...g, incomingCount, daysLeft, incompletCount, net, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
       })
       .filter(g => g.net > 0);
   };
@@ -377,7 +377,7 @@ export default function StockManager() {
     games:     stockItems.length,
     copies:    stockItems.reduce((s, g) => s + g.net, 0),
     incoming:  stockItems.reduce((s, g) => s + g.incomingCount, 0),
-    enVente:   stockItems.filter(g => g.isEnVente).length,
+    enVente:   stockItems.reduce((sum, g) => sum + (g.enVenteCopies || 0), 0),
     available: stockItems.filter(g => g.canList).length,
   };
 
@@ -597,7 +597,7 @@ export default function StockManager() {
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         {g.isEnVente && (
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-green-500/15 text-green-400 border-green-500/30' : 'bg-green-50 text-green-600 border-green-200'}`}>🟢 En vente</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-green-500/15 text-green-400 border-green-500/30' : 'bg-green-50 text-green-600 border-green-200'}`}>🟢 En vente{g.enVenteCopies > 1 ? ` (×${g.enVenteCopies})` : ''}</span>
                         )}
                         {g.incomingCount > 0 && (
                           <div className="flex items-center gap-1">
