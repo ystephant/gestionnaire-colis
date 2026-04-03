@@ -54,6 +54,7 @@ export default function StockManager() {
   const [search,         setSearch]         = useState('');
   const [showSearchSugg, setShowSearchSugg] = useState(false);
   const [filter,         setFilter]         = useState('all');
+  const [sortMode,       setSortMode]       = useState('smart');
   const [toast,          setToast]          = useState(null);
 
   // ── Modal ajout manuel ───────────────────────────────────────
@@ -199,20 +200,31 @@ export default function StockManager() {
       }
     });
 
+    // Index souple des noms de transaction (pour le bouton 📋)
+    const allTxNamesLow = (transactions || [])
+      .filter(t => t.game_name && !isLot(t.game_name))
+      .map(t => baseNameLow(t.game_name));
+
     // Nombre d'incomplets par jeu
     const incompleteMap = {};
     (incompleteGames || []).forEach(i => {
       incompleteMap[i.game_name] = (incompleteMap[i.game_name] || 0) + 1;
     });
 
-    // Photos en vente : compter le nombre de photos par jeu (gère les multiples exemplaires)
-    const enVenteCount = {};
+    // Photos en vente : compter les DOSSIERS distincts par jeu (game_tag distinct = 1 dossier)
+    // Plusieurs photos peuvent avoir le même game_tag → on déduplique par game_tag
+    const enVenteTagsPerName = {};
     (salePhotos || [])
       .filter(p => p.status === 'en_vente' && p.game_tag)
       .forEach(p => {
         const key = baseNameLow(p.game_tag.split(' \u2022 ')[0].trim());
-        enVenteCount[key] = (enVenteCount[key] || 0) + 1;
+        if (!enVenteTagsPerName[key]) enVenteTagsPerName[key] = new Set();
+        enVenteTagsPerName[key].add(p.game_tag);
       });
+    const enVenteCount = {};
+    Object.entries(enVenteTagsPerName).forEach(([key, tags]) => {
+      enVenteCount[key] = tags.size;
+    });
 
     // Injecter les jeux "en vente" dans Photos sans aucune transaction
     // (jeux acquis avant l'app, reçus, etc.)
@@ -249,7 +261,12 @@ export default function StockManager() {
         const confirmedStock = Math.max(0, net - incomingCount);
         const canList        = confirmedStock > 0 && !isEnVente;
 
-        return { ...g, incomingCount, daysLeft, incompletCount, net, confirmedStock, isEnVente, canList };
+        const nameLow          = baseNameLow(g.name);
+        const hasTxLooseMatch  = allTxNamesLow.some(n =>
+          n.includes(nameLow) || nameLow.includes(n)
+        );
+
+        return { ...g, incomingCount, daysLeft, incompletCount, net, confirmedStock, isEnVente, canList, hasTxLooseMatch };
       })
       .filter(g => g.net > 0);
   };
@@ -347,6 +364,8 @@ export default function StockManager() {
       return true;
     })
     .sort((a, b) => {
+      if (sortMode === 'desc') return b.net - a.net;
+      // Tri intelligent (défaut) : à mettre en vente → en transit → quantité desc
       if (a.canList && !b.canList)                       return -1;
       if (!a.canList && b.canList)                       return 1;
       if (a.incomingCount > 0 && b.incomingCount === 0) return -1;
@@ -426,11 +445,11 @@ export default function StockManager() {
       }`}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-2">
           <button
-            onClick={() => router.push('/transactions')}
+            onClick={() => router.push('/')}
             className={`flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium transition ${
               dm ? 'hover:bg-slate-700 text-slate-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-900'
             }`}
-          >← Transactions</button>
+          >← Accueil</button>
 
           <div className="flex-1 text-center">
             <span className="text-base font-bold">📦 Gestion de stock</span>
@@ -474,8 +493,8 @@ export default function StockManager() {
             ].map(({ label, value, icon, cls }) => (
               <div key={label} className={`rounded-xl p-2.5 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
                 <div className="text-base mb-0.5">{icon}</div>
-                <div className={`text-lg font-black leading-none ${cls}`}>{value}</div>
-                <div className={`text-[10px] mt-0.5 leading-tight ${dm ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
+                <div className={`text-2xl font-black leading-none ${cls}`}>{value}</div>
+                <div className={`text-xs mt-1 leading-tight font-medium ${dm ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
               </div>
             ))}
           </div>
@@ -511,25 +530,38 @@ export default function StockManager() {
             )}
           </div>
 
-          {/* Filtres */}
-          <div className={`flex p-1 rounded-xl gap-1 ${dm ? 'bg-slate-800' : 'bg-gray-100'}`}>
-            {[
-              { id: 'all',       label: 'Tout' },
-              { id: 'available', label: `🏷️ À vendre${kpis.available > 0 ? ' (' + kpis.available + ')' : ''}` },
-              { id: 'en_vente',  label: `🟢 En vente${kpis.enVente > 0 ? ' (' + kpis.enVente + ')' : ''}` },
-              { id: 'incoming',  label: `🚚 Transit${kpis.incoming > 0 ? ' (' + kpis.incoming + ')' : ''}` },
-              { id: 'low',       label: '⚠️ Stock bas' },
-            ].map(f => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className={`flex-1 py-2 px-1 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
-                  filter === f.id
-                    ? 'bg-indigo-600 text-white shadow'
-                    : dm ? 'text-slate-400 hover:text-white' : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >{f.label}</button>
-            ))}
+          {/* Filtres + tri */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            {/* Filtres scrollables sur mobile */}
+            <div className={`flex p-1 rounded-xl gap-1 overflow-x-auto scrollbar-none flex-1 ${dm ? 'bg-slate-800' : 'bg-gray-100'}`}>
+              {[
+                { id: 'all',       label: 'Tout' },
+                { id: 'available', label: `🏷️ À vendre${kpis.available > 0 ? ' (' + kpis.available + ')' : ''}` },
+                { id: 'en_vente',  label: `🟢 En vente${kpis.enVente > 0 ? ' (' + kpis.enVente + ')' : ''}` },
+                { id: 'incoming',  label: `🚚 Transit${kpis.incoming > 0 ? ' (' + kpis.incoming + ')' : ''}` },
+                { id: 'low',       label: '⚠️ Stock bas' },
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={`flex-shrink-0 py-2 px-3 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+                    filter === f.id
+                      ? 'bg-indigo-600 text-white shadow'
+                      : dm ? 'text-slate-400 hover:text-white' : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >{f.label}</button>
+              ))}
+            </div>
+            {/* Tri par quantité */}
+            <button
+              onClick={() => setSortMode(m => m === 'smart' ? 'desc' : 'smart')}
+              title={sortMode === 'desc' ? 'Tri : quantité décroissante' : 'Tri : intelligent'}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition whitespace-nowrap ${
+                sortMode === 'desc'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : dm ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-gray-100 text-gray-500 hover:text-gray-800'
+              }`}
+            >📊 {sortMode === 'desc' ? 'Qté ↓' : 'Tri auto'}</button>
           </div>
 
           {/* Liste */}
@@ -584,8 +616,8 @@ export default function StockManager() {
                       </div>
                     </div>
 
-                    {/* Bouton discret → transactions */}
-                    {(g.buys > 0 || g.sells > 0) && (
+                    {/* Bouton discret → transactions (match non-strict) */}
+                    {g.hasTxLooseMatch && (
                       <button
                         onClick={() => router.push('/transactions?search=' + encodeURIComponent(g.name))}
                         title="Voir dans les transactions"
