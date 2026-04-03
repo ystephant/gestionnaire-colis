@@ -342,12 +342,18 @@ export default function StockManager() {
   };
 
   // Jeux "en vente" dans photos mais sans transaction d'achat correspondante
-  const stockNameSet = new Set(stockItems.map(g => baseNameLow(g.name)));
+  // On utilise TOUS les jeux ayant eu au moins un achat (pas seulement ceux avec net > 0)
+  // pour éviter de faussement signaler des jeux achetés puis revendus (net = 0)
+  const everBoughtNames = new Set(
+    (transactions || [])
+      .filter(t => (t.type === 'buy' || t.type === 'stock_add') && t.game_name && !isLot(t.game_name))
+      .map(t => baseNameLow(baseName(t.game_name)))
+  );
   const orphanEnVente = [...new Set(
     (salePhotos || [])
       .filter(p => p.status === 'en_vente' && p.game_tag)
       .map(p => p.game_tag.split(' • ')[0].trim())
-  )].filter(name => !stockNameSet.has(baseNameLow(name)))
+  )].filter(name => !everBoughtNames.has(baseNameLow(name)))
     .sort((a, b) => a.localeCompare(b, 'fr'));
 
   const filteredInc = (incompleteGames || []).filter(i =>
