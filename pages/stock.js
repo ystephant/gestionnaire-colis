@@ -209,8 +209,24 @@ export default function StockManager() {
     const enVenteNames = new Set(
       (salePhotos || [])
         .filter(p => p.status === 'en_vente' && p.game_tag)
-        .map(p => baseNameLow(p.game_tag.split(' • ')[0].trim()))
+        .map(p => baseNameLow(p.game_tag.split(' \u2022 ')[0].trim()))
     );
+
+    // Injecter les jeux "en vente" dans Photos sans aucune transaction
+    // (jeux acquis avant l'app, reçus, etc.)
+    (salePhotos || [])
+      .filter(p => p.status === 'en_vente' && p.game_tag)
+      .forEach(p => {
+        const name = baseName(p.game_tag.split(' \u2022 ')[0].trim());
+        if (!map[name]) {
+          map[name] = {
+            name, buys: 0, sells: 0,
+            manualRemovals: 0,
+            incomingBuys: [],
+            lastBuyDate: null, lastSellDate: null,
+          };
+        }
+      });
 
     return Object.values(map)
       .map(g => {
@@ -223,9 +239,11 @@ export default function StockManager() {
 
         const incompletCount = incompleteMap[g.name] || 0;
         const netRaw         = g.buys - g.sells - g.manualRemovals - incompletCount;
-        const net            = Math.max(0, netRaw);
-        const confirmedStock = Math.max(0, net - incomingCount);
         const isEnVente      = enVenteNames.has(baseNameLow(g.name));
+        // Si en vente dans Photos, garantir au moins 1 en stock
+        // (couvre jeux pré-app sans achat, et jeux achetés/revendus avec net=0)
+        const net            = Math.max(isEnVente ? 1 : 0, netRaw);
+        const confirmedStock = Math.max(0, net - incomingCount);
         const canList        = confirmedStock > 0 && !isEnVente;
 
         return { ...g, incomingCount, daysLeft, incompletCount, net, confirmedStock, isEnVente, canList };
@@ -341,19 +359,15 @@ export default function StockManager() {
     available: stockItems.filter(g => g.canList).length,
   };
 
-  // Jeux "en vente" dans photos mais sans transaction d'achat correspondante
-  // On utilise TOUS les jeux ayant eu au moins un achat (pas seulement ceux avec net > 0)
-  // pour éviter de faussement signaler des jeux achetés puis revendus (net = 0)
-  const everBoughtNames = new Set(
-    (transactions || [])
-      .filter(t => (t.type === 'buy' || t.type === 'stock_add') && t.game_name && !isLot(t.game_name))
-      .map(t => baseNameLow(baseName(t.game_name)))
-  );
+  // Jeux "en vente" dans Photos mais absents du stock calculé
+  // Désormais tous les jeux en vente sont injectés dans computeStock(),
+  // donc ce tableau devrait toujours être vide — conservé pour rétrocompat.
+  const stockNameSet = new Set(stockItems.map(g => baseNameLow(g.name)));
   const orphanEnVente = [...new Set(
     (salePhotos || [])
       .filter(p => p.status === 'en_vente' && p.game_tag)
       .map(p => p.game_tag.split(' • ')[0].trim())
-  )].filter(name => !everBoughtNames.has(baseNameLow(name)))
+  )].filter(name => !stockNameSet.has(baseNameLow(name)))
     .sort((a, b) => a.localeCompare(b, 'fr'));
 
   const filteredInc = (incompleteGames || []).filter(i =>
