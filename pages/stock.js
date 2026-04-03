@@ -692,7 +692,6 @@ export default function StockManager() {
               ))}
             </div>
           )}
-        </div>
 
           {/* Jeux en vente dans photos mais absents du stock */}
           {orphanEnVente.length > 0 && (
@@ -717,6 +716,7 @@ export default function StockManager() {
               </div>
             </div>
           )}
+        </div>
       )}
 
       {/* ── Modal ajout manuel ──────────────────────────────────── */}
