@@ -25,6 +25,16 @@ const daysAgo = (dateStr) => {
 // Exclure les jeux dont le nom contient "lot" (achat groupé, revente à l'unité)
 const isLot = (name) => /\blot\b/i.test(name || '');
 
+// Normalisation du nom pour le regroupement :
+//   'Detective Club + Extension' → 'Detective Club'
+//   Matching strict sinon : 'Azul les Vitraux' ≠ 'Azul'
+const baseName    = (name) => {
+  if (!name) return '';
+  const plusIdx = name.indexOf(' +');
+  return (plusIdx !== -1 ? name.slice(0, plusIdx) : name).trim();
+};
+const baseNameLow = (name) => baseName(name).toLowerCase();
+
 export default function StockManager() {
   const router = useRouter();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -88,7 +98,7 @@ export default function StockManager() {
           .from('transactions')
           .select('id, type, game_name, price, created_at')
           .eq('user_id', username)
-          .in('type', ['buy', 'sell', 'stock_add', 'game_ref', 'stock_remove', 'stock_arrival'])
+          .in('type', ['buy', 'sell', 'stock_add', 'game_ref', 'stock_remove'])
           .order('created_at', { ascending: false }),
         supabase
           .from('sale_photos')
@@ -110,7 +120,7 @@ export default function StockManager() {
       setIncompleteGames(incRes.data || []);
 
       const names = [...new Set(
-        (txRes.data || []).map(t => t.game_name).filter(n => n && !isLot(n))
+        (txRes.data || []).map(t => t.game_name).filter(n => n && !isLot(n)).map(n => baseName(n))
       )].sort((a, b) => a.localeCompare(b, 'fr'));
       setAllGameNames(names);
     } catch (err) {
@@ -158,12 +168,13 @@ export default function StockManager() {
 
     (transactions || []).forEach(t => {
       if (!t.game_name || isLot(t.game_name)) return;
-      const n = t.game_name;
+      // Clé = nom de base (avant ' +'), strict sinon
+      const n = baseName(t.game_name);
       if (!map[n]) {
         map[n] = {
           name: n, buys: 0, sells: 0,
-          manualRemovals: 0, arrivals: 0,
-          incomingBuys: [], // dates des achats < 10j, pour les annuler avec arrivals
+          manualRemovals: 0,
+          incomingBuys: [],
           lastBuyDate: null, lastSellDate: null,
         };
       }
@@ -185,9 +196,6 @@ export default function StockManager() {
 
       } else if (t.type === 'stock_remove') {
         g.manualRemovals++;
-
-      } else if (t.type === 'stock_arrival') {
-        g.arrivals++;
       }
     });
 
@@ -201,26 +209,23 @@ export default function StockManager() {
     const enVenteNames = new Set(
       (salePhotos || [])
         .filter(p => p.status === 'en_vente' && p.game_tag)
-        .map(p => p.game_tag.split(' \u2022 ')[0].trim().toLowerCase())
+        .map(p => baseNameLow(p.game_tag.split(' • ')[0].trim()))
     );
 
     return Object.values(map)
       .map(g => {
-        // Transit réel = achats récents - arrivées confirmées manuellement
-        const incomingCount = Math.max(0, g.incomingBuys.length - g.arrivals);
-
-        // Ancienneté du plus vieux transit encore actif
+        const incomingCount = g.incomingBuys.length;
         const sortedIncoming = [...g.incomingBuys].sort((a, b) => a - b);
-        const oldestActiveIncoming = sortedIncoming[g.arrivals] || null;
-        const daysLeft = oldestActiveIncoming
-          ? Math.max(0, INCOMING_DAYS - Math.floor((now - oldestActiveIncoming.getTime()) / 86400000))
+        const oldestIncoming = sortedIncoming[0] || null;
+        const daysLeft = oldestIncoming
+          ? Math.max(0, INCOMING_DAYS - Math.floor((now - oldestIncoming.getTime()) / 86400000))
           : null;
 
         const incompletCount = incompleteMap[g.name] || 0;
         const netRaw         = g.buys - g.sells - g.manualRemovals - incompletCount;
         const net            = Math.max(0, netRaw);
         const confirmedStock = Math.max(0, net - incomingCount);
-        const isEnVente      = enVenteNames.has(g.name.trim().toLowerCase());
+        const isEnVente      = enVenteNames.has(baseNameLow(g.name));
         const canList        = confirmedStock > 0 && !isEnVente;
 
         return { ...g, incomingCount, daysLeft, incompletCount, net, confirmedStock, isEnVente, canList };
@@ -278,33 +283,18 @@ export default function StockManager() {
     } catch (err) { showToast("Erreur lors de l'ajout", 'error'); }
   };
 
-  // Confirmer l'arrivée d'1 jeu en transit
-  const handleArrived = async (gameName) => {
-    try {
-      const { error } = await supabase.from('transactions').insert({
-        user_id: username, type: 'stock_arrival', game_name: gameName, price: 0,
-      });
-      if (error) throw error;
-      showToast(`"${gameName}" marqué comme arrivé ✅`);
-      await loadData();
-    } catch (err) { showToast("Erreur lors de la confirmation", 'error'); }
-  };
-
   // Déplacer 1 copie vers incomplet
   const handleMoveToIncomplete = async () => {
     if (!incModalGame) return;
     setIncModalLoading(true);
     try {
-      const [incRes, rmRes] = await Promise.all([
-        supabase.from('stock_incomplete').insert({
-          user_id: username, game_name: incModalGame, missing_items: incModalText.trim(),
-        }),
-        supabase.from('transactions').insert({
-          user_id: username, type: 'stock_remove', game_name: incModalGame, price: 0,
-        }),
-      ]);
-      if (incRes.error) throw incRes.error;
-      if (rmRes.error)  throw rmRes.error;
+      // On insère uniquement dans stock_incomplete.
+      // La déduction du stock se fait via incompletCount dans computeStock.
+      // Pas de stock_remove pour éviter la double déduction.
+      const { error } = await supabase.from('stock_incomplete').insert({
+        user_id: username, game_name: incModalGame, missing_items: incModalText.trim(),
+      });
+      if (error) throw error;
       showToast(`"${incModalGame}" déplacé vers Incomplets`);
       setShowIncModal(false); setIncModalGame(''); setIncModalText('');
       await loadData();
@@ -350,6 +340,15 @@ export default function StockManager() {
     enVente:   stockItems.filter(g => g.isEnVente).length,
     available: stockItems.filter(g => g.canList).length,
   };
+
+  // Jeux "en vente" dans photos mais sans transaction d'achat correspondante
+  const stockNameSet = new Set(stockItems.map(g => baseNameLow(g.name)));
+  const orphanEnVente = [...new Set(
+    (salePhotos || [])
+      .filter(p => p.status === 'en_vente' && p.game_tag)
+      .map(p => p.game_tag.split(' • ')[0].trim())
+  )].filter(name => !stockNameSet.has(baseNameLow(name)))
+    .sort((a, b) => a.localeCompare(b, 'fr'));
 
   const filteredInc = (incompleteGames || []).filter(i =>
     !searchInc || i.game_name.toLowerCase().includes(searchInc.toLowerCase())
@@ -443,8 +442,8 @@ export default function StockManager() {
           {/* KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Jeux uniques',      value: kpis.games,     icon: '🎲', cls: 'text-indigo-500' },
-              { label: 'Copies totales',    value: kpis.copies,    icon: '📦', cls: 'text-blue-500'   },
+              { label: 'Références',          value: kpis.games,     icon: '🎲', cls: 'text-indigo-500' },
+              { label: 'Exemplaires',          value: kpis.copies,    icon: '📦', cls: 'text-blue-500'   },
               { label: 'En transit',        value: kpis.incoming,  icon: '🚚', cls: 'text-orange-500' },
               { label: 'À mettre en vente', value: kpis.available, icon: '🏷️', cls: 'text-amber-500'  },
               { label: 'En vente',          value: kpis.enVente,   icon: '🟢', cls: 'text-green-500'  },
@@ -550,23 +549,10 @@ export default function StockManager() {
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
                               🚚 {g.incomingCount} en transit{g.daysLeft > 0 ? ` (~${g.daysLeft}j)` : ''}
                             </span>
-                            {/* Bouton "Arrivé" */}
-                            <button
-                              onClick={() => handleArrived(g.name)}
-                              title="Marquer 1 comme arrivé"
-                              className={`px-2 py-0.5 rounded-full text-xs font-semibold border transition ${
-                                dm
-                                  ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/30'
-                                  : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100'
-                              }`}
-                            >✅ Arrivé</button>
+
                           </div>
                         )}
-                        {g.confirmedStock > 0 && (
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-slate-600/40 text-slate-300 border-slate-600' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
-                            ✅ {g.confirmedStock} dispo
-                          </span>
-                        )}
+
                         {g.incompletCount > 0 && (
                           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' : 'bg-rose-50 text-rose-500 border-rose-200'}`}>
                             🧩 {g.incompletCount} incomplet{g.incompletCount > 1 ? 's' : ''}
@@ -630,7 +616,7 @@ export default function StockManager() {
             <div className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
               <div className="text-xl mb-1">🎲</div>
               <div className="text-2xl font-black text-indigo-500">{kpis.copies}</div>
-              <div className={`text-xs mt-0.5 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Jeux complets en stock</div>
+              <div className={`text-xs mt-0.5 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Exemplaires complets</div>
             </div>
             <div className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
               <div className="text-xl mb-1">🧩</div>
@@ -707,6 +693,30 @@ export default function StockManager() {
             </div>
           )}
         </div>
+
+          {/* Jeux en vente dans photos mais absents du stock */}
+          {orphanEnVente.length > 0 && (
+            <div className={`rounded-2xl overflow-hidden shadow-sm ${dm ? 'bg-slate-800/60 border border-slate-700' : 'bg-amber-50 border border-amber-200'}`}>
+              <div className={`px-4 py-3 border-b flex items-start gap-2 ${dm ? 'border-slate-700' : 'border-amber-200'}`}>
+                <span className="text-base mt-0.5">⚠️</span>
+                <div>
+                  <span className={`font-bold text-sm ${dm ? 'text-amber-300' : 'text-amber-800'}`}>
+                    {orphanEnVente.length} jeu{orphanEnVente.length > 1 ? 'x' : ''} en vente sans stock renseigné
+                  </span>
+                  <p className={`text-xs mt-0.5 ${dm ? 'text-slate-400' : 'text-amber-600'}`}>
+                    Ces jeux apparaissent "En vente" dans Photos mais n'ont pas de transaction d'achat enregistrée.
+                  </p>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex flex-wrap gap-2">
+                {orphanEnVente.map(name => (
+                  <span key={name} className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                    dm ? 'bg-slate-700 text-slate-300' : 'bg-white text-amber-800 border border-amber-200'
+                  }`}>{name}</span>
+                ))}
+              </div>
+            </div>
+          )}
       )}
 
       {/* ── Modal ajout manuel ──────────────────────────────────── */}
