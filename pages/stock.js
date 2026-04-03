@@ -205,12 +205,14 @@ export default function StockManager() {
       incompleteMap[i.game_name] = (incompleteMap[i.game_name] || 0) + 1;
     });
 
-    // Photos en vente : extraire le nom avant " • "
-    const enVenteNames = new Set(
-      (salePhotos || [])
-        .filter(p => p.status === 'en_vente' && p.game_tag)
-        .map(p => baseNameLow(p.game_tag.split(' \u2022 ')[0].trim()))
-    );
+    // Photos en vente : compter le nombre de photos par jeu (gère les multiples exemplaires)
+    const enVenteCount = {};
+    (salePhotos || [])
+      .filter(p => p.status === 'en_vente' && p.game_tag)
+      .forEach(p => {
+        const key = baseNameLow(p.game_tag.split(' \u2022 ')[0].trim());
+        enVenteCount[key] = (enVenteCount[key] || 0) + 1;
+      });
 
     // Injecter les jeux "en vente" dans Photos sans aucune transaction
     // (jeux acquis avant l'app, reçus, etc.)
@@ -239,10 +241,11 @@ export default function StockManager() {
 
         const incompletCount = incompleteMap[g.name] || 0;
         const netRaw         = g.buys - g.sells - g.manualRemovals - incompletCount;
-        const isEnVente      = enVenteNames.has(baseNameLow(g.name));
-        // Si en vente dans Photos, garantir au moins 1 en stock
-        // (couvre jeux pré-app sans achat, et jeux achetés/revendus avec net=0)
-        const net            = Math.max(isEnVente ? 1 : 0, netRaw);
+        const enVenteCopies  = enVenteCount[baseNameLow(g.name)] || 0;
+        const isEnVente      = enVenteCopies > 0;
+        // Si en vente dans Photos, garantir au moins autant d'exemplaires que de photos
+        // (couvre jeux pré-app sans achat, multiples copies en vente, net=0 après revente)
+        const net            = Math.max(enVenteCopies, netRaw);
         const confirmedStock = Math.max(0, net - incomingCount);
         const canList        = confirmedStock > 0 && !isEnVente;
 
@@ -459,20 +462,20 @@ export default function StockManager() {
       {activeTab === 'stock' && (
         <div className="max-w-4xl mx-auto px-4 py-5 space-y-5">
 
-          {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* KPI Cards — 6 tuiles sur une ligne */}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {[
-              { label: 'Références',          value: kpis.games,     icon: '🎲', cls: 'text-indigo-500' },
-              { label: 'Exemplaires',          value: kpis.copies,    icon: '📦', cls: 'text-blue-500'   },
-              { label: 'En transit',        value: kpis.incoming,  icon: '🚚', cls: 'text-orange-500' },
-              { label: 'À mettre en vente', value: kpis.available, icon: '🏷️', cls: 'text-amber-500'  },
-              { label: 'En vente',          value: kpis.enVente,   icon: '🟢', cls: 'text-green-500'  },
-              { label: 'Incomplets',        value: (incompleteGames || []).length, icon: '🧩', cls: 'text-rose-500' },
+              { label: 'Références',    value: kpis.games,     icon: '🎲', cls: 'text-indigo-500' },
+              { label: 'Exemplaires',   value: kpis.copies,    icon: '📦', cls: 'text-blue-500'   },
+              { label: 'En transit',    value: kpis.incoming,  icon: '🚚', cls: 'text-orange-500' },
+              { label: 'À vendre',      value: kpis.available, icon: '🏷️', cls: 'text-amber-500'  },
+              { label: 'En vente',      value: kpis.enVente,   icon: '🟢', cls: 'text-green-500'  },
+              { label: 'Incomplets',    value: (incompleteGames || []).length, icon: '🧩', cls: 'text-rose-500' },
             ].map(({ label, value, icon, cls }) => (
-              <div key={label} className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
-                <div className="text-xl mb-1">{icon}</div>
-                <div className={`text-2xl font-black ${cls}`}>{value}</div>
-                <div className={`text-xs mt-0.5 leading-tight ${dm ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
+              <div key={label} className={`rounded-xl p-2.5 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
+                <div className="text-base mb-0.5">{icon}</div>
+                <div className={`text-lg font-black leading-none ${cls}`}>{value}</div>
+                <div className={`text-[10px] mt-0.5 leading-tight ${dm ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
               </div>
             ))}
           </div>
@@ -580,6 +583,17 @@ export default function StockManager() {
                         )}
                       </div>
                     </div>
+
+                    {/* Bouton discret → transactions */}
+                    {(g.buys > 0 || g.sells > 0) && (
+                      <button
+                        onClick={() => router.push('/transactions?search=' + encodeURIComponent(g.name))}
+                        title="Voir dans les transactions"
+                        className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition ${
+                          dm ? 'text-slate-600 hover:text-indigo-400 hover:bg-indigo-900/20' : 'text-gray-300 hover:text-indigo-500 hover:bg-indigo-50'
+                        }`}
+                      >📋</button>
+                    )}
 
                     {/* Bouton discret → incomplet */}
                     <button
