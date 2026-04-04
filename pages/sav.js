@@ -60,6 +60,7 @@ export default function SAVJeux() {
   const [availableEditors, setAvailableEditors] = useState([]);
   const [availableGames, setAvailableGames] = useState([]);
   const [saveMessage, setSaveMessage] = useState('');
+  const [sortBy, setSortBy] = useState('game'); // 'game' | 'editor'
 
   // États pour l'édition
   const [editingGame, setEditingGame] = useState(null);
@@ -81,7 +82,7 @@ export default function SAVJeux() {
 
   useEffect(() => {
     applyFilters();
-  }, [savGames, searchFilter, editorFilter, gameFilter]);
+  }, [savGames, searchFilter, editorFilter, gameFilter, sortBy]);
 
   // Auto-remplir l'URL si l'éditeur existe déjà
   useEffect(() => {
@@ -219,7 +220,11 @@ export default function SAVJeux() {
       filtered = filtered.filter(game => game.game_name === gameFilter);
     }
 
-    setFilteredGames(filtered);
+    setFilteredGames(filtered.sort((a, b) =>
+      sortBy === 'editor'
+        ? normalizeString(a.editor).localeCompare(normalizeString(b.editor)) || normalizeString(a.game_name).localeCompare(normalizeString(b.game_name))
+        : normalizeString(a.game_name).localeCompare(normalizeString(b.game_name))
+    ));
   };
 
   const handleGameSearch = (value) => {
@@ -659,9 +664,33 @@ export default function SAVJeux() {
 
         {/* Liste des jeux en tuiles */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mt-6 transition-colors duration-300`}>
-          <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-6`}>
-            📋 Liste des SAV ({filteredGames.length})
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+              📋 Liste des SAV ({filteredGames.length})
+            </h2>
+            <div className={`flex items-center gap-1 p-1 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+              <button
+                onClick={() => setSortBy('game')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  sortBy === 'game'
+                    ? 'bg-cyan-600 text-white shadow'
+                    : darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🎲 Par jeu
+              </button>
+              <button
+                onClick={() => setSortBy('editor')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  sortBy === 'editor'
+                    ? 'bg-cyan-600 text-white shadow'
+                    : darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🏢 Par éditeur
+              </button>
+            </div>
+          </div>
 
           {filteredGames.length === 0 ? (
             <div className="text-center py-12">
@@ -672,45 +701,59 @@ export default function SAVJeux() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex flex-col divide-y divide-gray-200 dark:divide-gray-700">
               {filteredGames.map((game) => (
                 <div
                   key={game.id}
-                  onClick={() => handleCardClick(game.sav_url)}
-                  className={`relative p-6 rounded-xl bg-gradient-to-br ${getEditorColor(game.editor)} text-white shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer transform hover:scale-105`}
+                  className={`flex items-center justify-between py-4 px-2 hover:rounded-xl transition-colors duration-150 ${
+                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-cyan-50'
+                  }`}
                 >
-                  {/* Boutons en haut à droite */}
-                  <div className="absolute top-3 right-3 flex gap-2">
+                  {/* Infos du jeu — cliquable pour ouvrir le SAV */}
+                  <div
+                    onClick={() => handleCardClick(game.sav_url)}
+                    className="flex flex-col cursor-pointer flex-1 min-w-0 mr-4"
+                  >
+                    <span className={`text-xl font-bold truncate ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                      {game.game_name}
+                    </span>
+                    <span className={`text-sm mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {game.editor}
+                    </span>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={(e) => handleEdit(game, e)}
-                      className="p-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition backdrop-blur-sm"
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                        darkMode
+                          ? 'bg-gray-700 text-cyan-400 hover:bg-cyan-900 hover:text-cyan-300'
+                          : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
+                      }`}
                       title="Modifier"
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                       </svg>
+                      Modifier
                     </button>
                     <button
                       onClick={(e) => handleDelete(game.id, e)}
-                      className="p-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition backdrop-blur-sm"
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                        darkMode
+                          ? 'bg-gray-700 text-red-400 hover:bg-red-900 hover:text-red-300'
+                          : 'bg-red-50 text-red-600 hover:bg-red-100'
+                      }`}
                       title="Supprimer"
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3 6 5 6 21 6"></polyline>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                       </svg>
+                      Supprimer
                     </button>
-                  </div>
-
-                  {/* Nom du jeu au centre */}
-                  <div className="text-center mt-4">
-                    <h3 className="text-2xl font-bold mb-2">
-                      {game.game_name}
-                    </h3>
-                    <p className="text-sm opacity-90">
-                      {game.editor}
-                    </p>
                   </div>
                 </div>
               ))}
