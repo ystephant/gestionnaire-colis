@@ -712,12 +712,12 @@ export default function SAVJeux() {
                   {/* Infos du jeu — cliquable pour ouvrir le SAV */}
                   <div
                     onClick={() => handleCardClick(game.sav_url)}
-                    className="flex flex-col cursor-pointer flex-1 min-w-0 mr-4"
+                    className="flex items-center gap-3 cursor-pointer flex-1 min-w-0 mr-4"
                   >
                     <span className={`text-xl font-bold truncate ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                       {game.game_name}
                     </span>
-                    <span className={`text-sm mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-semibold text-white bg-gradient-to-r ${getEditorColor(game.editor)}`}>
                       {game.editor}
                     </span>
                   </div>
