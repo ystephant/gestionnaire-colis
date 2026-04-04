@@ -88,6 +88,13 @@ export default function SAVJeux() {
     applyFilters();
   }, [savGames, searchFilter, editorFilter, gameFilter, sortBy]);
 
+  // Pré-remplir la recherche depuis le query param ?search=
+  useEffect(() => {
+    if (router.query.search) {
+      setSearchFilter(router.query.search);
+    }
+  }, [router.query.search]);
+
   // Auto-remplir l'URL si l'éditeur existe déjà
   useEffect(() => {
     if (editor.trim()) {
