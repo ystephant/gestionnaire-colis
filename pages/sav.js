@@ -701,23 +701,21 @@ export default function SAVJeux() {
               </p>
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="flex flex-col gap-2">
               {filteredGames.map((game) => (
                 <div
                   key={game.id}
-                  className={`flex items-center justify-between py-4 px-2 hover:rounded-xl transition-colors duration-150 ${
-                    darkMode ? 'hover:bg-gray-700' : 'hover:bg-cyan-50'
-                  }`}
+                  className={`flex items-center justify-between py-4 px-4 rounded-xl transition-all duration-150 bg-gradient-to-r ${getEditorColor(game.editor)} hover:brightness-110`}
                 >
                   {/* Infos du jeu — cliquable pour ouvrir le SAV */}
                   <div
                     onClick={() => handleCardClick(game.sav_url)}
                     className="flex items-center gap-3 cursor-pointer flex-1 min-w-0 mr-4"
                   >
-                    <span className={`text-xl font-bold truncate ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    <span className="text-xl font-bold truncate text-white drop-shadow">
                       {game.game_name}
                     </span>
-                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-semibold text-white bg-gradient-to-r ${getEditorColor(game.editor)}`}>
+                    <span className="shrink-0 text-sm font-medium text-white opacity-80">
                       {game.editor}
                     </span>
                   </div>
@@ -726,11 +724,7 @@ export default function SAVJeux() {
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={(e) => handleEdit(game, e)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                        darkMode
-                          ? 'bg-gray-700 text-cyan-400 hover:bg-cyan-900 hover:text-cyan-300'
-                          : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
-                      }`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white bg-opacity-20 hover:bg-opacity-30 text-white transition"
                       title="Modifier"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -741,11 +735,7 @@ export default function SAVJeux() {
                     </button>
                     <button
                       onClick={(e) => handleDelete(game.id, e)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                        darkMode
-                          ? 'bg-gray-700 text-red-400 hover:bg-red-900 hover:text-red-300'
-                          : 'bg-red-50 text-red-600 hover:bg-red-100'
-                      }`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white bg-opacity-20 hover:bg-opacity-30 text-white transition"
                       title="Supprimer"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
