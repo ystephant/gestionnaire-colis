@@ -725,6 +725,17 @@ export default function StockManager() {
                       <span className={`font-bold text-sm ${dm ? 'text-white' : 'text-gray-900'}`}>{gameName}</span>
                       <span className={`ml-2 text-xs ${dm ? 'text-slate-400' : 'text-gray-400'}`}>{items.length} exemplaire{items.length > 1 ? 's' : ''} incomplet{items.length > 1 ? 's' : ''}</span>
                     </div>
+                    <button
+                      onClick={() => router.push(`/sav?search=${encodeURIComponent(gameName)}`)}
+                      title="Accéder au SAV de ce jeu"
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        dm
+                          ? 'bg-rose-900/40 text-rose-300 hover:bg-rose-800/60'
+                          : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      }`}
+                    >
+                      🔧 Voir le SAV
+                    </button>
                   </div>
                   {/* Entrées */}
                   {items.map((item, idx) => (
