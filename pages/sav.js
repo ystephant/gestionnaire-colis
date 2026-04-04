@@ -705,7 +705,7 @@ export default function SAVJeux() {
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className={`flex flex-col divide-y ${darkMode ? 'divide-gray-700' : 'divide-gray-200'}`}>
               {filteredGames.map((game) => (
                 <div
                   key={game.id}
