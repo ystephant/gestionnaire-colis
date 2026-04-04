@@ -532,7 +532,7 @@ export default function MenuPrincipal() {
                 path: '/stock',
                 title: 'Gestion de Stock',
                 description: 'Suivez votre stock de jeux, gérez les achats, ventes et jeux en cours de mise en vente',
-                gradient: 'from-yellow-400 to-yellow-200',
+                gradient: 'from-yellow-400 to-amber-800',
                 tags: [{ label: '📦 Stock', bg: 'bg-indigo-100', text: 'text-indigo-700' }, { label: '📊 Suivi', bg: 'bg-blue-100', text: 'text-blue-700' }],
                 badge: null,
                 icon: (size) => (
