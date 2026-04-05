@@ -22,18 +22,36 @@ const daysAgo = (dateStr) => {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
 };
 
-// Exclure les jeux dont le nom contient "lot" (achat groupé, revente à l'unité)
 const isLot = (name) => /\blot\b/i.test(name || '');
 
-// Normalisation du nom pour le regroupement :
-//   'Detective Club + Extension' → 'Detective Club'
-//   Matching strict sinon : 'Azul les Vitraux' ≠ 'Azul'
-const baseName    = (name) => {
+const baseName = (name) => {
   if (!name) return '';
   const plusIdx = name.indexOf(' +');
   return (plusIdx !== -1 ? name.slice(0, plusIdx) : name).trim();
 };
 const baseNameLow = (name) => baseName(name).toLowerCase();
+
+// ── [8] Skeleton Card ──────────────────────────────────────────
+const SkeletonCard = ({ dm }) => (
+  <div className={`rounded-2xl overflow-hidden shadow-sm animate-pulse ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
+    <div className="px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className={`h-4 rounded-lg ${dm ? 'bg-slate-700' : 'bg-gray-200'}`} style={{ width: '55%' }} />
+        <div className="flex gap-1.5">
+          <div className={`h-3 rounded-full ${dm ? 'bg-slate-700' : 'bg-gray-100'}`} style={{ width: '22%' }} />
+          <div className={`h-3 rounded-full ${dm ? 'bg-slate-700' : 'bg-gray-100'}`} style={{ width: '18%' }} />
+        </div>
+      </div>
+      <div className={`w-7 h-7 rounded-lg ${dm ? 'bg-slate-700' : 'bg-gray-200'}`} />
+      <div className={`w-7 h-7 rounded-lg ${dm ? 'bg-slate-700' : 'bg-gray-200'}`} />
+      <div className="flex items-center gap-1">
+        <div className={`w-8 h-8 rounded-lg ${dm ? 'bg-slate-700' : 'bg-gray-200'}`} />
+        <div className={`w-10 h-8 rounded-lg ${dm ? 'bg-slate-700' : 'bg-gray-200'}`} />
+        <div className={`w-8 h-8 rounded-lg ${dm ? 'bg-slate-700' : 'bg-gray-200'}`} />
+      </div>
+    </div>
+  </div>
+);
 
 export default function StockManager() {
   const router = useRouter();
@@ -42,20 +60,20 @@ export default function StockManager() {
   const [loading,  setLoading]  = useState(true);
 
   // ── Data ─────────────────────────────────────────────────────
-  const [transactions,  setTransactions]  = useState([]);
-  const [salePhotos,    setSalePhotos]    = useState([]);
+  const [transactions,    setTransactions]    = useState([]);
+  const [salePhotos,      setSalePhotos]      = useState([]);
   const [incompleteGames, setIncompleteGames] = useState([]);
-  const [allGameNames,  setAllGameNames]  = useState([]);
+  const [allGameNames,    setAllGameNames]    = useState([]);
 
   // ── Onglet actif ─────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState('stock'); // 'stock' | 'incomplet'
+  const [activeTab, setActiveTab] = useState('stock');
 
   // ── UI Stock ─────────────────────────────────────────────────
   const [search,         setSearch]         = useState('');
   const [showSearchSugg, setShowSearchSugg] = useState(false);
   const [filter,         setFilter]         = useState('all');
   const [sortMode,       setSortMode]       = useState('smart');
-  const [toast,          setToast]          = useState(null);
+  const [toast,          setToast]          = useState(null); // { msg, type, action? }
 
   // ── Modal ajout manuel ───────────────────────────────────────
   const [showAddModal, setShowAddModal] = useState(false);
@@ -65,16 +83,27 @@ export default function StockManager() {
   const [addLoading,   setAddLoading]   = useState(false);
 
   // ── Modal "Mettre en incomplet" ──────────────────────────────
-  const [showIncModal,   setShowIncModal]   = useState(false);
-  const [incModalGame,   setIncModalGame]   = useState('');
-  const [incModalText,   setIncModalText]   = useState('');
-  const [incModalLoading,setIncModalLoading]= useState(false);
+  const [showIncModal,    setShowIncModal]    = useState(false);
+  const [incModalGame,    setIncModalGame]    = useState('');
+  const [incModalText,    setIncModalText]    = useState('');
+  const [incModalLoading, setIncModalLoading] = useState(false);
+  // [10] entrée libre depuis l'onglet incomplets
+  const [incModalFreeEntry, setIncModalFreeEntry] = useState(false);
 
   // ── Search onglet incomplet ──────────────────────────────────
   const [searchInc, setSearchInc] = useState('');
 
+  // ── [11] Édition inline d'un incomplet ──────────────────────
+  const [editingInc,    setEditingInc]    = useState(null); // { id, text }
+  const [editIncLoading,setEditIncLoading]= useState(false);
+
+  // ── [13] Swipe-to-action ─────────────────────────────────────
+  const [swipedCard, setSwipedCard] = useState(null);
+  const touchStartRef = useRef({ x: 0, y: 0 });
+
   const searchWrapRef = useRef(null);
   const addWrapRef    = useRef(null);
+  const toastTimerRef = useRef(null);
 
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -82,6 +111,19 @@ export default function StockManager() {
     const p = localStorage.getItem('password');
     if (u && p) { setUsername(u); } else { router.push('/'); }
   }, []);
+
+  // ── [7] Persistance sessionStorage ───────────────────────────
+  useEffect(() => {
+    const sf = sessionStorage.getItem('stock_filter');
+    const ss = sessionStorage.getItem('stock_sort');
+    const sq = sessionStorage.getItem('stock_search');
+    if (sf) setFilter(sf);
+    if (ss) setSortMode(ss);
+    if (sq) setSearch(sq);
+  }, []);
+  useEffect(() => { sessionStorage.setItem('stock_filter', filter);  }, [filter]);
+  useEffect(() => { sessionStorage.setItem('stock_sort',   sortMode);}, [sortMode]);
+  useEffect(() => { sessionStorage.setItem('stock_search', search);  }, [search]);
 
   useEffect(() => {
     if (!username) return;
@@ -116,8 +158,8 @@ export default function StockManager() {
       if (photoRes.error) throw photoRes.error;
       if (incRes.error)   throw incRes.error;
 
-      setTransactions(txRes.data   || []);
-      setSalePhotos(photoRes.data  || []);
+      setTransactions(txRes.data    || []);
+      setSalePhotos(photoRes.data   || []);
       setIncompleteGames(incRes.data || []);
 
       const names = [...new Set(
@@ -153,15 +195,6 @@ export default function StockManager() {
   }, []);
 
   // ── Calcul du stock ──────────────────────────────────────────
-  //
-  //  • Les jeux contenant "lot" sont ignorés (achat groupé)
-  //  • buy < 10j → en transit ; stock_arrival annule 1 transit
-  //  • stock_add  → confirmé immédiatement
-  //  • stock_remove / sell → décrément
-  //  • net clampé à 0 (évite les négatifs si stock pré-app)
-  //  • incomplets déduits du net (comptés à part)
-  //  • canList = confirmedStock > 0 ET aucune photo "en_vente"
-  //
   const computeStock = () => {
     const now   = Date.now();
     const LIMIT = INCOMING_DAYS * 24 * 60 * 60 * 1000;
@@ -169,7 +202,6 @@ export default function StockManager() {
 
     (transactions || []).forEach(t => {
       if (!t.game_name || isLot(t.game_name)) return;
-      // Clé = nom de base (avant ' +'), strict sinon
       const n = baseName(t.game_name);
       if (!map[n]) {
         map[n] = {
@@ -186,33 +218,26 @@ export default function StockManager() {
         g.buys++;
         if (now - d.getTime() < LIMIT) g.incomingBuys.push(d);
         if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
-
       } else if (t.type === 'stock_add') {
         g.buys++;
         if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
-
       } else if (t.type === 'sell') {
         g.sells++;
         if (!g.lastSellDate || d > new Date(g.lastSellDate)) g.lastSellDate = t.created_at;
-
       } else if (t.type === 'stock_remove') {
         g.manualRemovals++;
       }
     });
 
-    // Index souple des noms de transaction (pour le bouton 📋)
     const allTxNamesLow = (transactions || [])
       .filter(t => t.game_name && !isLot(t.game_name))
       .map(t => baseNameLow(t.game_name));
 
-    // Nombre d'incomplets par jeu
     const incompleteMap = {};
     (incompleteGames || []).forEach(i => {
       incompleteMap[i.game_name] = (incompleteMap[i.game_name] || 0) + 1;
     });
 
-    // Photos en vente : compter les DOSSIERS distincts par jeu (game_tag distinct = 1 dossier)
-    // Plusieurs photos peuvent avoir le même game_tag → on déduplique par game_tag
     const enVenteTagsPerName = {};
     (salePhotos || [])
       .filter(p => p.status === 'en_vente' && p.game_tag)
@@ -226,8 +251,6 @@ export default function StockManager() {
       enVenteCount[key] = tags.size;
     });
 
-    // Injecter les jeux "en vente" dans Photos sans aucune transaction
-    // (jeux acquis avant l'app, reçus, etc.)
     (salePhotos || [])
       .filter(p => p.status === 'en_vente' && p.game_tag)
       .forEach(p => {
@@ -244,7 +267,7 @@ export default function StockManager() {
 
     return Object.values(map)
       .map(g => {
-        const incomingCount = g.incomingBuys.length;
+        const incomingCount  = g.incomingBuys.length;
         const sortedIncoming = [...g.incomingBuys].sort((a, b) => a - b);
         const oldestIncoming = sortedIncoming[0] || null;
         const daysLeft = oldestIncoming
@@ -255,14 +278,12 @@ export default function StockManager() {
         const netRaw         = g.buys - g.sells - g.manualRemovals - incompletCount;
         const enVenteCopies  = enVenteCount[baseNameLow(g.name)] || 0;
         const isEnVente      = enVenteCopies > 0;
-        // Si en vente dans Photos, garantir au moins autant d'exemplaires que de photos
-        // (couvre jeux pré-app sans achat, multiples copies en vente, net=0 après revente)
         const net            = Math.max(enVenteCopies, netRaw);
         const confirmedStock = Math.max(0, net - incomingCount);
         const canList        = confirmedStock > 0 && !isEnVente;
 
-        const nameLow          = baseNameLow(g.name);
-        const hasTxLooseMatch  = allTxNamesLow.some(n =>
+        const nameLow         = baseNameLow(g.name);
+        const hasTxLooseMatch = allTxNamesLow.some(n =>
           n.includes(nameLow) || nameLow.includes(n)
         );
 
@@ -271,10 +292,11 @@ export default function StockManager() {
       .filter(g => g.net > 0);
   };
 
-  // ── Toast ────────────────────────────────────────────────────
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
+  // ── [2] Toast avec action (undo) ─────────────────────────────
+  const showToast = (msg, type = 'success', action = null) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, type, action });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4500);
   };
 
   // ── Actions ──────────────────────────────────────────────────
@@ -299,14 +321,24 @@ export default function StockManager() {
     }
   };
 
+  // [2] Retrait avec undo via .select() pour récupérer l'id
   const handleRemoveOne = async (gameName) => {
     try {
-      const { error } = await supabase.from('transactions').insert({
-        user_id: username, type: 'stock_remove', game_name: gameName, price: 0,
-      });
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert({ user_id: username, type: 'stock_remove', game_name: gameName, price: 0 })
+        .select('id')
+        .single();
       if (error) throw error;
-      showToast(`1 "${gameName}" retiré du stock`);
       await loadData();
+      showToast(`1 "${gameName}" retiré du stock`, 'success', {
+        label: 'Annuler',
+        fn: async () => {
+          await supabase.from('transactions').delete().eq('id', data.id);
+          await loadData();
+          showToast('Action annulée ✓');
+        },
+      });
     } catch (err) { showToast('Erreur lors du retrait', 'error'); }
   };
 
@@ -321,26 +353,21 @@ export default function StockManager() {
     } catch (err) { showToast("Erreur lors de l'ajout", 'error'); }
   };
 
-  // Déplacer 1 copie vers incomplet
   const handleMoveToIncomplete = async () => {
-    if (!incModalGame) return;
+    if (!incModalGame.trim()) return;
     setIncModalLoading(true);
     try {
-      // On insère uniquement dans stock_incomplete.
-      // La déduction du stock se fait via incompletCount dans computeStock.
-      // Pas de stock_remove pour éviter la double déduction.
       const { error } = await supabase.from('stock_incomplete').insert({
-        user_id: username, game_name: incModalGame, missing_items: incModalText.trim(),
+        user_id: username, game_name: incModalGame.trim(), missing_items: incModalText.trim(),
       });
       if (error) throw error;
-      showToast(`"${incModalGame}" déplacé vers Incomplets`);
-      setShowIncModal(false); setIncModalGame(''); setIncModalText('');
+      showToast(`"${incModalGame.trim()}" ajouté aux incomplets`);
+      setShowIncModal(false); setIncModalGame(''); setIncModalText(''); setIncModalFreeEntry(false);
       await loadData();
-    } catch (err) { showToast('Erreur lors du déplacement', 'error'); }
+    } catch (err) { showToast('Erreur lors de l\'enregistrement', 'error'); }
     finally { setIncModalLoading(false); }
   };
 
-  // Supprimer un jeu incomplet
   const handleDeleteIncomplete = async (id, gameName) => {
     if (!confirm(`Supprimer "${gameName}" des incomplets ?`)) return;
     try {
@@ -351,8 +378,40 @@ export default function StockManager() {
     } catch (err) { showToast('Erreur lors de la suppression', 'error'); }
   };
 
+  // ── [11] Édition inline d'un incomplet ──────────────────────
+  const handleEditIncomplete = async () => {
+    if (!editingInc) return;
+    setEditIncLoading(true);
+    try {
+      const { error } = await supabase
+        .from('stock_incomplete')
+        .update({ missing_items: editingInc.text.trim() })
+        .eq('id', editingInc.id);
+      if (error) throw error;
+      showToast('Pièces manquantes mises à jour');
+      setEditingInc(null);
+      await loadData();
+    } catch (err) { showToast('Erreur lors de la mise à jour', 'error'); }
+    finally { setEditIncLoading(false); }
+  };
+
+  // ── [13] Touch handlers pour swipe ──────────────────────────
+  const handleCardTouchStart = (e, gameName) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleCardTouchEnd = (e, gameName) => {
+    const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+    const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
+    // Ignorer si mouvement surtout vertical (scroll)
+    if (Math.abs(dx) <= Math.abs(dy)) return;
+    if (dx < -50) setSwipedCard(gameName);
+    else if (dx > 20 && swipedCard === gameName) setSwipedCard(null);
+  };
+
   // ── Données dérivées ─────────────────────────────────────────
-  const stockItems = computeStock();
+  const stockItems    = computeStock();
+  const lowStockCount = stockItems.filter(g => g.net === 1).length; // [12]
 
   const filteredItems = stockItems
     .filter(g => {
@@ -365,7 +424,6 @@ export default function StockManager() {
     })
     .sort((a, b) => {
       if (sortMode === 'desc') return b.net - a.net;
-      // Tri intelligent (défaut) : à mettre en vente → en transit → quantité desc
       if (a.canList && !b.canList)                       return -1;
       if (!a.canList && b.canList)                       return 1;
       if (a.incomingCount > 0 && b.incomingCount === 0) return -1;
@@ -381,10 +439,7 @@ export default function StockManager() {
     available: stockItems.filter(g => g.canList).length,
   };
 
-  // Jeux "en vente" dans Photos mais absents du stock calculé
-  // Désormais tous les jeux en vente sont injectés dans computeStock(),
-  // donc ce tableau devrait toujours être vide — conservé pour rétrocompat.
-  const stockNameSet = new Set(stockItems.map(g => baseNameLow(g.name)));
+  const stockNameSet  = new Set(stockItems.map(g => baseNameLow(g.name)));
   const orphanEnVente = [...new Set(
     (salePhotos || [])
       .filter(p => p.status === 'en_vente' && p.game_tag)
@@ -396,7 +451,6 @@ export default function StockManager() {
     !searchInc || i.game_name.toLowerCase().includes(searchInc.toLowerCase())
   );
 
-  // Regrouper les incomplets par jeu
   const incByGame = {};
   filteredInc.forEach(i => {
     if (!incByGame[i.game_name]) incByGame[i.game_name] = [];
@@ -412,6 +466,7 @@ export default function StockManager() {
     : [];
 
   const dm = darkMode;
+
   const tabBtn = (id, label, count) => (
     <button
       key={id}
@@ -437,7 +492,7 @@ export default function StockManager() {
   return (
     <div
       className={`min-h-screen ${dm ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}
-      onClick={() => { setShowSearchSugg(false); setShowAddSugg(false); }}
+      onClick={() => { setShowSearchSugg(false); setShowAddSugg(false); setSwipedCard(null); }}
     >
       {/* ── Header ──────────────────────────────────────────── */}
       <div className={`sticky top-0 z-30 border-b backdrop-blur-sm ${
@@ -460,10 +515,18 @@ export default function StockManager() {
             className={`p-2 rounded-xl text-lg transition ${dm ? 'hover:bg-slate-700' : 'hover:bg-gray-100'}`}
           >{dm ? '☀️' : '🌙'}</button>
 
+          {/* Bouton + contextuel selon l'onglet */}
           {activeTab === 'stock' && (
             <button
               onClick={() => { setShowAddModal(true); setAddName(''); setAddQty('1'); }}
               className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-sm font-bold transition shadow-lg shadow-indigo-500/20"
+            >+ Ajouter</button>
+          )}
+          {/* [10] Bouton + depuis l'onglet incomplets */}
+          {activeTab === 'incomplet' && (
+            <button
+              onClick={() => { setIncModalFreeEntry(true); setIncModalGame(''); setIncModalText(''); setShowIncModal(true); }}
+              className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white text-sm font-bold transition shadow-lg shadow-rose-500/20"
             >+ Ajouter</button>
           )}
         </div>
@@ -481,22 +544,45 @@ export default function StockManager() {
       {activeTab === 'stock' && (
         <div className="max-w-4xl mx-auto px-4 py-5 space-y-5">
 
-          {/* KPI Cards — 6 tuiles sur une ligne */}
+          {/* [1] KPI Cards — cliquables comme raccourcis de filtre */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {[
-              { label: 'Références',    value: kpis.games,     icon: '🎲', cls: 'text-indigo-500' },
-              { label: 'Exemplaires',   value: kpis.copies,    icon: '📦', cls: 'text-blue-500'   },
-              { label: 'En transit',    value: kpis.incoming,  icon: '🚚', cls: 'text-orange-500' },
-              { label: 'À vendre',      value: kpis.available, icon: '🏷️', cls: 'text-amber-500'  },
-              { label: 'En vente',      value: kpis.enVente,   icon: '🟢', cls: 'text-green-500'  },
-              { label: 'Incomplets',    value: (incompleteGames || []).length, icon: '🧩', cls: 'text-rose-500' },
-            ].map(({ label, value, icon, cls }) => (
-              <div key={label} className={`rounded-xl p-2.5 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
-                <div className="text-base mb-0.5">{icon}</div>
-                <div className={`text-2xl font-black leading-none ${cls}`}>{value}</div>
-                <div className={`text-xs mt-1 leading-tight font-medium ${dm ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
-              </div>
-            ))}
+              { label: 'Références',  value: kpis.games,     icon: '🎲', cls: 'text-indigo-500', filterId: null,        tabSwitch: null },
+              { label: 'Exemplaires', value: kpis.copies,    icon: '📦', cls: 'text-blue-500',   filterId: null,        tabSwitch: null },
+              { label: 'En transit',  value: kpis.incoming,  icon: '🚚', cls: 'text-orange-500', filterId: 'incoming',  tabSwitch: null },
+              { label: 'À vendre',    value: kpis.available, icon: '🏷️', cls: 'text-amber-500',  filterId: 'available', tabSwitch: null },
+              { label: 'En vente',    value: kpis.enVente,   icon: '🟢', cls: 'text-green-500',  filterId: 'en_vente',  tabSwitch: null },
+              { label: 'Incomplets',  value: (incompleteGames || []).length, icon: '🧩', cls: 'text-rose-500', filterId: null, tabSwitch: 'incomplet' },
+            ].map(({ label, value, icon, cls, filterId, tabSwitch }) => {
+              const isActive    = filterId && filter === filterId;
+              const isClickable = !!(filterId || tabSwitch);
+              return (
+                <div
+                  key={label}
+                  onClick={() => {
+                    if (tabSwitch) { setActiveTab(tabSwitch); return; }
+                    if (filterId)  setFilter(f => f === filterId ? 'all' : filterId);
+                  }}
+                  title={filterId ? (isActive ? 'Effacer le filtre' : `Filtrer : ${label}`) : tabSwitch ? 'Voir les incomplets' : undefined}
+                  className={`rounded-xl p-2.5 shadow-sm transition-all duration-150 ${
+                    isClickable ? 'cursor-pointer hover:scale-[1.04] active:scale-95 select-none' : ''
+                  } ${
+                    isActive
+                      ? dm ? 'bg-indigo-900/40 ring-2 ring-indigo-500' : 'bg-indigo-50 ring-2 ring-indigo-400'
+                      : dm ? 'bg-slate-800' : 'bg-white border border-gray-100'
+                  }`}
+                >
+                  <div className="text-base mb-0.5">{icon}</div>
+                  <div className={`text-2xl font-black leading-none ${cls}`}>{value}</div>
+                  <div className={`text-xs mt-1 leading-tight font-medium ${dm ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
+                  {isClickable && (
+                    <div className={`text-xs mt-0.5 font-bold ${isActive ? (dm ? 'text-indigo-400' : 'text-indigo-400') : dm ? 'text-slate-600' : 'text-gray-300'}`}>
+                      {isActive ? '✕' : tabSwitch ? '↗' : '→'}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Recherche */}
@@ -532,14 +618,14 @@ export default function StockManager() {
 
           {/* Filtres + tri */}
           <div className="flex flex-col sm:flex-row gap-2">
-            {/* Filtres scrollables sur mobile */}
             <div className={`flex p-1 rounded-xl gap-1 overflow-x-auto scrollbar-none flex-1 ${dm ? 'bg-slate-800' : 'bg-gray-100'}`}>
               {[
                 { id: 'all',       label: 'Tout' },
                 { id: 'available', label: `🏷️ À vendre${kpis.available > 0 ? ' (' + kpis.available + ')' : ''}` },
                 { id: 'en_vente',  label: `🟢 En vente${kpis.enVente > 0 ? ' (' + kpis.enVente + ')' : ''}` },
                 { id: 'incoming',  label: `🚚 Transit${kpis.incoming > 0 ? ' (' + kpis.incoming + ')' : ''}` },
-                { id: 'low',       label: '⚠️ Stock bas' },
+                // [12] Compteur stock bas dans le filtre
+                { id: 'low',       label: `⚠️ Stock bas${lowStockCount > 0 ? ' (' + lowStockCount + ')' : ''}` },
               ].map(f => (
                 <button
                   key={f.id}
@@ -552,7 +638,6 @@ export default function StockManager() {
                 >{f.label}</button>
               ))}
             </div>
-            {/* Tri par quantité */}
             <button
               onClick={() => setSortMode(m => m === 'smart' ? 'desc' : 'smart')}
               title={sortMode === 'desc' ? 'Tri : quantité décroissante' : 'Tri : intelligent'}
@@ -564,9 +649,25 @@ export default function StockManager() {
             >📊 {sortMode === 'desc' ? 'Qté ↓' : 'Tri auto'}</button>
           </div>
 
+          {/* [5] Compteur de résultats */}
+          {!loading && (
+            <div className={`flex items-center gap-3 text-xs font-medium px-1 ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
+              <span>{filteredItems.length} jeu{filteredItems.length !== 1 ? 'x' : ''} affiché{filteredItems.length !== 1 ? 's' : ''}</span>
+              {(filter !== 'all' || search) && (
+                <button
+                  onClick={() => { setFilter('all'); setSearch(''); }}
+                  className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+                >Effacer les filtres</button>
+              )}
+            </div>
+          )}
+
           {/* Liste */}
           {loading ? (
-            <div className="flex justify-center py-16 text-3xl animate-spin">⏳</div>
+            // [8] Skeleton loading
+            <div className="space-y-3 pb-10">
+              {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} dm={dm} />)}
+            </div>
           ) : filteredItems.length === 0 ? (
             <div className={`text-center py-14 ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
               <div className="text-5xl mb-3">📭</div>
@@ -576,195 +677,135 @@ export default function StockManager() {
           ) : (
             <div className="space-y-3 pb-10">
               {filteredItems.map(g => (
-                <div key={g.name} className={`rounded-2xl overflow-hidden shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
+                // [13] Wrapper pour swipe-to-action
+                <div key={g.name} className="relative overflow-hidden rounded-2xl shadow-sm">
 
-                  {/* Alerte amber */}
-                  {g.canList && (
-                    <div className={`px-4 py-2 flex items-center gap-2 border-b-2 border-amber-400 ${dm ? 'bg-amber-900/25 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>
-                      <span className="text-sm">🏷️</span>
-                      <span className="text-xs font-semibold">
-                        Tu peux mettre un nouveau <span className="font-black">"{g.name}"</span> en vente !
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="px-4 py-3 flex items-center gap-3">
-
-                    {/* Nom + badges */}
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm truncate ${dm ? 'text-white' : 'text-gray-900'}`}>
-                        {g.name}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        {g.isEnVente && (
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-green-500/15 text-green-400 border-green-500/30' : 'bg-green-50 text-green-600 border-green-200'}`}>🟢 En vente{g.enVenteCopies > 1 ? ` (×${g.enVenteCopies})` : ''}</span>
-                        )}
-                        {g.incomingCount > 0 && (
-                          <div className="flex items-center gap-1">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
-                              🚚 {g.incomingCount} en transit{g.daysLeft > 0 ? ` (~${g.daysLeft}j)` : ''}
-                            </span>
-
-                          </div>
-                        )}
-
-                        {g.incompletCount > 0 && (
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' : 'bg-rose-50 text-rose-500 border-rose-200'}`}>
-                            🧩 {g.incompletCount} incomplet{g.incompletCount > 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Bouton discret → transactions (match non-strict) */}
-                    {g.hasTxLooseMatch && (
-                      <button
-                        onClick={() => router.push('/transactions?search=' + encodeURIComponent(g.name))}
-                        title="Voir dans les transactions"
-                        className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition ${
-                          dm ? 'text-slate-600 hover:text-indigo-400 hover:bg-indigo-900/20' : 'text-gray-300 hover:text-indigo-500 hover:bg-indigo-50'
-                        }`}
-                      >📋</button>
-                    )}
-
-                    {/* Bouton discret → incomplet */}
+                  {/* Boutons révélés au swipe gauche */}
+                  <div className="absolute inset-y-0 right-0 flex items-stretch" style={{ width: 88 }}>
                     <button
-                      onClick={() => { setIncModalGame(g.name); setIncModalText(''); setShowIncModal(true); }}
-                      title="Déplacer vers incomplets"
-                      className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition ${
-                        dm ? 'text-slate-600 hover:text-rose-400 hover:bg-rose-900/20' : 'text-gray-300 hover:text-rose-400 hover:bg-rose-50'
-                      }`}
-                    >🧩</button>
-
-                    {/* − N + */}
-                    <div className="flex-shrink-0 flex items-center gap-1">
-                      <button
-                        onClick={() => handleRemoveOne(g.name)}
-                        title="Retirer 1 du stock"
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold transition ${
-                          dm ? 'bg-slate-700 hover:bg-red-900/50 text-slate-400 hover:text-red-400' : 'bg-gray-100 hover:bg-red-50 text-gray-400 hover:text-red-500'
-                        }`}
-                      >−</button>
-
-                      <div className="w-10 text-center">
-                        <span className={`text-xl font-black ${
-                          g.net >= 3 ? 'text-indigo-500' :
-                          g.net === 2 ? 'text-blue-500'  :
-                          g.net === 1 ? 'text-amber-500' :
-                          dm ? 'text-slate-500' : 'text-gray-300'
-                        }`}>{g.net}</span>
-                      </div>
-
-                      <button
-                        onClick={() => handleAddOne(g.name)}
-                        title="Ajouter 1 au stock"
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold transition ${
-                          dm ? 'bg-slate-700 hover:bg-indigo-900/50 text-slate-400 hover:text-indigo-400' : 'bg-gray-100 hover:bg-indigo-50 text-gray-400 hover:text-indigo-500'
-                        }`}
-                      >+</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ════════════════════════════════════════════════════════
-          ONGLET INCOMPLETS
-          ════════════════════════════════════════════════════════ */}
-      {activeTab === 'incomplet' && (
-        <div className="max-w-4xl mx-auto px-4 py-5 space-y-5 pb-10">
-
-          {/* Résumé */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
-              <div className="text-xl mb-1">🎲</div>
-              <div className="text-2xl font-black text-indigo-500">{kpis.copies}</div>
-              <div className={`text-xs mt-0.5 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Exemplaires complets</div>
-            </div>
-            <div className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
-              <div className="text-xl mb-1">🧩</div>
-              <div className="text-2xl font-black text-rose-500">{(incompleteGames || []).length}</div>
-              <div className={`text-xs mt-0.5 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Jeux incomplets / pièces</div>
-            </div>
-          </div>
-
-          {/* Recherche incomplets */}
-          <input
-            type="text"
-            value={searchInc}
-            onChange={e => setSearchInc(e.target.value)}
-            placeholder="🔍 Rechercher dans les incomplets…"
-            className={`w-full px-4 py-3 rounded-2xl border text-sm outline-none transition ${
-              dm
-                ? 'bg-slate-800 border-slate-600 text-white placeholder-slate-400 focus:border-rose-500'
-                : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-rose-400'
-            }`}
-          />
-
-          {/* Liste groupée */}
-          {loading ? (
-            <div className="flex justify-center py-16 text-3xl animate-spin">⏳</div>
-          ) : Object.keys(incByGame).length === 0 ? (
-            <div className={`text-center py-14 ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
-              <div className="text-5xl mb-3">🧩</div>
-              <div className="text-sm font-medium">Aucun jeu incomplet</div>
-              <div className={`text-xs mt-1 ${dm ? 'text-slate-600' : 'text-gray-300'}`}>
-                Utilisez le bouton 🧩 sur un jeu du stock pour l'ajouter ici
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(incByGame).map(([gameName, items]) => (
-                <div key={gameName} className={`rounded-2xl overflow-hidden shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
-                  {/* Header jeu */}
-                  <div className={`px-4 py-3 flex items-center justify-between border-b ${dm ? 'border-slate-700 bg-slate-750' : 'border-gray-100 bg-gray-50'}`}>
-                    <div>
-                      <span className={`font-bold text-sm ${dm ? 'text-white' : 'text-gray-900'}`}>{gameName}</span>
-                      <span className={`ml-2 text-xs ${dm ? 'text-slate-400' : 'text-gray-400'}`}>{items.length} exemplaire{items.length > 1 ? 's' : ''} incomplet{items.length > 1 ? 's' : ''}</span>
-                    </div>
-                    <button
-                      onClick={() => router.push(`/sav?search=${encodeURIComponent(gameName)}`)}
-                      title="Accéder au SAV de ce jeu"
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                        dm
-                          ? 'bg-rose-900/40 text-rose-300 hover:bg-rose-800/60'
-                          : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
-                      }`}
+                      onClick={(e) => { e.stopPropagation(); setSwipedCard(null); handleRemoveOne(g.name); }}
+                      className="flex-1 flex flex-col items-center justify-center bg-red-500 hover:bg-red-400 active:bg-red-600 text-white text-xs gap-0.5 font-semibold transition"
                     >
-                      🔧 Voir le SAV
+                      <span className="text-lg font-black leading-none">−</span>
+                      <span>Retirer</span>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSwipedCard(null); setIncModalGame(g.name); setIncModalText(''); setIncModalFreeEntry(false); setShowIncModal(true); }}
+                      className="flex-1 flex flex-col items-center justify-center bg-rose-700 hover:bg-rose-600 active:bg-rose-800 text-white text-xs gap-0.5 font-semibold transition"
+                    >
+                      <span className="text-base">🧩</span>
+                      <span>Incomplet</span>
                     </button>
                   </div>
-                  {/* Entrées */}
-                  {items.map((item, idx) => (
-                    <div key={item.id} className={`px-4 py-3 flex items-start gap-3 ${idx > 0 ? `border-t ${dm ? 'border-slate-700/50' : 'border-gray-50'}` : ''}`}>
-                      <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5 ${dm ? 'bg-rose-900/40 text-rose-400' : 'bg-rose-50 text-rose-500'}`}>
-                        {idx + 1}
+
+                  {/* Carte principale (glisse à gauche au swipe) */}
+                  <div
+                    className={`relative z-10 rounded-2xl overflow-hidden transition-transform duration-200 ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}
+                    style={{ transform: swipedCard === g.name ? 'translateX(-88px)' : 'translateX(0)' }}
+                    onTouchStart={(e) => handleCardTouchStart(e, g.name)}
+                    onTouchEnd={(e)   => handleCardTouchEnd(e, g.name)}
+                    onClick={() => { if (swipedCard === g.name) setSwipedCard(null); }}
+                  >
+                    {/* [3] Bannière canList avec bouton → Photos */}
+                    {g.canList && (
+                      <div className={`px-4 py-2 flex items-center justify-between gap-2 border-b-2 border-amber-400 ${dm ? 'bg-amber-900/25 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm flex-shrink-0">🏷️</span>
+                          <span className="text-xs font-semibold truncate">
+                            Tu peux mettre un nouveau <span className="font-black">"{g.name}"</span> en vente !
+                          </span>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push('/photos?game=' + encodeURIComponent(g.name)); }}
+                          className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                            dm ? 'bg-amber-500/20 hover:bg-amber-500/40 text-amber-300' : 'bg-amber-200 hover:bg-amber-300 text-amber-800'
+                          }`}
+                        >📸 Mettre en vente →</button>
                       </div>
+                    )}
+
+                    <div className="px-4 py-3 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        {item.missing_items ? (
-                          <p className={`text-sm leading-relaxed ${dm ? 'text-slate-300' : 'text-gray-600'}`}>
-                            <span className={`font-semibold text-xs uppercase tracking-wide ${dm ? 'text-slate-500' : 'text-gray-400'}`}>Manque : </span>
-                            {item.missing_items}
-                          </p>
-                        ) : (
-                          <p className={`text-sm italic ${dm ? 'text-slate-500' : 'text-gray-400'}`}>Pièces manquantes non précisées</p>
-                        )}
-                        <p className={`text-xs mt-1 ${dm ? 'text-slate-600' : 'text-gray-300'}`}>
-                          Ajouté le {formatDate(item.created_at)}
-                        </p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`font-bold text-sm ${dm ? 'text-white' : 'text-gray-900'}`}>
+                            {g.name}
+                          </span>
+                          {/* [4] Badge "Dernier exemplaire" */}
+                          {g.net === 1 && !g.isEnVente && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold border flex-shrink-0 ${
+                              dm ? 'bg-amber-900/30 text-amber-300 border-amber-500/40' : 'bg-amber-50 text-amber-600 border-amber-300'
+                            }`}>⚠️ Dernier</span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          {g.isEnVente && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-green-500/15 text-green-400 border-green-500/30' : 'bg-green-50 text-green-600 border-green-200'}`}>
+                              🟢 En vente{g.enVenteCopies > 1 ? ` (×${g.enVenteCopies})` : ''}
+                            </span>
+                          )}
+                          {/* [9] Badge transit avec J-X plus lisible */}
+                          {g.incomingCount > 0 && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
+                              🚚 {g.incomingCount} en transit{g.daysLeft !== null ? (g.daysLeft > 0 ? ` · J-${g.daysLeft}` : ' · Imminent') : ''}
+                            </span>
+                          )}
+                          {g.incompletCount > 0 && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' : 'bg-rose-50 text-rose-500 border-rose-200'}`}>
+                              🧩 {g.incompletCount} incomplet{g.incompletCount > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Bouton → transactions */}
+                      {g.hasTxLooseMatch && (
+                        <button
+                          onClick={() => router.push('/transactions?search=' + encodeURIComponent(g.name))}
+                          title="Voir dans les transactions"
+                          className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition ${
+                            dm ? 'text-slate-600 hover:text-indigo-400 hover:bg-indigo-900/20' : 'text-gray-300 hover:text-indigo-500 hover:bg-indigo-50'
+                          }`}
+                        >📋</button>
+                      )}
+
+                      {/* Bouton → incomplet */}
                       <button
-                        onClick={() => handleDeleteIncomplete(item.id, gameName)}
-                        title="Supprimer"
+                        onClick={() => { setIncModalGame(g.name); setIncModalText(''); setIncModalFreeEntry(false); setShowIncModal(true); }}
+                        title="Déplacer vers incomplets"
                         className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition ${
-                          dm ? 'text-slate-600 hover:text-red-400 hover:bg-red-900/20' : 'text-gray-300 hover:text-red-400 hover:bg-red-50'
+                          dm ? 'text-slate-600 hover:text-rose-400 hover:bg-rose-900/20' : 'text-gray-300 hover:text-rose-400 hover:bg-rose-50'
                         }`}
-                      >✕</button>
+                      >🧩</button>
+
+                      {/* − N + */}
+                      <div className="flex-shrink-0 flex items-center gap-1">
+                        <button
+                          onClick={() => handleRemoveOne(g.name)}
+                          title="Retirer 1 du stock"
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold transition ${
+                            dm ? 'bg-slate-700 hover:bg-red-900/50 text-slate-400 hover:text-red-400' : 'bg-gray-100 hover:bg-red-50 text-gray-400 hover:text-red-500'
+                          }`}
+                        >−</button>
+
+                        <div className="w-10 text-center">
+                          <span className={`text-xl font-black ${
+                            g.net >= 3 ? 'text-indigo-500' :
+                            g.net === 2 ? 'text-blue-500'  :
+                            g.net === 1 ? 'text-amber-500' :
+                            dm ? 'text-slate-500' : 'text-gray-300'
+                          }`}>{g.net}</span>
+                        </div>
+
+                        <button
+                          onClick={() => handleAddOne(g.name)}
+                          title="Ajouter 1 au stock"
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold transition ${
+                            dm ? 'bg-slate-700 hover:bg-indigo-900/50 text-slate-400 hover:text-indigo-400' : 'bg-gray-100 hover:bg-indigo-50 text-gray-400 hover:text-indigo-500'
+                          }`}
+                        >+</button>
+                      </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -791,6 +832,154 @@ export default function StockManager() {
                   }`}>{name}</span>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          ONGLET INCOMPLETS
+          ════════════════════════════════════════════════════════ */}
+      {activeTab === 'incomplet' && (
+        <div className="max-w-4xl mx-auto px-4 py-5 space-y-5 pb-10">
+
+          {/* Résumé */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
+              <div className="text-xl mb-1">🎲</div>
+              <div className="text-2xl font-black text-indigo-500">{kpis.copies}</div>
+              <div className={`text-xs mt-0.5 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Exemplaires complets</div>
+            </div>
+            <div className={`rounded-2xl p-4 shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
+              <div className="text-xl mb-1">🧩</div>
+              <div className="text-2xl font-black text-rose-500">{(incompleteGames || []).length}</div>
+              <div className={`text-xs mt-0.5 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Jeux incomplets / pièces</div>
+            </div>
+          </div>
+
+          {/* [6] Recherche incomplets avec bouton clear */}
+          <div className="relative">
+            <input
+              type="text"
+              value={searchInc}
+              onChange={e => setSearchInc(e.target.value)}
+              placeholder="🔍 Rechercher dans les incomplets…"
+              className={`w-full px-4 py-3 rounded-2xl border text-sm outline-none transition ${
+                dm
+                  ? 'bg-slate-800 border-slate-600 text-white placeholder-slate-400 focus:border-rose-500'
+                  : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-rose-400'
+              }`}
+            />
+            {searchInc && (
+              <button
+                onClick={() => setSearchInc('')}
+                className={`absolute right-4 top-1/2 -translate-y-1/2 text-sm ${dm ? 'text-slate-400 hover:text-white' : 'text-gray-400 hover:text-gray-700'}`}
+              >✕</button>
+            )}
+          </div>
+
+          {/* Liste groupée */}
+          {loading ? (
+            // [8] Skeleton loading pour incomplets
+            <div className="space-y-3 pb-10">
+              {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} dm={dm} />)}
+            </div>
+          ) : Object.keys(incByGame).length === 0 ? (
+            <div className={`text-center py-14 ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
+              <div className="text-5xl mb-3">🧩</div>
+              <div className="text-sm font-medium">Aucun jeu incomplet</div>
+              <div className={`text-xs mt-1 ${dm ? 'text-slate-600' : 'text-gray-300'}`}>
+                Utilisez le bouton 🧩 sur une carte stock, ou "+ Ajouter" en haut à droite
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {Object.entries(incByGame).map(([gameName, items]) => (
+                <div key={gameName} className={`rounded-2xl overflow-hidden shadow-sm ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
+                  {/* Header jeu */}
+                  <div className={`px-4 py-3 flex items-center justify-between border-b ${dm ? 'border-slate-700 bg-slate-750' : 'border-gray-100 bg-gray-50'}`}>
+                    <div>
+                      <span className={`font-bold text-sm ${dm ? 'text-white' : 'text-gray-900'}`}>{gameName}</span>
+                      <span className={`ml-2 text-xs ${dm ? 'text-slate-400' : 'text-gray-400'}`}>{items.length} exemplaire{items.length > 1 ? 's' : ''} incomplet{items.length > 1 ? 's' : ''}</span>
+                    </div>
+                    <button
+                      onClick={() => router.push(`/sav?search=${encodeURIComponent(gameName)}`)}
+                      title="Accéder au SAV de ce jeu"
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        dm ? 'bg-rose-900/40 text-rose-300 hover:bg-rose-800/60' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      }`}
+                    >🔧 Voir le SAV</button>
+                  </div>
+
+                  {/* Entrées */}
+                  {items.map((item, idx) => (
+                    <div key={item.id} className={`px-4 py-3 flex items-start gap-3 ${idx > 0 ? `border-t ${dm ? 'border-slate-700/50' : 'border-gray-50'}` : ''}`}>
+                      <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5 ${dm ? 'bg-rose-900/40 text-rose-400' : 'bg-rose-50 text-rose-500'}`}>
+                        {idx + 1}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        {/* [11] Zone éditable au clic */}
+                        {editingInc?.id === item.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={editingInc.text}
+                              onChange={e => setEditingInc(prev => ({ ...prev, text: e.target.value }))}
+                              autoFocus
+                              rows={2}
+                              placeholder="Pièces manquantes…"
+                              className={`w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition ${
+                                dm ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500 focus:border-rose-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-rose-400'
+                              }`}
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={handleEditIncomplete}
+                                disabled={editIncLoading}
+                                className="flex-1 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition disabled:opacity-50"
+                              >{editIncLoading ? '…' : '✓ Sauvegarder'}</button>
+                              <button
+                                onClick={() => setEditingInc(null)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${dm ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                              >Annuler</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => setEditingInc({ id: item.id, text: item.missing_items || '' })}
+                            className="cursor-text group"
+                            title="Cliquer pour modifier"
+                          >
+                            {item.missing_items ? (
+                              <p className={`text-sm leading-relaxed ${dm ? 'text-slate-300' : 'text-gray-600'}`}>
+                                <span className={`font-semibold text-xs uppercase tracking-wide ${dm ? 'text-slate-500' : 'text-gray-400'}`}>Manque : </span>
+                                {item.missing_items}
+                                <span className={`ml-1.5 text-xs opacity-0 group-hover:opacity-60 transition-opacity ${dm ? 'text-slate-400' : 'text-gray-400'}`}>✏️</span>
+                              </p>
+                            ) : (
+                              <p className={`text-sm italic ${dm ? 'text-slate-500' : 'text-gray-400'}`}>
+                                Pièces manquantes non précisées
+                                <span className={`ml-1.5 text-xs opacity-0 group-hover:opacity-60 transition-opacity ${dm ? 'text-slate-400' : 'text-gray-400'}`}>✏️</span>
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        <p className={`text-xs mt-1 ${dm ? 'text-slate-600' : 'text-gray-300'}`}>
+                          Ajouté le {formatDate(item.created_at)}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => handleDeleteIncomplete(item.id, gameName)}
+                        title="Supprimer"
+                        className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition ${
+                          dm ? 'text-slate-600 hover:text-red-400 hover:bg-red-900/20' : 'text-gray-300 hover:text-red-400 hover:bg-red-50'
+                        }`}
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -855,18 +1044,44 @@ export default function StockManager() {
         </div>
       )}
 
-      {/* ── Modal "Mettre en incomplet" ─────────────────────────── */}
+      {/* ── [10] Modal "Mettre en incomplet" (stock + entrée libre) */}
       {showIncModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowIncModal(false)}>
-          <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm mx-0 sm:mx-4 rounded-t-3xl sm:rounded-2xl shadow-2xl border p-6 ${dm ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}>
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => { setShowIncModal(false); setIncModalFreeEntry(false); }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className={`w-full max-w-sm mx-0 sm:mx-4 rounded-t-3xl sm:rounded-2xl shadow-2xl border p-6 ${dm ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}
+          >
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-lg font-bold">🧩 Jeu incomplet</h2>
-              <button onClick={() => setShowIncModal(false)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${dm ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-400'}`}>✕</button>
+              <button
+                onClick={() => { setShowIncModal(false); setIncModalFreeEntry(false); }}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${dm ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-400'}`}
+              >✕</button>
             </div>
 
-            <p className={`text-sm mb-4 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
-              1 "<span className="font-bold">{incModalGame}</span>" sera retiré du stock complet et ajouté aux incomplets.
-            </p>
+            {/* [10] Champ nom libre si ouvert depuis l'onglet incomplets */}
+            {incModalFreeEntry ? (
+              <div className="mb-4">
+                <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wide ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Nom du jeu</label>
+                <input
+                  type="text"
+                  value={incModalGame}
+                  autoFocus
+                  onChange={e => setIncModalGame(e.target.value)}
+                  placeholder="Ex: Catan, Wingspan…"
+                  className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none transition ${
+                    dm ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500 focus:border-rose-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-rose-400'
+                  }`}
+                />
+              </div>
+            ) : (
+              <p className={`text-sm mb-4 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
+                1 "<span className="font-bold">{incModalGame}</span>" sera compté comme incomplet dans le stock.
+              </p>
+            )}
 
             <div className="mb-5">
               <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wide ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -875,35 +1090,45 @@ export default function StockManager() {
               <textarea
                 value={incModalText}
                 onChange={e => setIncModalText(e.target.value)}
-                autoFocus
+                autoFocus={!incModalFreeEntry}
                 placeholder="Ex: 2 tuiles rivière, 1 plateau joueur violet…"
                 rows={3}
                 className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none resize-none transition ${dm ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500 focus:border-rose-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-rose-400'}`}
               />
             </div>
 
-            <button onClick={handleMoveToIncomplete} disabled={incModalLoading}
+            <button
+              onClick={handleMoveToIncomplete}
+              disabled={incModalLoading || !incModalGame.trim()}
               className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition ${
-                incModalLoading
+                incModalLoading || !incModalGame.trim()
                   ? 'opacity-50 cursor-not-allowed bg-rose-600 text-white'
                   : 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-500/20'
               }`}
             >
-              {incModalLoading ? <><span className="animate-spin">⏳</span> Déplacement…</> : <>🧩 Déplacer vers incomplets</>}
+              {incModalLoading ? <><span className="animate-spin">⏳</span> Enregistrement…</> : <>🧩 Confirmer</>}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Toast ────────────────────────────────────────────────── */}
+      {/* ── [2] Toast avec bouton Annuler ───────────────────────── */}
       {toast && (
-        <div className={`fixed bottom-6 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-xs ${
+        <div className={`fixed bottom-6 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-xs ${
           toast.type === 'error'
             ? dm ? 'bg-red-900/80 text-red-200 border border-red-700' : 'bg-red-50 text-red-700 border border-red-200'
             : dm ? 'bg-green-900/80 text-green-200 border border-green-700' : 'bg-green-50 text-green-700 border border-green-200'
         }`}>
-          {toast.type === 'error' ? '❌' : '✅'}
-          <span>{toast.msg}</span>
+          <span>{toast.type === 'error' ? '❌' : '✅'}</span>
+          <span className="flex-1">{toast.msg}</span>
+          {toast.action && (
+            <button
+              onClick={() => { setToast(null); toast.action.fn(); }}
+              className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold border transition ${
+                dm ? 'border-green-600 hover:bg-green-800/40 text-green-300' : 'border-green-400 hover:bg-green-100 text-green-700'
+              }`}
+            >{toast.action.label}</button>
+          )}
         </div>
       )}
     </div>
