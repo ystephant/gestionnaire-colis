@@ -72,7 +72,7 @@ export default function StockManager() {
   const [search,         setSearch]         = useState('');
   const [showSearchSugg, setShowSearchSugg] = useState(false);
   const [filter,         setFilter]         = useState('all');
-  const [sortMode,       setSortMode]       = useState('smart');
+  const [sortMode,       setSortMode]       = useState('alpha');
   const [toast,          setToast]          = useState(null); // { msg, type, action? }
 
   // ── Modal ajout manuel ───────────────────────────────────────
@@ -92,6 +92,13 @@ export default function StockManager() {
 
   // ── Search onglet incomplet ──────────────────────────────────
   const [searchInc, setSearchInc] = useState('');
+
+  // ── Popin confirmation suppression incomplet ─────────────────
+  const [confirmDeleteInc, setConfirmDeleteInc] = useState(null); // { id, gameName }
+
+  // ── Autocomplétion modal incomplet (entrée libre) ────────────
+  const [showIncSugg, setShowIncSugg] = useState(false);
+  const incFreeWrapRef = useRef(null);
 
   // ── [11] Édition inline d'un incomplet ──────────────────────
   const [editingInc,    setEditingInc]    = useState(null); // { id, text }
@@ -118,7 +125,7 @@ export default function StockManager() {
     const ss = sessionStorage.getItem('stock_sort');
     const sq = sessionStorage.getItem('stock_search');
     if (sf) setFilter(sf);
-    if (ss) setSortMode(ss);
+    if (ss) setSortMode(ss === 'smart' ? 'alpha' : ss);
     if (sq) setSearch(sq);
   }, []);
   useEffect(() => { sessionStorage.setItem('stock_filter', filter);  }, [filter]);
@@ -189,6 +196,7 @@ export default function StockManager() {
     const handler = (e) => {
       if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) setShowSearchSugg(false);
       if (addWrapRef.current    && !addWrapRef.current.contains(e.target))    setShowAddSugg(false);
+      if (incFreeWrapRef.current && !incFreeWrapRef.current.contains(e.target)) setShowIncSugg(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -369,11 +377,17 @@ export default function StockManager() {
   };
 
   const handleDeleteIncomplete = async (id, gameName) => {
-    if (!confirm(`Supprimer "${gameName}" des incomplets ?`)) return;
+    setConfirmDeleteInc({ id, gameName });
+  };
+
+  const confirmAndDeleteIncomplete = async () => {
+    if (!confirmDeleteInc) return;
+    const { id, gameName } = confirmDeleteInc;
+    setConfirmDeleteInc(null);
     try {
       const { error } = await supabase.from('stock_incomplete').delete().eq('id', id);
       if (error) throw error;
-      showToast(`"${gameName}" retiré des incomplets`);
+      showToast(`"${gameName}" remis en stock ✓`);
       await loadData();
     } catch (err) { showToast('Erreur lors de la suppression', 'error'); }
   };
@@ -423,7 +437,8 @@ export default function StockManager() {
       return true;
     })
     .sort((a, b) => {
-      if (sortMode === 'desc') return b.net - a.net;
+      if (sortMode === 'desc')  return b.net - a.net;
+      if (sortMode === 'alpha') return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
       if (a.canList && !b.canList)                       return -1;
       if (!a.canList && b.canList)                       return 1;
       if (a.incomingCount > 0 && b.incomingCount === 0) return -1;
@@ -463,6 +478,10 @@ export default function StockManager() {
 
   const addSugg = addName.length > 0
     ? allGameNames.filter(n => n.toLowerCase().includes(addName.toLowerCase())).slice(0, 7)
+    : [];
+
+  const incSugg = incModalFreeEntry && incModalGame.length > 0
+    ? allGameNames.filter(n => n.toLowerCase().includes(incModalGame.toLowerCase())).slice(0, 7)
     : [];
 
   const dm = darkMode;
@@ -639,14 +658,14 @@ export default function StockManager() {
               ))}
             </div>
             <button
-              onClick={() => setSortMode(m => m === 'smart' ? 'desc' : 'smart')}
-              title={sortMode === 'desc' ? 'Tri : quantité décroissante' : 'Tri : intelligent'}
+              onClick={() => setSortMode(m => m === 'alpha' ? 'desc' : 'alpha')}
+              title={sortMode === 'desc' ? 'Tri : quantité décroissante' : 'Tri : alphabétique'}
               className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition whitespace-nowrap ${
                 sortMode === 'desc'
                   ? 'bg-indigo-600 text-white shadow'
                   : dm ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-gray-100 text-gray-500 hover:text-gray-800'
               }`}
-            >📊 {sortMode === 'desc' ? 'Qté ↓' : 'Tri auto'}</button>
+            >📊 {sortMode === 'desc' ? 'Qté ↓' : 'A → Z'}</button>
           </div>
 
           {/* [5] Compteur de résultats */}
@@ -706,21 +725,13 @@ export default function StockManager() {
                     onTouchEnd={(e)   => handleCardTouchEnd(e, g.name)}
                     onClick={() => { if (swipedCard === g.name) setSwipedCard(null); }}
                   >
-                    {/* [3] Bannière canList avec bouton → Photos */}
+                    {/* [3] Bannière canList */}
                     {g.canList && (
-                      <div className={`px-4 py-2 flex items-center justify-between gap-2 border-b-2 border-amber-400 ${dm ? 'bg-amber-900/25 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm flex-shrink-0">🏷️</span>
-                          <span className="text-xs font-semibold truncate">
-                            Tu peux mettre un nouveau <span className="font-black">"{g.name}"</span> en vente !
-                          </span>
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); router.push('/photos?game=' + encodeURIComponent(g.name)); }}
-                          className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-                            dm ? 'bg-amber-500/20 hover:bg-amber-500/40 text-amber-300' : 'bg-amber-200 hover:bg-amber-300 text-amber-800'
-                          }`}
-                        >📸 Mettre en vente →</button>
+                      <div className={`px-4 py-2 flex items-center gap-2 border-b-2 border-amber-400 ${dm ? 'bg-amber-900/25 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>
+                        <span className="text-sm flex-shrink-0">🏷️</span>
+                        <span className="text-xs font-semibold truncate">
+                          Tu peux mettre un nouveau <span className="font-black">"{g.name}"</span> en vente !
+                        </span>
                       </div>
                     )}
 
@@ -1064,18 +1075,28 @@ export default function StockManager() {
 
             {/* [10] Champ nom libre si ouvert depuis l'onglet incomplets */}
             {incModalFreeEntry ? (
-              <div className="mb-4">
+              <div className="mb-4 relative" ref={incFreeWrapRef} onClick={e => e.stopPropagation()}>
                 <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wide ${dm ? 'text-slate-400' : 'text-gray-500'}`}>Nom du jeu</label>
                 <input
                   type="text"
                   value={incModalGame}
                   autoFocus
-                  onChange={e => setIncModalGame(e.target.value)}
+                  onChange={e => { setIncModalGame(e.target.value); setShowIncSugg(true); }}
+                  onFocus={() => setShowIncSugg(true)}
                   placeholder="Ex: Catan, Wingspan…"
                   className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none transition ${
                     dm ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500 focus:border-rose-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-rose-400'
                   }`}
                 />
+                {showIncSugg && incSugg.length > 0 && (
+                  <div className={`absolute z-20 w-full mt-1 rounded-xl shadow-xl border overflow-hidden ${dm ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}>
+                    {incSugg.map(s => (
+                      <button key={s} onMouseDown={() => { setIncModalGame(s); setShowIncSugg(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm transition ${dm ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-50 text-gray-900'}`}
+                      >{s}</button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <p className={`text-sm mb-4 ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -1108,6 +1129,35 @@ export default function StockManager() {
             >
               {incModalLoading ? <><span className="animate-spin">⏳</span> Enregistrement…</> : <>🧩 Confirmer</>}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Popin confirmation remise en stock ──────────────────── */}
+      {confirmDeleteInc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4" onClick={() => setConfirmDeleteInc(null)}>
+          <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm rounded-2xl shadow-2xl border p-6 ${dm ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}>
+            <div className="text-center mb-5">
+              <div className="text-4xl mb-3">✅</div>
+              <h2 className={`text-base font-bold mb-2 ${dm ? 'text-white' : 'text-gray-900'}`}>
+                Remettre en stock ?
+              </h2>
+              <p className={`text-sm leading-relaxed ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
+                Voulez-vous remettre{' '}
+                <span className="font-bold">{confirmDeleteInc.gameName}</span>{' '}
+                en stock ? Cela signifie qu'il est de nouveau complet.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDeleteInc(null)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${dm ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+              >Annuler</button>
+              <button
+                onClick={confirmAndDeleteIncomplete}
+                className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 active:bg-green-700 text-white text-sm font-bold transition shadow-lg shadow-green-500/20"
+              >✅ Oui, remettre en stock</button>
+            </div>
           </div>
         </div>
       )}
