@@ -1162,16 +1162,37 @@ const loadUserPreferences = async () => {
         buysByGame[name].push(t);
       });
 
+    const sellCountByGame = {};
+    sellTransactions
+      .filter(t => t.game_name && t.game_name.trim() !== '' && !excluded(t.game_name))
+      .forEach(t => {
+        const name = t.game_name.trim();
+        sellCountByGame[name] = (sellCountByGame[name] || 0) + 1;
+      });
+
     const now = new Date();
 
     return Object.entries(buysByGame)
       .map(([name, buys]) => {
-        const firstBuy = new Date(Math.min(...buys.map(b => new Date(b.created_at))));
-        const daysDormant = Math.floor((now - firstBuy) / (1000 * 60 * 60 * 24));
-        const totalInvested = buys.reduce((s, t) => s + t.price, 0);
-        return { name, count: buys.length, totalInvested, firstBuy, daysDormant };
+        const soldCount = sellCountByGame[name] || 0;
+        const unsoldCount = buys.length - soldCount;
+
+        // Si tout a été vendu, on ignore ce jeu
+        if (unsoldCount <= 0) return null;
+
+        // Trier les achats du plus ancien au plus récent
+        // Les `soldCount` premiers sont considérés comme vendus
+        // → le premier achat encore "en stock" est à l'index soldCount
+        const sortedBuys = [...buys].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const unsoldBuys = sortedBuys.slice(soldCount);
+
+        const firstUnsoldBuy = new Date(unsoldBuys[0].created_at);
+        const daysDormant = Math.floor((now - firstUnsoldBuy) / (1000 * 60 * 60 * 24));
+        const totalInvested = unsoldBuys.reduce((s, t) => s + t.price, 0);
+
+        return { name, count: unsoldCount, totalInvested, firstBuy: firstUnsoldBuy, daysDormant };
       })
-      .filter(item => item.daysDormant >= 90)
+      .filter(item => item !== null && item.daysDormant >= 90)
       .sort((a, b) => b.daysDormant - a.daysDormant);
   };
 
