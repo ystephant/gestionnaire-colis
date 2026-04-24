@@ -526,27 +526,23 @@ export default function PhotosManager() {
     if (!valid.length) return;
     setUploading(true); setUploadProgress(0);
 
-    const BATCH = 3; // 3 uploads simultanés max
     let done = 0;
 
-    for (let i = 0; i < valid.length; i += BATCH) {
-      const batch = valid.slice(i, i + BATCH);
-      await Promise.all(
-        batch.map(async (file) => {
-          try {
-            const { url, publicId } = await uploadToCloudinary(file);
-            const { data, error } = await supabase.from('sale_photos').insert({
-              user_id: username, image_url: url, cloudinary_public_id: publicId,
-              status: 'pas_encore_en_vente', position: Date.now(), rotation: 0,
-            }).select().single();
-            if (error) throw error;
-            setPhotos(prev => ({ ...prev, pas_encore_en_vente: [...prev.pas_encore_en_vente, data] }));
-          } catch { showToast(`Erreur upload: ${file.name}`, 'error'); }
-          done++;
-          setUploadProgress(Math.round((done / valid.length) * 100));
-        })
-      );
-    }
+    await Promise.all(
+      valid.map(async (file) => {
+        try {
+          const { url, publicId } = await uploadToCloudinary(file);
+          const { data, error } = await supabase.from('sale_photos').insert({
+            user_id: username, image_url: url, cloudinary_public_id: publicId,
+            status: 'pas_encore_en_vente', position: Date.now(), rotation: 0,
+          }).select().single();
+          if (error) throw error;
+          setPhotos(prev => ({ ...prev, pas_encore_en_vente: [...prev.pas_encore_en_vente, data] }));
+        } catch { showToast(`Erreur upload: ${file.name}`, 'error'); }
+        done++;
+        setUploadProgress(Math.round((done / valid.length) * 100));
+      })
+    );
 
     setUploading(false); setUploadProgress(0);
     showToast(`${done} photo${done > 1 ? 's' : ''} ajoutée${done > 1 ? 's' : ''}`, 'success');
