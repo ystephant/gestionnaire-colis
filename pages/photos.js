@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
+import imageCompression from 'browser-image-compression';
 import {
   Upload, Tag, Trash2, X, Check, ChevronDown, ChevronRight,
   Image as ImageIcon, Loader2, Sun, Moon, LogOut, ArrowLeft,
@@ -493,9 +494,22 @@ export default function PhotosManager() {
   }, []);
 
   // ── Upload ───────────────────────────────────────────────────
+
+  // Compression client-side via browser-image-compression (Web Worker, sans canvas DOM)
+  // Gain typique : photo téléphone 5 Mo → ~400 Ko (10–15× plus léger)
+  const compressImage = async (file) => {
+    return await imageCompression(file, {
+      maxSizeMB: 0.5,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+      fileType: 'image/jpeg',
+    });
+  };
+
   const uploadToCloudinary = async (file) => {
+    const compressed = await compressImage(file); // compression avant envoi
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', compressed);
     fd.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     fd.append('folder', 'sale_photos');
     const res = await fetch(
@@ -511,22 +525,31 @@ export default function PhotosManager() {
     const valid = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (!valid.length) return;
     setUploading(true); setUploadProgress(0);
+
+    const BATCH = 3; // 3 uploads simultanés max
     let done = 0;
-    for (const file of valid) {
-      try {
-        const { url, publicId } = await uploadToCloudinary(file);
-        const { data, error } = await supabase.from('sale_photos').insert({
-          user_id: username, image_url: url, cloudinary_public_id: publicId,
-          status: 'pas_encore_en_vente', position: Date.now(), rotation: 0,
-        }).select().single();
-        if (error) throw error;
-        setPhotos(prev => ({ ...prev, pas_encore_en_vente: [...prev.pas_encore_en_vente, data] }));
-      } catch { showToast(`Erreur upload: ${file.name}`, 'error'); }
-      done++;
-      setUploadProgress(Math.round((done / valid.length) * 100));
+
+    for (let i = 0; i < valid.length; i += BATCH) {
+      const batch = valid.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map(async (file) => {
+          try {
+            const { url, publicId } = await uploadToCloudinary(file);
+            const { data, error } = await supabase.from('sale_photos').insert({
+              user_id: username, image_url: url, cloudinary_public_id: publicId,
+              status: 'pas_encore_en_vente', position: Date.now(), rotation: 0,
+            }).select().single();
+            if (error) throw error;
+            setPhotos(prev => ({ ...prev, pas_encore_en_vente: [...prev.pas_encore_en_vente, data] }));
+          } catch { showToast(`Erreur upload: ${file.name}`, 'error'); }
+          done++;
+          setUploadProgress(Math.round((done / valid.length) * 100));
+        })
+      );
     }
+
     setUploading(false); setUploadProgress(0);
-    showToast(`${done} photo${done > 1 ? 's' : ''} ajoutee${done > 1 ? 's' : ''}`, 'success');
+    showToast(`${done} photo${done > 1 ? 's' : ''} ajoutée${done > 1 ? 's' : ''}`, 'success');
   }, [username]);
 
   const onDropZoneDragOver  = (e) => { e.preventDefault(); setIsDraggingFile(true); };
