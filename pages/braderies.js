@@ -217,8 +217,7 @@ export default function Braderies() {
   const [quickComment, setQuickComment] = useState('');
   const [quickLoading, setQuickLoading] = useState(false);
 
-  // Toast
-  const [toast, setToast] = useState(null);
+  const [showGpsModal, setShowGpsModal] = useState(false);
   const toastTimer = useRef(null);
 
   // Ref pour le callback realtime (évite les closures périmées)
@@ -519,7 +518,7 @@ export default function Braderies() {
           // Chargement terminé
           setMapLoading(false);
         }, () => {
-          setMapError('Accès à la localisation refusé. Autorise-le dans les réglages du navigateur.');
+          setShowGpsModal(true);
           setMapLoading(false);
         }, { enableHighAccuracy: false, timeout: 12000 });
       });
@@ -724,6 +723,45 @@ export default function Braderies() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Popin GPS refusé ── */}
+      {showGpsModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className={`w-full max-w-sm rounded-3xl shadow-2xl p-6 ${dm ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'}`}>
+            <div className="text-center mb-5">
+              <div className="text-5xl mb-3">📍</div>
+              <h3 className="text-lg font-bold mb-2">Accès à la localisation</h3>
+              <p className={`text-sm leading-relaxed ${dm ? 'text-gray-300' : 'text-gray-500'}`}>
+                Pour centrer la carte autour de toi, autorise l'accès à ta position GPS.
+              </p>
+            </div>
+
+            <div className={`rounded-2xl p-4 mb-5 text-sm space-y-2 ${dm ? 'bg-gray-700' : 'bg-gray-50'}`}>
+              <p className="font-semibold text-xs uppercase tracking-wide opacity-60 mb-2">Comment autoriser</p>
+              <p><span className="font-medium">iPhone Safari :</span> <span className={dm ? 'text-gray-300' : 'text-gray-600'}>Réglages → Safari → Localisation → Autoriser</span></p>
+              <p><span className="font-medium">Android Chrome :</span> <span className={dm ? 'text-gray-300' : 'text-gray-600'}>Réglages → Applications → Chrome → Autorisations → Position</span></p>
+              <p><span className="font-medium">Barre d'adresse :</span> <span className={dm ? 'text-gray-300' : 'text-gray-600'}>Clique sur 🔒 puis autorise la localisation</span></p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setShowGpsModal(false);
+                  setShowMap(false);
+                  setTimeout(() => openMap(), 100);
+                }}
+                className="w-full py-3.5 rounded-2xl bg-blue-600 text-white font-semibold text-sm min-h-[48px]">
+                🔄 Réessayer
+              </button>
+              <button
+                onClick={() => setShowGpsModal(false)}
+                className={`w-full py-3 rounded-2xl text-sm font-medium min-h-[44px] ${dm ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
+                Continuer sans GPS
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
