@@ -268,7 +268,9 @@ export default function Braderies() {
         if (loadRef.current) loadRef.current();
       })
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    // Polling de secours toutes les 10s (au cas où la réplication Supabase n'est pas activée)
+    const poll = setInterval(() => { if (loadRef.current) loadRef.current(); }, 10000);
+    return () => { supabase.removeChannel(ch); clearInterval(poll); };
   }, []); // intentionnellement vide — subscription créée une seule fois
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
@@ -342,56 +344,7 @@ export default function Braderies() {
 
   // ── Carte Leaflet ─────────────────────────────────────────────────────────
 
-  /** Dessine (ou re-dessine) les marqueurs de communes sur la carte */
-  const drawMarkers = useCallback((L, map, communes, currentBraderies) => {
-    // Supprimer anciens marqueurs
-    if (markersLayerRef.current) {
-      markersLayerRef.current.forEach(m => m.remove());
-    }
-    markersLayerRef.current = [];
 
-    communes.forEach(commune => {
-      const clat = commune.centre?.coordinates?.[1];
-      const clon = commune.centre?.coordinates?.[0];
-      if (!clat || !clon) return;
-
-      const existing = currentBraderies.find(b => b.ville.toLowerCase() === commune.nom.toLowerCase());
-      const color = existing ? NOTES[existing.note].mapColor : '#6b7280';
-      const radius = existing ? 10 : 7;
-
-      const marker = L.circleMarker([clat, clon], {
-        radius, color, fillColor: color, fillOpacity: 0.75, weight: 2,
-      }).addTo(map);
-
-      const noteHtml = existing
-        ? `<span style="color:${color};font-weight:600">${NOTES[existing.note].emoji} ${NOTES[existing.note].label}</span>`
-        : '<span style="color:#6b7280">Non noté</span>';
-
-      marker.bindPopup(`
-        <div style="font-family:sans-serif;min-width:130px">
-          <div style="font-weight:700;font-size:14px;margin-bottom:4px">${commune.nom}</div>
-          <div style="font-size:12px;margin-bottom:8px">${noteHtml}</div>
-          <button id="btn-${commune.nom.replace(/\s/g, '_')}"
-            style="background:#2563eb;color:white;border:none;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;width:100%">
-            📝 Noter cette ville
-          </button>
-        </div>
-      `);
-
-      marker.on('popupopen', () => {
-        const btn = document.getElementById(`btn-${commune.nom.replace(/\s/g, '_')}`);
-        if (btn) btn.addEventListener('click', () => {
-          setQuickCity({ nom: commune.nom, cp: (commune.codesPostaux || [''])[0] });
-          setQuickNote(existing?.note || '');
-          setQuickComment(existing?.commentaire || '');
-          setQuickQuartier('');
-          marker.closePopup();
-        });
-      });
-
-      markersLayerRef.current.push(marker);
-    });
-  }, []);
 
   /** Ouvre la modal carte et initialise Leaflet */
   const openMap = useCallback(() => {
@@ -412,7 +365,6 @@ export default function Braderies() {
     }
 
     let cancelled = false;
-    let storedCommunes = [];
 
     const init = () => {
       if (cancelled || !mapContainerRef.current) return;
@@ -483,14 +435,7 @@ export default function Braderies() {
           };
           legend.addTo(map);
 
-          // Chargement des communes proches
-          try {
-            const res = await fetch(`https://geo.api.gouv.fr/communes?lat=${lat}&lon=${lon}&fields=nom,codesPostaux,centre&limit=60`);
-            const data = await res.json();
-            storedCommunes = data;
-            if (!cancelled) drawMarkers(L, map, data, braderies);
-          } catch { /* silencieux */ }
-
+          // Chargement terminé
           setMapLoading(false);
         }, () => {
           setMapError('Accès à la localisation refusé. Autorise-le dans les réglages du navigateur.');
@@ -503,21 +448,6 @@ export default function Braderies() {
     const t = setTimeout(init, 150);
     return () => { cancelled = true; clearTimeout(t); };
   }, [showMap]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-dessiner les marqueurs quand braderies change (et que la carte est ouverte)
-  useEffect(() => {
-    if (!showMap || !leafletMapRef.current || !markersLayerRef.current) return;
-    if (typeof window === 'undefined' || !window.L) return;
-    // Récupérer les communes stockées dans le layer
-    // On les re-fetch légèrement depuis les marqueurs existants via la carte
-    if (!userPosRef.current) return;
-    const { lat, lon } = userPosRef.current;
-    fetch(`https://geo.api.gouv.fr/communes?lat=${lat}&lon=${lon}&fields=nom,codesPostaux,centre&limit=60`)
-      .then(r => r.json())
-      .then(data => {
-        if (leafletMapRef.current && window.L) drawMarkers(window.L, leafletMapRef.current, data, braderies);
-      }).catch(() => {});
-  }, [braderies, showMap, drawMarkers]);
 
   // ── Filtrage ──────────────────────────────────────────────────────────────
 
