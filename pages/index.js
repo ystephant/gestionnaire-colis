@@ -4,8 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
 );
 
 const PHILIBERT_FLASH_URL = 'https://www.philibertnet.com/fr/flash-sales?p=1';
@@ -568,6 +568,20 @@ export default function MenuPrincipal() {
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                     <circle cx="8.5" cy="8.5" r="1.5"></circle>
                     <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                ),
+              },
+              {
+                path: '/braderies',
+                title: 'Mes Braderies',
+                description: 'Notez et retrouvez vos braderies sur une carte interactive',
+                gradient: 'from-amber-500 to-orange-600',
+                tags: [{ label: '🏪 Braderies', bg: 'bg-amber-100', text: 'text-amber-700' }, { label: '🗺️ Carte', bg: 'bg-orange-100', text: 'text-orange-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
                   </svg>
                 ),
               },
