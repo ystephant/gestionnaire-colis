@@ -181,7 +181,7 @@ export default function Braderies() {
   const [braderies, setBraderies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filtreNote, setFiltreNote] = useState('all');
+  const [filtreNote, setFiltreNote] = useState('tres_bien');
 
   // Formulaire ajout manuel
   const [showForm, setShowForm] = useState(false);
