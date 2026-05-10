@@ -347,7 +347,56 @@ export default function Braderies() {
 
 
 
-  /** Ouvre la modal carte et initialise Leaflet */
+  /** Géocode et affiche les braderies déjà enregistrées sur la carte */
+  const drawBraderieMarkers = useCallback(async (L, map, list) => {
+    // Nettoyer les anciens marqueurs
+    if (markersLayerRef.current) {
+      markersLayerRef.current.forEach(m => m.remove());
+    }
+    markersLayerRef.current = [];
+
+    await Promise.all(list.map(async (b) => {
+      try {
+        const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(b.ville)}&fields=nom,centre,codesPostaux&limit=1`);
+        const data = await res.json();
+        if (!data || data.length === 0) return;
+        const coords = data[0].centre?.coordinates;
+        if (!coords) return;
+        const [lon, lat] = coords;
+        const n = NOTES[b.note] || NOTES.passable;
+
+        const marker = L.circleMarker([lat, lon], {
+          radius: 11, color: n.mapColor, fillColor: n.mapColor, fillOpacity: 0.85, weight: 2.5,
+        }).addTo(map);
+
+        marker.bindPopup(`
+          <div style="font-family:sans-serif;min-width:140px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${b.ville}</div>
+            ${b.quartier ? `<div style="font-size:11px;color:#6b7280;margin-bottom:4px">${b.quartier}</div>` : ''}
+            <div style="font-size:12px;color:${n.mapColor};font-weight:600;margin-bottom:6px">${n.emoji} ${n.label}</div>
+            ${b.commentaire ? `<div style="font-size:11px;color:#374151;margin-bottom:6px">${b.commentaire}</div>` : ''}
+            <button id="edit-${b.id}"
+              style="background:#2563eb;color:white;border:none;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;width:100%">
+              ✏️ Modifier
+            </button>
+          </div>
+        `);
+
+        marker.on('popupopen', () => {
+          const btn = document.getElementById(`edit-${b.id}`);
+          if (btn) btn.addEventListener('click', () => {
+            setQuickCity({ nom: b.ville, cp: (data[0].codesPostaux || [''])[0] });
+            setQuickNote(b.note);
+            setQuickComment(b.commentaire || '');
+            setQuickQuartier(b.quartier || '');
+            marker.closePopup();
+          });
+        });
+
+        markersLayerRef.current.push(marker);
+      } catch { /* silencieux */ }
+    }));
+  }, []);
   const openMap = useCallback(() => {
     setShowMap(true);
     setMapError('');
@@ -426,7 +475,7 @@ export default function Braderies() {
           legend.onAdd = () => {
             const div = L.DomUtil.create('div');
             div.innerHTML = `
-              <div style="background:white;padding:8px 10px;border-radius:10px;font-size:11px;line-height:1.7;box-shadow:0 2px 8px rgba(0,0,0,.15)">
+              <div style="background:white;color:#1f2937;padding:8px 10px;border-radius:10px;font-size:11px;line-height:1.7;box-shadow:0 2px 8px rgba(0,0,0,.15)">
                 <div><span style="color:#16a34a">●</span> Très bien</div>
                 <div><span style="color:#ca8a04">●</span> Passable</div>
                 <div><span style="color:#dc2626">●</span> À fuir</div>
@@ -435,6 +484,11 @@ export default function Braderies() {
             return div;
           };
           legend.addTo(map);
+
+          // Afficher les braderies déjà enregistrées
+          if (braderiesRef.current.length > 0) {
+            drawBraderieMarkers(L, map, braderiesRef.current);
+          }
 
           // Chargement terminé
           setMapLoading(false);
@@ -449,6 +503,12 @@ export default function Braderies() {
     const t = setTimeout(init, 150);
     return () => { cancelled = true; clearTimeout(t); };
   }, [showMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-dessiner les marqueurs braderies quand les données changent (realtime)
+  useEffect(() => {
+    if (!showMap || !leafletMapRef.current || !window.L) return;
+    drawBraderieMarkers(window.L, leafletMapRef.current, braderies);
+  }, [braderies, showMap, drawBraderieMarkers]);
 
   // ── Filtrage ──────────────────────────────────────────────────────────────
 
