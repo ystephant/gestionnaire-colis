@@ -355,41 +355,67 @@ export default function Braderies() {
     }
     markersLayerRef.current = [];
 
-    await Promise.all(list.map(async (b) => {
+    // Regrouper par ville (plusieurs quartiers = un seul marqueur)
+    const byVille = list.reduce((acc, b) => {
+      const key = b.ville.toLowerCase();
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(b);
+      return acc;
+    }, {});
+
+    await Promise.all(Object.values(byVille).map(async (items) => {
+      const ville = items[0].ville;
       try {
-        const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(b.ville)}&fields=nom,centre,codesPostaux&limit=1`);
+        const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(ville)}&fields=nom,centre,codesPostaux&limit=1`);
         const data = await res.json();
         if (!data || data.length === 0) return;
         const coords = data[0].centre?.coordinates;
         if (!coords) return;
         const [lon, lat] = coords;
-        const n = NOTES[b.note] || NOTES.passable;
+
+        // Couleur du marqueur : meilleure note présente pour cette ville
+        const priority = ['tres_bien', 'passable', 'a_fuir'];
+        const bestNote = priority.find(p => items.some(b => b.note === p)) || 'passable';
+        const n = NOTES[bestNote];
 
         const marker = L.circleMarker([lat, lon], {
           radius: 11, color: n.mapColor, fillColor: n.mapColor, fillOpacity: 0.85, weight: 2.5,
         }).addTo(map);
 
+        // Popup avec tous les quartiers listés
+        const rowsHtml = items.map(b => {
+          const bn = NOTES[b.note] || NOTES.passable;
+          return `
+            <div style="border-top:1px solid #e5e7eb;padding-top:6px;margin-top:6px">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <span style="font-size:12px;color:#374151;font-weight:600">${b.quartier || '<em style="color:#9ca3af;font-weight:400">Sans quartier</em>'}</span>
+                <span style="font-size:11px;color:${bn.mapColor};font-weight:700;white-space:nowrap">${bn.emoji} ${bn.label}</span>
+              </div>
+              ${b.commentaire ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">${b.commentaire}</div>` : ''}
+              <button data-id="${b.id}" data-ville="${b.ville}" data-quartier="${b.quartier || ''}" data-note="${b.note}" data-comment="${b.commentaire || ''}" data-cp="${(data[0].codesPostaux || [''])[0]}"
+                style="margin-top:5px;background:#2563eb;color:white;border:none;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;width:100%">
+                ✏️ Modifier
+              </button>
+            </div>`;
+        }).join('');
+
         marker.bindPopup(`
-          <div style="font-family:sans-serif;min-width:140px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${b.ville}</div>
-            ${b.quartier ? `<div style="font-size:11px;color:#6b7280;margin-bottom:4px">${b.quartier}</div>` : ''}
-            <div style="font-size:12px;color:${n.mapColor};font-weight:600;margin-bottom:6px">${n.emoji} ${n.label}</div>
-            ${b.commentaire ? `<div style="font-size:11px;color:#374151;margin-bottom:6px">${b.commentaire}</div>` : ''}
-            <button id="edit-${b.id}"
-              style="background:#2563eb;color:white;border:none;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;width:100%">
-              ✏️ Modifier
-            </button>
+          <div style="font-family:sans-serif;min-width:160px;max-width:220px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${ville}</div>
+            <div style="font-size:11px;color:#6b7280">${items.length} braderie${items.length > 1 ? 's' : ''}</div>
+            ${rowsHtml}
           </div>
-        `);
+        `, { maxHeight: 300 });
 
         marker.on('popupopen', () => {
-          const btn = document.getElementById(`edit-${b.id}`);
-          if (btn) btn.addEventListener('click', () => {
-            setQuickCity({ nom: b.ville, cp: (data[0].codesPostaux || [''])[0] });
-            setQuickNote(b.note);
-            setQuickComment(b.commentaire || '');
-            setQuickQuartier(b.quartier || '');
-            marker.closePopup();
+          marker.getPopup().getElement()?.querySelectorAll('button[data-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              setQuickCity({ nom: btn.dataset.ville, cp: btn.dataset.cp });
+              setQuickNote(btn.dataset.note);
+              setQuickComment(btn.dataset.comment);
+              setQuickQuartier(btn.dataset.quartier);
+              marker.closePopup();
+            });
           });
         });
 
