@@ -53,13 +53,7 @@ const FILTRE_OPTIONS = [
 
 /** Ouvre Google Maps dans un nouvel onglet — compatible PC et mobile */
 function openUrl(url) {
-  const a = document.createElement('a');
-  a.href = url;
-  a.target = '_blank';
-  a.rel = 'noopener noreferrer';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function openGoogleMaps(ville, quartier) {
@@ -688,11 +682,11 @@ export default function Braderies() {
       <div className={`sticky top-0 z-30 border-b shadow-sm ${dm ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className="max-w-2xl mx-auto px-3 py-3 flex items-center gap-2">
 
-          {/* Bouton retour accueil */}
+          {/* Bouton retour accueil — icône flèche grise uniquement */}
           <button onClick={() => router.push('/')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium shrink-0 min-h-[40px] transition ${dm ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            <ArrowLeft size={16} />
-            <span className="hidden sm:inline">Accueil</span>
+            className={`p-2.5 rounded-xl min-h-[40px] min-w-[40px] flex items-center justify-center shrink-0 transition ${dm ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-transparent text-gray-400 hover:bg-gray-100'}`}
+            title="Retour à l'accueil">
+            <ArrowLeft size={20} />
           </button>
 
           {/* Titre */}
