@@ -218,6 +218,9 @@ export default function Braderies() {
   const [quickLoading, setQuickLoading] = useState(false);
 
   const [showGpsModal, setShowGpsModal] = useState(false);
+
+  // Toast
+  const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
   // Ref pour le callback realtime (évite les closures périmées)
@@ -531,7 +534,8 @@ export default function Braderies() {
 
   // Re-dessiner les marqueurs braderies quand les données changent (realtime)
   useEffect(() => {
-    if (!showMap || !leafletMapRef.current || !window.L) return;
+    if (!showMap || !leafletMapRef.current) return;
+    if (typeof window === 'undefined' || !window.L) return;
     drawBraderieMarkers(window.L, leafletMapRef.current, braderies);
   }, [braderies, showMap, drawBraderieMarkers]);
 
