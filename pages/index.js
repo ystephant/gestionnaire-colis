@@ -4,8 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
 const PHILIBERT_FLASH_URL = 'https://www.philibertnet.com/fr/flash-sales?p=1';
