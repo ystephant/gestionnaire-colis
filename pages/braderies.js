@@ -53,7 +53,14 @@ const FILTRE_OPTIONS = [
 
 /** Ouvre Google Maps dans un nouvel onglet — compatible PC et mobile */
 function openUrl(url) {
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => document.body.removeChild(a), 100);
 }
 
 function openGoogleMaps(ville, quartier) {
@@ -215,6 +222,8 @@ export default function Braderies() {
 
   // Ref pour le callback realtime (évite les closures périmées)
   const loadRef = useRef(null);
+  // Ref pour avoir les braderies à jour dans les handlers de la carte
+  const braderiesRef = useRef([]);
 
   // ── Dark mode ─────────────────────────────────────────────────────────────
 
@@ -248,6 +257,7 @@ export default function Braderies() {
 
   // Garder la ref à jour
   useEffect(() => { loadRef.current = loadBraderies; }, [loadBraderies]);
+  useEffect(() => { braderiesRef.current = braderies; }, [braderies]);
 
   useEffect(() => { loadBraderies(); }, [loadBraderies]);
 
@@ -441,6 +451,23 @@ export default function Braderies() {
             radius: 10, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.9, weight: 3,
           }).addTo(map).bindPopup('<b>📍 Vous êtes ici</b>');
 
+          // ── Clic libre sur la carte → détecter la commune ──
+          map.on('click', async (e) => {
+            const { lat: clat, lng: clon } = e.latlng;
+            try {
+              const res = await fetch(`https://geo.api.gouv.fr/communes?lat=${clat}&lon=${clon}&fields=nom,codesPostaux&limit=1`);
+              const data = await res.json();
+              if (data && data.length > 0) {
+                const commune = data[0];
+                const existing = braderiesRef.current.find(b => b.ville.toLowerCase() === commune.nom.toLowerCase());
+                setQuickCity({ nom: commune.nom, cp: (commune.codesPostaux || [''])[0] });
+                setQuickNote(existing?.note || '');
+                setQuickComment(existing?.commentaire || '');
+                setQuickQuartier(existing?.quartier || '');
+              }
+            } catch { /* silencieux */ }
+          });
+
           // Légende
           const legend = L.control({ position: 'bottomleft' });
           legend.onAdd = () => {
@@ -560,11 +587,12 @@ export default function Braderies() {
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-2 flex-wrap">
-              <button onClick={() => openGoogleMaps(b.ville, b.quartier)}
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((b.quartier ? b.quartier + ' ' : '') + b.ville + ', France')}`}
+                target="_blank" rel="noopener noreferrer"
                 className={`font-bold text-base hover:underline flex items-center gap-1 text-left leading-snug ${ns.text}`}>
                 <MapPin size={15} className="shrink-0 mt-0.5" />
                 <span>{b.ville}</span>
-              </button>
+              </a>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold self-center ${ns.badgeBg} ${ns.badgeText}`}>
                 {note.emoji} {note.label}
               </span>
@@ -576,10 +604,11 @@ export default function Braderies() {
                 {b.commentaire}
               </p>
             )}
-            <button onClick={() => openItineraire(b.ville, b.quartier)}
+            <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((b.quartier ? b.quartier + ', ' : '') + b.ville + ', France')}`}
+              target="_blank" rel="noopener noreferrer"
               className={`mt-2 ml-5 text-xs font-medium underline underline-offset-2 opacity-70 hover:opacity-100 ${ns.text}`}>
               🗺️ Itinéraire
-            </button>
+            </a>
           </div>
           <div className="flex gap-1 shrink-0">
             {isDel ? (
