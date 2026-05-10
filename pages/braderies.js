@@ -158,13 +158,14 @@ function VilleField({ value, onChange, darkMode, inputCls, placeholder, autoFocu
 
 function NoteSelector({ value, onChange, darkMode }) {
   return (
-    <div className="flex gap-2 flex-wrap">
+    <div className="grid grid-cols-3 gap-2">
       {Object.entries(NOTES).map(([key, n]) => (
         <button key={key} onClick={() => onChange(key)}
-          className={`px-3 py-2 rounded-xl text-sm font-medium border-2 transition ${value === key
+          className={`px-2 py-2.5 rounded-xl text-xs sm:text-sm font-medium border-2 transition text-center min-h-[44px] ${value === key
             ? `${n.badgeBg} ${n.badgeText} border-current scale-105 shadow`
             : darkMode ? 'bg-gray-700 text-gray-300 border-gray-600 hover:border-gray-400' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
-          {n.emoji} {n.label}
+          <span className="block text-base leading-none mb-0.5">{n.emoji}</span>
+          <span>{n.label}</span>
         </button>
       ))}
     </div>
@@ -513,7 +514,7 @@ export default function Braderies() {
     }
 
     return (
-      <div key={b.id} className={`rounded-2xl border-2 p-4 ${clr} transition-all`}>
+      <div key={b.id} className={`rounded-2xl border-2 p-3 sm:p-4 ${clr} transition-all`}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-2 flex-wrap">
@@ -536,20 +537,20 @@ export default function Braderies() {
             )}
             <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((b.quartier ? b.quartier + ', ' : '') + b.ville + ', France')}`}
               target="_blank" rel="noopener noreferrer"
-              className={`mt-2 ml-5 text-xs font-medium underline underline-offset-2 opacity-70 hover:opacity-100 ${ns.text}`}>
+              className={`mt-2 ml-5 text-xs font-medium underline underline-offset-2 opacity-70 hover:opacity-100 inline-block py-1 ${ns.text}`}>
               🗺️ Itinéraire
             </a>
           </div>
           <div className="flex gap-1 shrink-0">
             {isDel ? (
               <div className="flex gap-1">
-                <button onClick={() => handleDelete(b.id)} className="px-2 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold">Oui</button>
-                <button onClick={() => setDeletingId(null)} className={`p-1.5 rounded-lg ${dm ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}><X size={14} /></button>
+                <button onClick={() => handleDelete(b.id)} className="px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold min-h-[40px]">Oui</button>
+                <button onClick={() => setDeletingId(null)} className={`p-2 rounded-lg min-h-[40px] min-w-[40px] ${dm ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}><X size={14} /></button>
               </div>
             ) : (
               <div className="flex gap-1">
-                <button onClick={() => startEdit(b)} className={`p-2 rounded-lg min-w-[36px] min-h-[36px] ${dm ? 'bg-gray-700 text-gray-300' : 'bg-white border border-gray-200 text-gray-500'}`}><Edit2 size={14} /></button>
-                <button onClick={() => setDeletingId(b.id)} className={`p-2 rounded-lg min-w-[36px] min-h-[36px] ${dm ? 'bg-gray-700 text-red-400' : 'bg-white border border-gray-200 text-red-400'}`}><Trash2 size={14} /></button>
+                <button onClick={() => startEdit(b)} className={`p-2 rounded-lg min-w-[40px] min-h-[40px] ${dm ? 'bg-gray-700 text-gray-300' : 'bg-white border border-gray-200 text-gray-500'}`}><Edit2 size={14} /></button>
+                <button onClick={() => setDeletingId(b.id)} className={`p-2 rounded-lg min-w-[40px] min-h-[40px] ${dm ? 'bg-gray-700 text-red-400' : 'bg-white border border-gray-200 text-red-400'}`}><Trash2 size={14} /></button>
               </div>
             )}
           </div>
@@ -608,26 +609,29 @@ export default function Braderies() {
 
           {/* Panneau formulaire rapide (glisse depuis le bas) */}
           {quickCity && (
-            <div className={`shrink-0 border-t px-4 py-4 ${dm ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
-              <p className={`font-semibold text-sm mb-3 flex items-center gap-1.5 ${textMain}`}>
-                <MapPin size={14} className="text-blue-500 shrink-0" />
-                {quickCity.nom}
-                <span className={`text-xs font-normal ${textSub}`}>{quickCity.cp}</span>
-              </p>
-              <input value={quickQuartier} onChange={e => setQuickQuartier(e.target.value)}
-                placeholder="Quartier / secteur (optionnel)"
-                className={`w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 mb-3 ${inputCls}`} />
-              <div className="mb-3"><NoteSelector value={quickNote} onChange={setQuickNote} darkMode={dm} /></div>
-              <textarea value={quickComment} onChange={e => setQuickComment(e.target.value)}
-                placeholder="Commentaire (optionnel)" rows={2}
-                className={`w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none mb-3 ${inputCls}`} />
-              <div className="flex gap-2">
-                <button onClick={() => { setQuickCity(null); setQuickNote(''); setQuickComment(''); setQuickQuartier(''); }}
-                  className={`flex-1 py-3 rounded-xl text-sm font-medium min-h-[48px] ${dm ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
-                  Annuler
-                </button>
+            <div className={`shrink-0 border-t ${dm ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}
+              style={{ maxHeight: '52vh', overflowY: 'auto', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
+              <div className="px-4 pt-4 pb-2">
+                <div className={`flex items-center justify-between mb-3`}>
+                  <p className={`font-semibold text-sm flex items-center gap-1.5 ${textMain}`}>
+                    <MapPin size={14} className="text-blue-500 shrink-0" />
+                    {quickCity.nom}
+                    <span className={`text-xs font-normal ${textSub}`}>{quickCity.cp}</span>
+                  </p>
+                  <button onClick={() => { setQuickCity(null); setQuickNote(''); setQuickComment(''); setQuickQuartier(''); }}
+                    className={`p-1.5 rounded-lg ${dm ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <input value={quickQuartier} onChange={e => setQuickQuartier(e.target.value)}
+                  placeholder="Quartier / secteur (optionnel)"
+                  className={`w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 mb-3 ${inputCls}`} />
+                <div className="mb-3"><NoteSelector value={quickNote} onChange={setQuickNote} darkMode={dm} /></div>
+                <textarea value={quickComment} onChange={e => setQuickComment(e.target.value)}
+                  placeholder="Commentaire (optionnel)" rows={2}
+                  className={`w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none mb-3 ${inputCls}`} />
                 <button onClick={handleQuickSave} disabled={!quickNote || quickLoading}
-                  className="flex-1 py-3 rounded-xl text-sm font-semibold bg-blue-600 text-white disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]">
+                  className="w-full py-3 rounded-xl text-sm font-semibold bg-blue-600 text-white disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]">
                   {quickLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Check size={15} />}
                   Enregistrer
                 </button>
@@ -664,20 +668,20 @@ export default function Braderies() {
               {dm ? '☀️' : '🌙'}
             </button>
             <button onClick={openMap}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold min-h-[40px] transition ${dm ? 'bg-indigo-700 text-white hover:bg-indigo-600' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-sm font-semibold min-h-[40px] transition ${dm ? 'bg-indigo-700 text-white hover:bg-indigo-600' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
               <Map size={15} />
-              Carte
+              <span className="hidden sm:inline">Carte</span>
             </button>
             <button onClick={() => { setShowForm(v => !v); resetForm(); }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white min-h-[40px] hover:bg-blue-700 transition">
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white min-h-[40px] hover:bg-blue-700 transition">
               <Plus size={15} />
-              Ajouter
+              <span className="hidden sm:inline">Ajouter</span>
             </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-3 py-4 space-y-4">
+      <div className="max-w-2xl mx-auto px-3 py-4 space-y-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
 
         {/* Statistiques */}
         <div className="grid grid-cols-3 gap-2">
