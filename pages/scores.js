@@ -24,7 +24,7 @@ const DEFAULT_NAMES = [
 
 const BONUS_VALUES = [-10, -5, +5, +10];
 const MEDALS       = ["🥇","🥈","🥉"];
-const DICE_TYPES   = [4, 6, 8, 10, 20, 100];
+const DICE_TYPES   = [4, 6, 8, 10, 12, 20, 100];
 const uid          = () => Math.random().toString(36).slice(2, 9);
 
 // Layout constants
@@ -335,12 +335,11 @@ const polyPts = (n, r, cx=50, cy=50, offset=-90) =>
     return `${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`;
   }).join(" ");
 
-function DieFace({ sides, value, size=86, color="#2563eb", rolling=false }) {
+function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percentile=false }) {
   const gid = `dg${sides}`;
   const shid = `ds${sides}`;
   const bvid = `db${sides}`;
 
-  // Unique gradient / filter defs per die type
   const defs = (
     <defs>
       <radialGradient id={gid} cx="35%" cy="28%" r="68%">
@@ -357,23 +356,23 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false }) {
     </defs>
   );
 
-  const numLabel = (val, fs=28, dy=0) => (
-    <>
-      {/* Shadow text */}
-      <text x="51" y={57+dy+1} textAnchor="middle" fontSize={fs}
-        fontWeight="900" fontFamily="Space Mono,monospace"
-        fill="rgba(0,0,0,0.45)">{val}</text>
-      {/* Main text */}
-      <text x="50" y={57+dy} textAnchor="middle" fontSize={fs}
-        fontWeight="900" fontFamily="Space Mono,monospace"
-        fill="rgba(255,255,255,0.96)">{val}</text>
-      {/* Underline for 6/9 ambiguity */}
-      {(val===6||val===9)&&(
-        <line x1="38" y1={63+dy} x2="62" y2={63+dy}
-          stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round"/>
-      )}
-    </>
-  );
+  const numLabel = (val, fs=28, dy=0) => {
+    const display = percentile ? String(val).padStart(2,"0") : val;
+    return (
+      <>
+        <text x="51" y={57+dy+1} textAnchor="middle" fontSize={fs}
+          fontWeight="900" fontFamily="Space Mono,monospace"
+          fill="rgba(0,0,0,0.45)">{display}</text>
+        <text x="50" y={57+dy} textAnchor="middle" fontSize={fs}
+          fontWeight="900" fontFamily="Space Mono,monospace"
+          fill="rgba(255,255,255,0.96)">{display}</text>
+        {(val===6||val===9)&&!percentile&&(
+          <line x1="38" y1={63+dy} x2="62" y2={63+dy}
+            stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round"/>
+        )}
+      </>
+    );
+  };
 
   // D4 — equilateral triangle, very stylized
   if (sides===4) {
@@ -431,36 +430,38 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false }) {
     );
   }
 
-  // D8 — regular octagon (sharp, gem-like)
+  // D8 — diamond / losange (octahedron front view)
   if (sides===8) {
-    const outer = polyPts(8, 44);
-    const inner = polyPts(8, 26);
+    // Classic D8 silhouette: vertical diamond with horizontal equator line
+    const diamond = "50,6 92,50 50,94 8,50";
     return (
       <svg width={size} height={size} viewBox="0 0 100 100"
         style={{ filter:`drop-shadow(0 5px 14px rgba(0,0,0,0.5))`, animation:rolling?"dieRoll .09s steps(1) infinite":"none" }}>
         {defs}
         <g filter={`url(#${shid})`}>
-          <polygon points={outer} fill={color}/>
-          <polygon points={outer} fill={`url(#${gid})`}/>
-          {/* Facet lines from center to each vertex — gem look */}
-          {outer.split(" ").map((pt,i)=>{
-            const [x,y]=pt.split(",");
-            return <line key={i} x1="50" y1="50" x2={x} y2={y}
-              stroke="rgba(255,255,255,0.12)" strokeWidth="0.7"/>;
-          })}
-          <polygon points={inner} fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1"/>
-          <polygon points={outer} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="1.5"/>
-          <polygon points={outer} fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="0.6"/>
-          {numLabel(value, 28)}
+          {/* Main diamond */}
+          <polygon points={diamond} fill={color}/>
+          <polygon points={diamond} fill={`url(#${gid})`}/>
+          {/* Equator line */}
+          <line x1="8" y1="50" x2="92" y2="50" stroke="rgba(255,255,255,0.30)" strokeWidth="1.2"/>
+          {/* Facet lines from center to each corner */}
+          <line x1="50" y1="50" x2="50" y2="6"  stroke="rgba(255,255,255,0.14)" strokeWidth="0.8"/>
+          <line x1="50" y1="50" x2="50" y2="94" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
+          <line x1="50" y1="50" x2="92" y2="50" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
+          <line x1="50" y1="50" x2="8"  y2="50" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
+          {/* Bevel */}
+          <polygon points={diamond} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="1.5"/>
+          <polygon points={diamond} fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="0.6"/>
+          {numLabel(value, 26, -2)}
         </g>
       </svg>
     );
   }
 
-  // D10 — stretched diamond/kite shape
+  // D10 — faceted diamond-like shape (more sides, closer to real D10)
   if (sides===10) {
-    // A classic D10 silhouette: top point, two side points, bottom point
-    const pts = "50,5 90,38 80,90 50,78 20,90 10,38";
+    // 9-point polygon: top point, wider upper equator, lower equator, bottom point
+    const pts = "50,5 78,22 92,50 78,78 60,93 40,93 22,78 8,50 22,22";
     return (
       <svg width={size} height={size} viewBox="0 0 100 100"
         style={{ filter:`drop-shadow(0 5px 14px rgba(0,0,0,0.5))`, animation:rolling?"dieRoll .09s steps(1) infinite":"none" }}>
@@ -468,17 +469,42 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false }) {
         <g filter={`url(#${shid})`}>
           <polygon points={pts} fill={color}/>
           <polygon points={pts} fill={`url(#${gid})`}/>
-          {/* Central equator line */}
-          <line x1="10" y1="38" x2="90" y2="38" stroke="rgba(255,255,255,0.22)" strokeWidth="1"/>
-          {/* Facet lines */}
-          <line x1="50" y1="5"  x2="10" y2="38" stroke="rgba(255,255,255,0.15)" strokeWidth="0.8"/>
-          <line x1="50" y1="5"  x2="90" y2="38" stroke="rgba(255,255,255,0.15)" strokeWidth="0.8"/>
-          <line x1="10" y1="38" x2="50" y2="78" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
-          <line x1="90" y1="38" x2="50" y2="78" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
-          {/* 0 on D10 means 10 */}
+          {/* Equator line */}
+          <line x1="8" y1="50" x2="92" y2="50" stroke="rgba(255,255,255,0.22)" strokeWidth="1"/>
+          {/* Facet lines from center */}
+          {pts.split(" ").map((pt,i)=>{
+            const [x,y]=pt.split(",");
+            return <line key={i} x1="50" y1="50" x2={x} y2={y}
+              stroke="rgba(255,255,255,0.10)" strokeWidth="0.7"/>;
+          })}
           <polygon points={pts} fill="none" stroke="rgba(255,255,255,0.52)" strokeWidth="1.4"/>
           <polygon points={pts} fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="0.6"/>
-          {numLabel(value===10?0:value, 26, 4)}
+          {numLabel(percentile ? value : (value===10?0:value), 24, 2)}
+        </g>
+      </svg>
+    );
+  }
+
+  // D12 — dodecagon (12 sides)
+  if (sides===12) {
+    const outer = polyPts(12, 44);
+    const inner = polyPts(12, 28, 50, 50, -75);
+    return (
+      <svg width={size} height={size} viewBox="0 0 100 100"
+        style={{ filter:`drop-shadow(0 5px 14px rgba(0,0,0,0.5))`, animation:rolling?"dieRoll .09s steps(1) infinite":"none" }}>
+        {defs}
+        <g filter={`url(#${shid})`}>
+          <polygon points={outer} fill={color}/>
+          <polygon points={outer} fill={`url(#${gid})`}/>
+          {outer.split(" ").map((pt,i)=>{
+            const [x,y]=pt.split(",");
+            return <line key={i} x1="50" y1="50" x2={x} y2={y}
+              stroke="rgba(255,255,255,0.10)" strokeWidth="0.6"/>;
+          })}
+          <polygon points={inner} fill="none" stroke="rgba(255,255,255,0.20)" strokeWidth="1"/>
+          <polygon points={outer} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="1.5"/>
+          <polygon points={outer} fill="none" stroke="rgba(0,0,0,0.22)" strokeWidth="0.6"/>
+          {numLabel(value, 26)}
         </g>
       </svg>
     );
@@ -560,40 +586,30 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false }) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  SPINNER WHEEL — classic, 170px, 5 s, stoppable
-//  Marker is FIXED at the top of the SVG (outside the rotating group).
-//  Winner = slice whose center aligns with the marker when stopped.
+//  SPINNER WHEEL — half size (85px), clean vector style
+//  Marker fixed at top. Winner = slice under marker when stopped.
 // ─────────────────────────────────────────────────────────
 function SpinnerWheel({ players, onResult }) {
   const [spinning,  setSpinning]  = useState(false);
   const [angle,     setAngle]     = useState(0);
   const [winner,    setWinner]    = useState(null);
   const animRef   = useRef(null);
-  const angleRef  = useRef(0);   // mutable, read inside rAF
+  const angleRef  = useRef(0);
   const velRef    = useRef(0);
   const lastTsRef = useRef(null);
   const stopFlag  = useRef(false);
 
-  // Peak velocity: ~2 deg/ms → one full turn per ~180 ms at peak
   const PEAK_VEL  = 2.0;
   const ACCEL_MS  = 500;
-  const CRUISE_MS = 5000; // natural deceleration starts here
+  const CRUISE_MS = 4000;
 
-  // Marker fixed at top = 270° in standard coords (pointing up = -90°)
-  // Wheel slices start at i=0 offset=-90 so the first slice starts at the top.
-  // After total rotation R (clockwise), slice i's center is at:
-  //   -90 + (i+0.5)*sliceAngle - R  (mod 360)
-  // Winner = slice where that center is closest to 270° (= pointing up)
   const resolveWinner = useCallback((totalAngle) => {
     const n  = players.length;
     const sa = 360 / n;
-    // normalise rotation to [0,360)
     const R  = ((totalAngle % 360) + 360) % 360;
     let bestIdx = 0, bestDist = 999;
     for (let i = 0; i < n; i++) {
-      // Angular position of slice i's center under the marker (top = 270° std)
       let sliceTop = (-90 + (i + 0.5) * sa - R + 360 * 10) % 360;
-      // Distance from 270° (normalised up)
       let dist = Math.abs(((sliceTop - 270 + 540) % 360) - 180);
       if (dist < bestDist) { bestDist = dist; bestIdx = i; }
     }
@@ -608,7 +624,7 @@ function SpinnerWheel({ players, onResult }) {
     onResult(w);
   }, [resolveWinner, onResult]);
 
-  const stopNow = useCallback(() => { stopFlag.current = true; }, []);
+  const stopNow = useCallback(() => { if (spinning) stopFlag.current = true; }, [spinning]);
 
   const spin = useCallback(() => {
     if (spinning || players.length < 2) return;
@@ -617,14 +633,19 @@ function SpinnerWheel({ players, onResult }) {
     let elapsed = 0;
 
     const loop = (ts) => {
-      if (!lastTsRef.current) lastTsRef.current = ts;
-      const dt = Math.min(ts - lastTsRef.current, 50); // cap dt to avoid jump on tab switch
+      // Skip the very first frame to avoid dt=0 causing immediate stop
+      if (!lastTsRef.current) {
+        lastTsRef.current = ts;
+        animRef.current = requestAnimationFrame(loop);
+        return;
+      }
+      const dt = Math.min(ts - lastTsRef.current, 50);
       lastTsRef.current = ts;
       elapsed += dt;
 
       let vel;
       if (stopFlag.current) {
-        velRef.current = Math.max(0, velRef.current - dt * 0.007);
+        velRef.current = Math.max(0, velRef.current - dt * 0.008);
         vel = velRef.current;
       } else if (elapsed < ACCEL_MS) {
         vel = PEAK_VEL * (elapsed / ACCEL_MS);
@@ -652,8 +673,8 @@ function SpinnerWheel({ players, onResult }) {
     </div>
   );
 
-  // Wheel geometry — classic size: 170px
-  const W = 170, CX = W/2, CY = W/2, R = W/2 - 4;
+  // Half-size wheel: 85px, clean vector style
+  const W = 85, CX = W/2, CY = W/2, R = W/2 - 2;
   const SA = 360 / players.length;
 
   const slices = players.map((p, i) => {
@@ -664,52 +685,50 @@ function SpinnerWheel({ players, onResult }) {
     return {
       p,
       d: `M${CX},${CY} L${CX+R*Math.cos(a0)},${CY+R*Math.sin(a0)} A${R},${R} 0 ${large},1 ${CX+R*Math.cos(a1)},${CY+R*Math.sin(a1)}Z`,
-      tx: CX + R*0.64*Math.cos(midA),
-      ty: CY + R*0.64*Math.sin(midA),
+      tx: CX + R*0.60*Math.cos(midA),
+      ty: CY + R*0.60*Math.sin(midA),
       ta: (i + 0.5) * SA,
     };
   });
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
       {/* Wheel + fixed marker */}
-      <div style={{ position:"relative", width:W, height:W+14 }}>
-        {/* Fixed marker triangle at the top */}
+      <div style={{ position:"relative", width:W, height:W+12 }}>
+        {/* Slim triangular marker */}
         <div style={{
           position:"absolute", top:0, left:"50%", transform:"translateX(-50%)",
           width:0, height:0,
-          borderLeft:"10px solid transparent",
-          borderRight:"10px solid transparent",
-          borderTop:"20px solid #f59e0b",
+          borderLeft:"7px solid transparent",
+          borderRight:"7px solid transparent",
+          borderTop:"14px solid #f59e0b",
           zIndex:10,
-          filter:"drop-shadow(0 2px 3px rgba(0,0,0,0.5))",
+          filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.6))",
         }}/>
 
         <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`}
-          style={{ marginTop:14, display:"block" }}>
-          {/* Outer ring */}
-          <circle cx={CX} cy={CY} r={R+2} fill="#1a1d28"
-            stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
-
+          style={{ marginTop:12, display:"block" }}>
           {/* Rotating group */}
           <g transform={`rotate(${angle} ${CX} ${CY})`}>
             {slices.map(({p,d,tx,ty,ta}) => (
               <g key={p.id}>
-                <path d={d} fill={p.color.hex} stroke="rgba(255,255,255,0.18)" strokeWidth="1.2"/>
+                <path d={d} fill={p.color.hex} stroke="rgba(0,0,0,0.18)" strokeWidth="0.8"/>
                 <g transform={`rotate(${ta} ${tx} ${ty})`}>
                   <text x={tx} y={ty+1} textAnchor="middle" dominantBaseline="middle"
-                    fontSize={players.length > 7 ? "8" : players.length > 4 ? "10" : "12"}
+                    fontSize={players.length > 7 ? "5" : players.length > 4 ? "6" : "7"}
                     fontWeight="800" fontFamily="Sora,sans-serif" fill="#fff"
-                    stroke="rgba(0,0,0,0.4)" strokeWidth="2.5" paintOrder="stroke fill">
-                    {p.name.length > 7 ? p.name.slice(0,6)+"…" : p.name}
+                    stroke="rgba(0,0,0,0.45)" strokeWidth="1.8" paintOrder="stroke fill">
+                    {p.name.length > 6 ? p.name.slice(0,5)+"…" : p.name}
                   </text>
                 </g>
               </g>
             ))}
-            {/* Center cap */}
-            <circle cx={CX} cy={CY} r="16" fill="#1a1d28" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/>
-            <circle cx={CX} cy={CY} r="9"  fill="#f59e0b"/>
-            <circle cx={CX} cy={CY} r="4"  fill="#0b0d12"/>
+            {/* Clean outer ring */}
+            <circle cx={CX} cy={CY} r={R} fill="none"
+              stroke="rgba(255,255,255,0.30)" strokeWidth="1"/>
+            {/* Center pin */}
+            <circle cx={CX} cy={CY} r="5" fill="#1a1d28" stroke="rgba(255,255,255,0.20)" strokeWidth="0.8"/>
+            <circle cx={CX} cy={CY} r="2.5" fill="#f59e0b"/>
           </g>
         </svg>
       </div>
@@ -717,30 +736,34 @@ function SpinnerWheel({ players, onResult }) {
       {/* Winner result */}
       {winner && !spinning && (
         <div className="slide-up" style={{
-          padding:"10px 22px", borderRadius:13,
+          padding:"8px 18px", borderRadius:11,
           background: winner.color.hex, color:"#fff",
-          fontWeight:800, fontSize:17, textAlign:"center",
+          fontWeight:800, fontSize:14, textAlign:"center",
         }}>
           🎉 {winner.name} commence !
         </div>
       )}
 
-      {/* Buttons */}
-      <div style={{ display:"flex", gap:9 }}>
+      {/* Buttons — spin + stop always visible */}
+      <div style={{ display:"flex", gap:8 }}>
         <button onClick={spin} disabled={spinning || players.length < 2}
-          style={{ padding:"11px 26px", borderRadius:12, border:"none",
+          style={{ padding:"10px 22px", borderRadius:11, border:"none",
             background: spinning ? "#374151" : "linear-gradient(135deg,#f59e0b,#ef4444)",
-            color:"#fff", fontWeight:800, fontSize:14,
-            cursor: spinning || players.length < 2 ? "not-allowed" : "pointer" }}>
-          {spinning ? "⏳ En cours…" : "🎡 Qui commence ?"}
+            color:"#fff", fontWeight:800, fontSize:13,
+            cursor: spinning || players.length < 2 ? "not-allowed" : "pointer",
+            opacity: players.length < 2 ? 0.5 : 1 }}>
+          {spinning ? "⏳ En cours…" : "🎡 Lancer"}
         </button>
-        {spinning && (
-          <button onClick={stopNow}
-            style={{ padding:"11px 18px", borderRadius:12, border:"none",
-              background:"#ef4444", color:"#fff", fontWeight:800, fontSize:14, cursor:"pointer" }}>
-            ⏹ Stop
-          </button>
-        )}
+        <button onClick={stopNow} disabled={!spinning}
+          style={{ padding:"10px 16px", borderRadius:11, border:"none",
+            background: spinning ? "#ef4444" : "rgba(239,68,68,0.18)",
+            color: spinning ? "#fff" : "#f87171",
+            fontWeight:800, fontSize:13,
+            cursor: spinning ? "pointer" : "default",
+            opacity: spinning ? 1 : 0.5,
+            transition:"all .2s" }}>
+          ⏹ Stop
+        </button>
       </div>
     </div>
   );
@@ -919,6 +942,28 @@ export default function ScoreTracker() {
     if(rolling) return;
     setRolling(true); setDiceResult(null);
     let n=0;
+
+    if(diceType===100){
+      // D100 = percentile tens die (00-90) + units die (1-10)
+      const iv=setInterval(()=>{
+        const tens=Math.floor(Math.random()*10)*10;
+        const units=Math.ceil(Math.random()*10);
+        setDiceValues([tens,units]);
+        n++;
+        if(n>14){
+          clearInterval(iv);
+          const ft=Math.floor(Math.random()*10)*10;
+          const fu=Math.ceil(Math.random()*10);
+          setDiceValues([ft,fu]);
+          const total=ft+fu;
+          setDiceResult(total); setRolling(false);
+          const time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+          setDiceHist(h=>[{id:uid(),diceType:100,diceCount:1,values:[ft,fu],total,time},...h].slice(0,50));
+        }
+      },80);
+      return;
+    }
+
     const iv=setInterval(()=>{
       setDiceValues(Array.from({length:diceCount},()=>Math.ceil(Math.random()*diceType)));
       n++;
@@ -1153,7 +1198,8 @@ export default function ScoreTracker() {
               </div>
             </div>
 
-            {/* Dice count */}
+            {/* Dice count — hidden for D100 */}
+            {diceType!==100&&(
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:16,
               display:"flex",alignItems:"center",gap:16 }}>
               <div style={{ fontSize:10,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1 }}>Nombre de dés</div>
@@ -1167,6 +1213,7 @@ export default function ScoreTracker() {
                     background:"rgba(34,197,94,0.14)",color:"#4ade80",cursor:"pointer",fontWeight:900,fontSize:17 }}>+</button>
               </div>
             </div>
+            )}
 
             {/* Dice display */}
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:22,textAlign:"center" }}>
@@ -1174,19 +1221,34 @@ export default function ScoreTracker() {
                 minHeight:90,alignItems:"center",marginBottom:18 }}>
                 {diceValues.length===0
                   ?<div style={{ color:D.sub,fontSize:12 }}>Lancez les dés !</div>
-                  :diceValues.map((val,i)=>(
-                    <div key={i} className={!rolling&&diceResult!=null?"die-land":""}>
-                      <DieFace sides={diceType} value={val} size={86} color="#6366f1" rolling={rolling}/>
-                    </div>
-                  ))
+                  :diceType===100&&diceValues.length>=2
+                    ?<div style={{ display:"flex",alignItems:"center",gap:14 }}>
+                        <div className={!rolling&&diceResult!=null?"die-land":""}>
+                          <DieFace sides={10} value={diceValues[0]} size={86} color="#6366f1" rolling={rolling} percentile/>
+                        </div>
+                        <div style={{ fontSize:22,fontWeight:900,color:"rgba(255,255,255,0.5)" }}>+</div>
+                        <div className={!rolling&&diceResult!=null?"die-land":""}>
+                          <DieFace sides={10} value={diceValues[1]} size={86} color="#7c3aed" rolling={rolling}/>
+                        </div>
+                     </div>
+                    :diceValues.map((val,i)=>(
+                      <div key={i} className={!rolling&&diceResult!=null?"die-land":""}>
+                        <DieFace sides={diceType} value={val} size={86} color="#6366f1" rolling={rolling}/>
+                      </div>
+                    ))
                 }
               </div>
               {diceResult!=null&&!rolling&&(
                 <div className="slide-up" style={{ marginBottom:16 }}>
                   <div style={{ fontSize:11,color:D.sub,marginBottom:2 }}>
-                    {diceCount}×D{diceType}</div>
+                    {diceType===100
+                      ?<span>D100 · <span style={{color:"rgba(255,255,255,0.45)"}}>
+                          {diceValues[0]===0?"00":diceValues[0]} + {diceValues[1]===10?0:diceValues[1]}
+                        </span></span>
+                      :`${diceCount}×D${diceType}`}
+                  </div>
                   <div className="mono" style={{ fontSize:46,fontWeight:800,color:"#f59e0b" }}>{diceResult}</div>
-                  {diceCount>1&&<div style={{ fontSize:10,color:D.sub }}>[{diceValues.join(" + ")}]</div>}
+                  {diceCount>1&&diceType!==100&&<div style={{ fontSize:10,color:D.sub }}>[{diceValues.join(" + ")}]</div>}
                 </div>
               )}
               <button onClick={rollDice} disabled={rolling}
@@ -1194,7 +1256,7 @@ export default function ScoreTracker() {
                   background:rolling?"#6b7280":"linear-gradient(135deg,#f59e0b,#ef4444)",
                   color:"#fff",fontWeight:800,fontSize:15,
                   cursor:rolling?"not-allowed":"pointer" }}>
-                {rolling?"🎲 En cours…":`🎲 Lancer ${diceCount>1?`${diceCount}×`:""}D${diceType}`}
+                {rolling?"🎲 En cours…":`🎲 Lancer ${diceType===100?"1×":(diceCount>1?`${diceCount}×`:"")}D${diceType}`}
               </button>
             </div>
 
@@ -1213,7 +1275,11 @@ export default function ScoreTracker() {
                   {diceHistory.map(e=>(
                     <div key={e.id} style={{ display:"flex",alignItems:"center",gap:8,
                       padding:"6px 10px",borderRadius:9,background:dark?"#ffffff03":"#00000003" }}>
-                      <span style={{ flex:1,fontSize:10,color:D.sub }}>{e.diceCount}×D{e.diceType} → [{e.values.join(",")}]</span>
+                      <span style={{ flex:1,fontSize:10,color:D.sub }}>
+                        {e.diceType===100
+                          ?`D100 → [${e.values[0]===0?"00":e.values[0]}+${e.values[1]===10?0:e.values[1]}]`
+                          :`${e.diceCount}×D${e.diceType} → [${e.values.join(",")}]`}
+                      </span>
                       <span className="mono" style={{ fontSize:14,fontWeight:800,color:"#f59e0b" }}>{e.total}</span>
                       <span style={{ fontSize:9,color:D.sub,flexShrink:0 }}>{e.time}</span>
                     </div>
