@@ -868,9 +868,8 @@ export default function ScoreTracker() {
   const removePlayer=useCallback((id)=>{
     setPlayers(p=>{saveUndo(p);return p.filter(x=>x.id!==id);});
     if(selected===id) setSelected(null);
-    if(dicePlayer===id) setDicePlayer(null);
     setCR(null);
-  },[saveUndo,selected,dicePlayer]);
+  },[saveUndo,selected]);
 
   const changeColor=useCallback((id,color)=>
     setPlayers(p=>p.map(x=>x.id===id?{...x,color}:x)),[]);
