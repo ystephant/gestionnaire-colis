@@ -931,8 +931,8 @@ export default function ScoreTracker() {
         .mono{font-family:'Space Mono',monospace}
         @keyframes scorePop{0%{transform:scale(1)}35%{transform:scale(1.18)}65%{transform:scale(0.94)}100%{transform:scale(1)}}
         .score-pop{animation:scorePop .28s cubic-bezier(.36,.07,.19,.97)}
-        @keyframes deltaFly{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-34px) scale(0.8)}}
-        .delta-fly{animation:deltaFly .52s ease forwards;pointer-events:none}
+        @keyframes deltaFly{0%{opacity:1;transform:translateY(0)}70%{opacity:0.9;transform:translateY(-22px) scale(1.05)}100%{opacity:0;transform:translateY(-46px) scale(0.85)}}
+        .delta-fly{animation:deltaFly 1.5s ease forwards;pointer-events:none}
         @keyframes slideUp{from{opacity:0;transform:translateY(13px)}to{opacity:1;transform:none}}
         .slide-up{animation:slideUp .18s ease}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -1096,6 +1096,7 @@ export default function ScoreTracker() {
                   onSelect={()=>setSelected(selected===player.id?null:player.id)}
                   onColorChange={c=>changeColor(player.id,c)}
                   gearOverflow={gearOverflow}
+                  playerHistory={history.filter(h=>h.id===player.id)}
                 />
                 );
               })}
@@ -1421,14 +1422,14 @@ export default function ScoreTracker() {
                   <div key={i} style={{ display:"flex",alignItems:"center",gap:9,
                     padding:"8px 12px",borderRadius:10,
                     background: isNeg
-                      ? (dark?"rgba(239,68,68,0.11)":"rgba(239,68,68,0.07)")
-                      : (dark?"#ffffff04":"#00000004") }}>
+                      ? (dark?"rgba(239,68,68,0.14)":"rgba(239,68,68,0.08)")
+                      : (dark?"rgba(255,255,255,0.04)":"rgba(0,0,0,0.04)") }}>
                     <span style={{ width:8,height:8,borderRadius:"50%",background:p?.color.hex||"#888",flexShrink:0 }}/>
                     <span style={{ fontWeight:600,fontSize:13,flex:1,overflow:"hidden",
                       textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{e.name}</span>
                     <span className="mono" style={{ fontSize:12,padding:"2px 7px",borderRadius:5,
-                      background:isNeg?"#ef444425":"#22c55e20",
-                      color:isNeg?"#f87171":"#4ade80",fontWeight:700,flexShrink:0 }}>
+                      background:isNeg?"#ef444430":"#22c55e25",
+                      color:isNeg?"#f87171":"#4ade80",fontWeight:800,flexShrink:0 }}>
                       {e.delta>0?"+":""}{e.delta}</span>
                     <span className="mono" style={{ fontSize:12,
                       color: dark?"#e2e4f0":"#1a1a2a",fontWeight:600,flexShrink:0 }}>
@@ -1504,7 +1505,7 @@ export default function ScoreTracker() {
 //  PLAYER ROW
 // ─────────────────────────────────────────────────────────
 function PlayerRow({ player, rank, medal, isLeader, isSel, flashKey, delta,
-  dark, D, isPlaying, onAdjust, onRemove, onSelect, onColorChange, gearOverflow }) {
+  dark, D, isPlaying, onAdjust, onRemove, onSelect, onColorChange, gearOverflow, playerHistory }) {
   const col=player.color.hex;
   const [showPalette, setPalette]=useState(false);
 
@@ -1563,29 +1564,50 @@ function PlayerRow({ player, rank, medal, isLeader, isSel, flashKey, delta,
           )}
         </div>
 
-        {/* Name */}
+        {/* Name + history inline */}
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ fontWeight:700,fontSize:16,color:"#fff",
             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{player.name}</div>
-          <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",marginTop:2 }}>
-            {isLeader?"👑 En tête":`#${rank+1} · ${player.color.name}`}</div>
+          <div style={{ display:"flex",alignItems:"center",gap:5,marginTop:3 }}>
+            <span style={{ fontSize:11,color:"rgba(255,255,255,0.45)",flexShrink:0 }}>
+              {isLeader?"👑 En tête":`#${rank+1}`}
+            </span>
+            {/* Inline score history — last 6 deltas */}
+            {playerHistory.length > 0 && (
+              <div style={{ display:"flex",gap:3,alignItems:"center",
+                background:"rgba(0,0,0,0.30)",borderRadius:6,padding:"1px 5px",
+                overflow:"hidden",flexShrink:1,minWidth:0 }}>
+                {playerHistory.slice(-6).map((h,i) => (
+                  <span key={i} className="mono" style={{
+                    fontSize:10,fontWeight:700,flexShrink:0,
+                    color: h.delta < 0 ? "#f87171" : "#86efac"
+                  }}>
+                    {h.delta > 0 ? "+" : ""}{h.delta}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Score — centré */}
-        <div style={{ position:"relative",textAlign:"center",
-          width:72,flexShrink:0,display:"flex",justifyContent:"center",alignItems:"center" }}>
-          <div key={flashKey} className="mono score-pop"
-            style={{ fontSize:44,fontWeight:700,color:"#fff",
-              letterSpacing:-1.5,lineHeight:1,textShadow:"0 1px 8px rgba(0,0,0,0.28)" }}>
-            {player.score>0?"+":""}{player.score}
-          </div>
-          {delta!==undefined&&(
-            <div className="delta-fly mono" style={{ position:"absolute",top:-4,right:-5,
-              zIndex:5,fontSize:15,fontWeight:700,
-              color:delta>0?"#86efac":"#fca5a5" }}>
-              {delta>0?"+":""}{delta}
+        {/* Score — centré absolument dans la row */}
+        <div style={{ position:"absolute",left:0,right: GEAR_SZ + 3*2 + 34*2 + 60,
+          top:0,bottom:0,display:"flex",alignItems:"center",justifyContent:"center",
+          pointerEvents:"none" }}>
+          <div style={{ position:"relative" }}>
+            <div key={flashKey} className="mono score-pop"
+              style={{ fontSize:44,fontWeight:700,color:"#fff",
+                letterSpacing:-1.5,lineHeight:1 }}>
+              {player.score>0?"+":""}{player.score}
             </div>
-          )}
+            {delta!==undefined&&(
+              <div className="delta-fly mono" style={{ position:"absolute",top:-6,right:-32,
+                zIndex:5,fontSize:17,fontWeight:800,
+                color:delta>0?"#86efac":"#fca5a5" }}>
+                {delta>0?"+":""}{delta}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ◄ Gear ► */}
