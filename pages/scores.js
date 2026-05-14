@@ -22,7 +22,7 @@ const DEFAULT_NAMES = [
   "Pierre","Sophie","Thomas","Yann","Zoé","Raphaël","Camille",
 ];
 
-const BONUS_VALUES = [-10, -5, +5, +10];
+const BONUS_CARDS  = [-10,-5,-3,-1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
 const MEDALS       = ["🥇","🥈","🥉"];
 const DICE_TYPES   = [4, 6, 8, 10, 12, 20, 100];
 const uid          = () => Math.random().toString(36).slice(2, 9);
@@ -609,7 +609,7 @@ function SpinnerWheel({ players, onResult }) {
     const R  = ((totalAngle % 360) + 360) % 360;
     let bestIdx = 0, bestDist = 999;
     for (let i = 0; i < n; i++) {
-      let sliceTop = (-90 + (i + 0.5) * sa - R + 360 * 10) % 360;
+      let sliceTop = (-90 + (i + 0.5) * sa + R + 360 * 10) % 360;
       let dist = Math.abs(((sliceTop - 270 + 540) % 360) - 180);
       if (dist < bestDist) { bestDist = dist; bestIdx = i; }
     }
@@ -673,94 +673,112 @@ function SpinnerWheel({ players, onResult }) {
     </div>
   );
 
-  // Half-size wheel: 85px, clean vector style
-  const W = 85, CX = W/2, CY = W/2, R = W/2 - 2;
+  // Compact 44px wheel — clean premium design
+  const W = 44, CX = W/2, CY = W/2, R = W/2 - 1.5;
   const SA = 360 / players.length;
 
   const slices = players.map((p, i) => {
     const a0 = (i * SA - 90) * Math.PI / 180;
     const a1 = ((i + 1) * SA - 90) * Math.PI / 180;
     const large = SA > 180 ? 1 : 0;
-    const midA = ((i + 0.5) * SA - 90) * Math.PI / 180;
     return {
       p,
-      d: `M${CX},${CY} L${CX+R*Math.cos(a0)},${CY+R*Math.sin(a0)} A${R},${R} 0 ${large},1 ${CX+R*Math.cos(a1)},${CY+R*Math.sin(a1)}Z`,
-      tx: CX + R*0.60*Math.cos(midA),
-      ty: CY + R*0.60*Math.sin(midA),
-      ta: (i + 0.5) * SA,
+      d: `M${CX},${CY} L${(CX+R*Math.cos(a0)).toFixed(3)},${(CY+R*Math.sin(a0)).toFixed(3)} A${R},${R} 0 ${large},1 ${(CX+R*Math.cos(a1)).toFixed(3)},${(CY+R*Math.sin(a1)).toFixed(3)}Z`,
     };
   });
 
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
-      {/* Wheel + fixed marker */}
-      <div style={{ position:"relative", width:W, height:W+12 }}>
-        {/* Slim triangular marker */}
-        <div style={{
-          position:"absolute", top:0, left:"50%", transform:"translateX(-50%)",
-          width:0, height:0,
-          borderLeft:"7px solid transparent",
-          borderRight:"7px solid transparent",
-          borderTop:"14px solid #f59e0b",
-          zIndex:10,
-          filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.6))",
-        }}/>
+      <div style={{ display:"flex", alignItems:"center", gap:18 }}>
 
-        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`}
-          style={{ marginTop:12, display:"block" }}>
-          {/* Rotating group */}
-          <g transform={`rotate(${angle} ${CX} ${CY})`}>
-            {slices.map(({p,d,tx,ty,ta}) => (
-              <g key={p.id}>
-                <path d={d} fill={p.color.hex} stroke="rgba(0,0,0,0.18)" strokeWidth="0.8"/>
-                <g transform={`rotate(${ta} ${tx} ${ty})`}>
-                  <text x={tx} y={ty+1} textAnchor="middle" dominantBaseline="middle"
-                    fontSize={players.length > 7 ? "5" : players.length > 4 ? "6" : "7"}
-                    fontWeight="800" fontFamily="Sora,sans-serif" fill="#fff"
-                    stroke="rgba(0,0,0,0.45)" strokeWidth="1.8" paintOrder="stroke fill">
-                    {p.name.length > 6 ? p.name.slice(0,5)+"…" : p.name}
-                  </text>
-                </g>
-              </g>
-            ))}
-            {/* Clean outer ring */}
-            <circle cx={CX} cy={CY} r={R} fill="none"
-              stroke="rgba(255,255,255,0.30)" strokeWidth="1"/>
-            {/* Center pin */}
-            <circle cx={CX} cy={CY} r="5" fill="#1a1d28" stroke="rgba(255,255,255,0.20)" strokeWidth="0.8"/>
-            <circle cx={CX} cy={CY} r="2.5" fill="#f59e0b"/>
-          </g>
-        </svg>
+        {/* ── Compact wheel ── */}
+        <div style={{ position:"relative", width:W, height:W+10, flexShrink:0 }}>
+          {/* Marker needle */}
+          <div style={{
+            position:"absolute", top:0, left:"50%", transform:"translateX(-50%)",
+            width:0, height:0,
+            borderLeft:"5px solid transparent", borderRight:"5px solid transparent",
+            borderTop:"10px solid #f59e0b",
+            zIndex:10, filter:"drop-shadow(0 1px 3px rgba(0,0,0,0.7))",
+          }}/>
+
+          <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`}
+            style={{ marginTop:10, display:"block",
+              filter:"drop-shadow(0 3px 10px rgba(0,0,0,0.55))" }}>
+            <defs>
+              <filter id="wGlow">
+                <feGaussianBlur stdDeviation="1.5" result="blur"/>
+                <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+              </filter>
+            </defs>
+
+            {/* Rotating group */}
+            <g transform={`rotate(${angle} ${CX} ${CY})`}>
+              {/* Segments */}
+              {slices.map(({p,d}) => (
+                <path key={p.id} d={d} fill={p.color.hex}
+                  stroke="rgba(0,0,0,0.25)" strokeWidth="0.6"/>
+              ))}
+              {/* Thin highlight ring */}
+              <circle cx={CX} cy={CY} r={R} fill="none"
+                stroke="rgba(255,255,255,0.22)" strokeWidth="0.8"/>
+              {/* Center hub */}
+              <circle cx={CX} cy={CY} r="3.5" fill="#111318"
+                stroke="rgba(255,255,255,0.18)" strokeWidth="0.6"/>
+              <circle cx={CX} cy={CY} r="1.6" fill="#f59e0b"/>
+            </g>
+
+            {/* Fixed outer border */}
+            <circle cx={CX} cy={CY} r={R+0.5} fill="none"
+              stroke="rgba(255,255,255,0.10)" strokeWidth="1"/>
+          </svg>
+        </div>
+
+        {/* ── Player legend ── */}
+        <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+          {players.map(p => (
+            <div key={p.id} style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <div style={{ width:8, height:8, borderRadius:"50%",
+                background:p.color.hex, flexShrink:0,
+                boxShadow:`0 0 5px ${p.color.hex}88` }}/>
+              <span style={{ fontSize:11, fontWeight:600, color:"#c8cde0",
+                maxWidth:100, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                {p.name}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Winner result */}
+      {/* Winner banner */}
       {winner && !spinning && (
         <div className="slide-up" style={{
-          padding:"8px 18px", borderRadius:11,
-          background: winner.color.hex, color:"#fff",
-          fontWeight:800, fontSize:14, textAlign:"center",
+          padding:"7px 16px", borderRadius:10,
+          background:`linear-gradient(135deg,${winner.color.hex},${winner.color.hex}bb)`,
+          color:"#fff", fontWeight:800, fontSize:13, textAlign:"center",
+          boxShadow:`0 0 16px ${winner.color.hex}55`,
         }}>
           🎉 {winner.name} commence !
         </div>
       )}
 
-      {/* Buttons — spin + stop always visible */}
+      {/* Buttons */}
       <div style={{ display:"flex", gap:8 }}>
         <button onClick={spin} disabled={spinning || players.length < 2}
-          style={{ padding:"10px 22px", borderRadius:11, border:"none",
+          style={{ padding:"9px 20px", borderRadius:10, border:"none",
             background: spinning ? "#374151" : "linear-gradient(135deg,#f59e0b,#ef4444)",
-            color:"#fff", fontWeight:800, fontSize:13,
+            color:"#fff", fontWeight:800, fontSize:12,
             cursor: spinning || players.length < 2 ? "not-allowed" : "pointer",
             opacity: players.length < 2 ? 0.5 : 1 }}>
           {spinning ? "⏳ En cours…" : "🎡 Lancer"}
         </button>
         <button onClick={stopNow} disabled={!spinning}
-          style={{ padding:"10px 16px", borderRadius:11, border:"none",
-            background: spinning ? "#ef4444" : "rgba(239,68,68,0.18)",
+          style={{ padding:"9px 14px", borderRadius:10, border:"none",
+            background: spinning ? "#ef4444" : "rgba(239,68,68,0.15)",
             color: spinning ? "#fff" : "#f87171",
-            fontWeight:800, fontSize:13,
+            fontWeight:800, fontSize:12,
             cursor: spinning ? "pointer" : "default",
-            opacity: spinning ? 1 : 0.5,
+            opacity: spinning ? 1 : 0.45,
             transition:"all .2s" }}>
           ⏹ Stop
         </button>
@@ -781,6 +799,7 @@ export default function ScoreTracker() {
   const [round,       setRound]      = useState(1);
   const [history,     setHist]       = useState([]);
   const [selected,    setSelected]   = useState(null);
+  const [pending,     setPending]    = useState([]); // accumulating bonus clicks
   const [undo,        setUndo]       = useState([]);
   const [toast,       setToast]      = useState(null);
   const [tab,         setTab]        = useState("scores");
@@ -988,7 +1007,13 @@ export default function ScoreTracker() {
   // ── Derived ───────────────────────────────────────────────
   const sorted        = [...players].sort((a,b)=>b.score-a.score);
   const topScore      = sorted[0]?.score??0;
-  const selPlayer     = players.find(p=>p.id===selected);
+  const selPlayer = players.find(p=>p.id===selected);
+  // Reset pending accumulator when selection changes
+  const prevSelectedRef = useRef(null);
+  if (prevSelectedRef.current !== selected) {
+    prevSelectedRef.current = selected;
+    if (pending.length) setPending([]);
+  }
   const isPlaying     = gameState==="playing";
   const isEnded       = gameState==="ended";
   const gearOverflow  = (GEAR_SZ-ROW_H)/2;
@@ -1332,7 +1357,7 @@ export default function ScoreTracker() {
 
       {/* ══════ ADD PLAYER BAR — fixed bottom ══════ */}
       <div style={{ position:"fixed",
-        bottom: selPlayer&&tab==="scores" ? 128 : 0,
+        bottom: selPlayer&&tab==="scores" ? 190 : 0,
         left:0, right:0, zIndex:25,
         background:D.hbg, backdropFilter:"blur(14px)",
         borderTop:`1px solid ${D.brd}`, padding:"9px 12px 13px" }}>
@@ -1404,41 +1429,107 @@ export default function ScoreTracker() {
       </div>
 
       {/* ══════ BONUS BAR ══════ */}
-      {selPlayer&&tab==="scores"&&(
-        <div className="slide-up" style={{ position:"fixed",bottom:0,left:0,right:0,zIndex:24,
-          background:dark?"rgba(11,13,18,0.97)":"rgba(240,236,228,0.97)",
-          backdropFilter:"blur(15px)",borderTop:`1px solid ${D.brd}`,padding:"9px 12px 14px" }}>
-          <div style={{ maxWidth:900,margin:"0 auto" }}>
-            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:9 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                <div style={{ width:28,height:28,borderRadius:"50%",background:selPlayer.color.hex,
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  color:"#fff",fontWeight:800,fontSize:12 }}>{selPlayer.name[0]}</div>
-                <div>
-                  <div style={{ fontWeight:700,fontSize:12,color:selPlayer.color.hex }}>{selPlayer.name}</div>
-                  <div style={{ fontSize:9,color:D.sub }}>Score : <span className="mono" style={{ fontWeight:700 }}>
-                    {selPlayer.score>0?"+":""}{selPlayer.score}</span></div>
+      {selPlayer&&tab==="scores"&&(()=>{
+        const pendingTotal = pending.reduce((a,b)=>a+b,0);
+        const applyPending = () => {
+          if(!pending.length) return;
+          adjust(selPlayer.id, pendingTotal);
+          setPending([]);
+        };
+        const pendingLabel = pending.length
+          ? pending.map(v=>(v>0?"+":"")+v).join(" ") + " = " + (pendingTotal>0?"+":"") + pendingTotal
+          : null;
+        return (
+          <div className="slide-up" style={{ position:"fixed",bottom:0,left:0,right:0,zIndex:24,
+            background:dark?"rgba(9,11,17,0.98)":"rgba(238,234,226,0.98)",
+            backdropFilter:"blur(18px)",borderTop:`1px solid ${D.brd}`,
+            padding:"8px 10px 12px" }}>
+            <div style={{ maxWidth:900,margin:"0 auto" }}>
+
+              {/* Header row */}
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                  <div style={{ width:26,height:26,borderRadius:"50%",background:selPlayer.color.hex,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    color:"#fff",fontWeight:800,fontSize:11,
+                    boxShadow:`0 0 10px ${selPlayer.color.hex}66` }}>{selPlayer.name[0]}</div>
+                  <div>
+                    <div style={{ fontWeight:700,fontSize:12,color:selPlayer.color.hex,lineHeight:1.2 }}>{selPlayer.name}</div>
+                    <div style={{ fontSize:9,color:D.sub }}>Score actuel : <span className="mono" style={{ fontWeight:700,color:D.txt }}>
+                      {selPlayer.score>0?"+":""}{selPlayer.score}</span></div>
+                  </div>
+                </div>
+
+                {/* Pending formula + validate */}
+                <div style={{ display:"flex",alignItems:"center",gap:7 }}>
+                  {pending.length>0&&(
+                    <>
+                      <div style={{ fontSize:10,fontWeight:700,color:pendingTotal>=0?"#4ade80":"#f87171",
+                        fontFamily:"monospace",maxWidth:160,textAlign:"right",lineHeight:1.3,
+                        background:pendingTotal>=0?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)",
+                        border:`1px solid ${pendingTotal>=0?"rgba(34,197,94,0.25)":"rgba(239,68,68,0.25)"}`,
+                        borderRadius:7,padding:"3px 7px",wordBreak:"break-all" }}>
+                        {pendingLabel}
+                      </div>
+                      <button onClick={()=>setPending([])}
+                        style={{ width:24,height:24,borderRadius:6,border:"none",
+                          background:"rgba(239,68,68,0.15)",color:"#f87171",
+                          cursor:"pointer",fontSize:12,fontWeight:800 }}>✕</button>
+                      <button onClick={applyPending}
+                        style={{ padding:"5px 13px",borderRadius:8,border:"none",
+                          background:`linear-gradient(135deg,${selPlayer.color.hex},${selPlayer.color.hex}bb)`,
+                          color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",
+                          boxShadow:`0 2px 8px ${selPlayer.color.hex}44` }}>
+                        ✔ Valider
+                      </button>
+                    </>
+                  )}
+                  <button onClick={()=>{setSelected(null);setPending([]);}}
+                    style={{ width:26,height:26,borderRadius:7,border:`1px solid ${D.brd}`,
+                      background:"transparent",color:D.sub,cursor:"pointer",fontSize:13 }}>✕</button>
                 </div>
               </div>
-              <button onClick={()=>setSelected(null)}
-                style={{ width:26,height:26,borderRadius:7,border:`1px solid ${D.brd}`,
-                  background:"transparent",color:D.sub,cursor:"pointer",fontSize:13 }}>✕</button>
-            </div>
-            <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
-              {BONUS_VALUES.map(b=>(
-                <button key={b} className="bonus-btn" onClick={()=>adjust(selPlayer.id,b)}
-                  style={{ flex:1,minWidth:52,padding:"9px 5px",
-                    background:b<0?"rgba(239,68,68,0.11)":"rgba(34,197,94,0.11)",
-                    color:b<0?"#f87171":"#4ade80",
-                    border:`1px solid ${b<0?"rgba(239,68,68,0.22)":"rgba(34,197,94,0.22)"}` }}>
-                  {b>0?"+":""}{b}
-                </button>
-              ))}
-              <CustomBonus onApply={v=>adjust(selPlayer.id,v)} color={selPlayer.color.hex} D={D}/>
+
+              {/* Card grid */}
+              <div style={{ display:"grid",
+                gridTemplateColumns:"repeat(auto-fill,minmax(42px,1fr))",
+                gap:5 }}>
+                {BONUS_CARDS.map(b=>{
+                  const neg=b<0;
+                  const col=neg?"#f87171":"#4ade80";
+                  const bg=neg?"rgba(239,68,68,0.10)":"rgba(34,197,94,0.10)";
+                  const brd=neg?"rgba(239,68,68,0.28)":"rgba(34,197,94,0.28)";
+                  return (
+                    <button key={b}
+                      onClick={()=>setPending(p=>[...p,b])}
+                      style={{
+                        padding:"8px 2px",
+                        borderRadius:9,
+                        border:`1.5px solid ${brd}`,
+                        background:bg,
+                        color:col,
+                        fontWeight:800,
+                        fontSize:12,
+                        fontFamily:"Space Mono,monospace",
+                        cursor:"pointer",
+                        textAlign:"center",
+                        transition:"transform .08s,box-shadow .08s",
+                        lineHeight:1,
+                        userSelect:"none",
+                      }}
+                      onMouseDown={e=>e.currentTarget.style.transform="scale(0.88)"}
+                      onMouseUp  ={e=>e.currentTarget.style.transform="scale(1)"}
+                      onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}
+                    >
+                      {b>0?"+":""}{b}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ══════ MODALS ══════ */}
       {showHist&&(
@@ -1516,7 +1607,7 @@ export default function ScoreTracker() {
 
       {toast&&(
         <div className="slide-up" style={{ position:"fixed",
-          bottom:selPlayer&&tab==="scores"?134:58,
+          bottom:selPlayer&&tab==="scores"?196:58,
           left:"50%",transform:"translateX(-50%)",zIndex:60,
           padding:"9px 18px",borderRadius:11,
           background:toast.bg||(dark?"#252938":"#1c1f2e"),
