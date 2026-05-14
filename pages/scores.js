@@ -4,16 +4,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 //  CONSTANTS
 // ─────────────────────────────────────────────────────────
 const PALETTE = [
-  { hex: "#e11d48", name: "Rubis"     },
-  { hex: "#2563eb", name: "Saphir"    },
-  { hex: "#16a34a", name: "Émeraude"  },
-  { hex: "#d97706", name: "Ambre"     },
-  { hex: "#7c3aed", name: "Améthyste" },
-  { hex: "#ea580c", name: "Flamme"    },
-  { hex: "#0891b2", name: "Cyan"      },
-  { hex: "#db2777", name: "Pivoine"   },
-  { hex: "#059669", name: "Jade"      },
-  { hex: "#64748b", name: "Ardoise"   },
+  { hex: "#ff1744", name: "Écarlate"  },
+  { hex: "#2979ff", name: "Électrique"},
+  { hex: "#00e676", name: "Néon vert" },
+  { hex: "#ffab00", name: "Soleil"    },
+  { hex: "#d500f9", name: "Plasma"    },
+  { hex: "#ff6d00", name: "Feu"       },
+  { hex: "#00e5ff", name: "Laser"     },
+  { hex: "#f50057", name: "Fuchsia"   },
+  { hex: "#69f0ae", name: "Menthe"    },
+  { hex: "#e040fb", name: "Orchidée"  },
 ];
 
 const DEFAULT_NAMES = [
@@ -28,157 +28,72 @@ const DICE_TYPES   = [4, 6, 8, 10, 12, 20, 100];
 const uid          = () => Math.random().toString(36).slice(2, 9);
 
 // Layout constants
-const ROW_H   = 64;
-const GEAR_SZ = 90;
+const ROW_H   = 82;
+const GEAR_SZ = 88;
 
 // ─────────────────────────────────────────────────────────
-//  GEAR SVG  — inspired by reference image:
-//  12 trapezoidal teeth, 4 thick spokes, bronze bearing hub
+//  GEAR SVG — épuré : cadran minimaliste, 3 branches, repères d'angle
 // ─────────────────────────────────────────────────────────
-function buildGearPath(teeth=7, ri=34, ro=48, tw=0.46) {
-  const step = (2*Math.PI)/teeth;
-  let d = "";
-  for (let i=0; i<teeth; i++) {
-    const b = i*step;
-    const oHW = step*tw;
-    const iHW = step*tw*0.72;
-    [
-      [b-iHW, ri], [b-oHW, ro], [b+oHW, ro], [b+iHW, ri],
-    ].forEach(([a,r],j)=>{
-      const x=(50+Math.cos(a-Math.PI/2)*r).toFixed(3);
-      const y=(50+Math.sin(a-Math.PI/2)*r).toFixed(3);
-      d += (i===0&&j===0)?`M${x},${y}`:`L${x},${y}`;
-    });
-  }
-  return d+"Z";
-}
-const GEAR_PATH = buildGearPath();
-
-// Spoke cutouts (4 open windows between spokes)
-const SPOKE_CUTOUTS = [0,90,180,270].map(deg=>{
-  const a0=(deg+20)*Math.PI/180, a1=(deg+70)*Math.PI/180;
-  const ri=12, ro=30;
-  const x0i=50+ri*Math.cos(a0-Math.PI/2), y0i=50+ri*Math.sin(a0-Math.PI/2);
-  const x0o=50+ro*Math.cos(a0-Math.PI/2), y0o=50+ro*Math.sin(a0-Math.PI/2);
-  const x1i=50+ri*Math.cos(a1-Math.PI/2), y1i=50+ri*Math.sin(a1-Math.PI/2);
-  const x1o=50+ro*Math.cos(a1-Math.PI/2), y1o=50+ro*Math.sin(a1-Math.PI/2);
-  return `M${x0i},${y0i} L${x0o},${y0o} A${ro},${ro} 0 0,1 ${x1o},${y1o} L${x1i},${y1i} A${ri},${ri} 0 0,0 ${x0i},${y0i}Z`;
-});
-
 function GearSVG({ rotation, lit }) {
   return (
     <svg width="100%" height="100%" viewBox="0 0 100 100"
       style={{ display:"block", overflow:"visible" }}>
       <defs>
-        <linearGradient id="gSteel" x1="15%" y1="5%" x2="85%" y2="95%">
-          <stop offset="0%"   stopColor="#dde2ec"/>
-          <stop offset="20%"  stopColor="#b8c0d0"/>
-          <stop offset="48%"  stopColor="#9aa3b4"/>
-          <stop offset="72%"  stopColor="#c8cfd8"/>
-          <stop offset="100%" stopColor="#86909e"/>
-        </linearGradient>
-        <linearGradient id="gSteelSpoke" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stopColor="#d0d6e2"/>
-          <stop offset="50%"  stopColor="#a0a8b8"/>
-          <stop offset="100%" stopColor="#8a909e"/>
-        </linearGradient>
-        <radialGradient id="gDisk" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor="#2e3240"/>
-          <stop offset="100%" stopColor="#1a1d28"/>
-        </radialGradient>
-        <radialGradient id="gBronze" cx="36%" cy="30%" r="65%">
-          <stop offset="0%"   stopColor="#d4a86a"/>
-          <stop offset="50%"  stopColor="#9a6e38"/>
-          <stop offset="100%" stopColor="#5e3e18"/>
-        </radialGradient>
-        <radialGradient id="gBronzeCap" cx="36%" cy="30%" r="65%">
-          <stop offset="0%"   stopColor="#c09050"/>
-          <stop offset="100%" stopColor="#7a5020"/>
-        </radialGradient>
-        <filter id="gDrop" x="-22%" y="-22%" width="144%" height="144%">
-          <feDropShadow dx="0" dy="3.5" stdDeviation="4.5" floodColor="#000" floodOpacity="0.55"/>
+        <filter id="knobGlow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
-        <clipPath id="gClip"><path d={GEAR_PATH}/></clipPath>
       </defs>
 
-      <g transform={`rotate(${rotation} 50 50)`} filter="url(#gDrop)">
-        {/* Dark outline for 3-D depth */}
-        <path d={GEAR_PATH} fill="#1e2230" transform="translate(0,1.8)" opacity="0.55"/>
+      <g transform={`rotate(${rotation} 50 50)`} filter={lit?"url(#knobGlow)":undefined}>
+        {/* Outer rim */}
+        <circle cx="50" cy="50" r="43"
+          fill={lit ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.28)"}
+          stroke={lit ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.28)"}
+          strokeWidth="2.5"/>
 
-        {/* Main steel body */}
-        <path d={GEAR_PATH} fill="url(#gSteel)"/>
-
-        {/* Brushed lines texture */}
-        <g clipPath="url(#gClip)" opacity="0.10">
-          {Array.from({length:20},(_,i)=>(
-            <line key={i} x1="2" y1={5.5+i*4.8} x2="98" y2={5.5+i*4.8}
-              stroke="#fff" strokeWidth="1.2"/>
-          ))}
-        </g>
-
-        {/* Top highlight bevel */}
-        <path d={GEAR_PATH} fill="none"
-          stroke="rgba(255,255,255,0.60)" strokeWidth="1.1"/>
-        {/* Bottom shadow bevel */}
-        <path d={GEAR_PATH} fill="none"
-          stroke="rgba(0,0,0,0.38)" strokeWidth="0.7"/>
-
-        {/* Outer groove ring */}
-        <circle cx="50" cy="50" r="33.5" fill="none"
-          stroke="rgba(0,0,0,0.55)" strokeWidth="2.8"/>
-        <circle cx="50" cy="50" r="33.5" fill="none"
-          stroke="rgba(255,255,255,0.22)" strokeWidth="0.9"/>
-
-        {/* Inner dark disk */}
-        <circle cx="50" cy="50" r="32" fill="url(#gDisk)"/>
-
-        {/* Spoke window cutouts */}
-        {SPOKE_CUTOUTS.map((d,i)=>(
-          <path key={i} d={d} fill="rgba(0,0,0,0.60)"
-            stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
-        ))}
-
-        {/* 4 solid spokes */}
-        {[0,90,180,270].map(deg=>{
-          const a=(deg-90)*Math.PI/180;
+        {/* 12 tick marks — major every 3 */}
+        {Array.from({length:12}, (_,i) => {
+          const a  = (i/12)*Math.PI*2 - Math.PI/2;
+          const major = i%3===0;
+          const r1 = major ? 34 : 38;
           return (
-            <line key={deg}
-              x1={50+Math.cos(a)*11} y1={50+Math.sin(a)*11}
-              x2={50+Math.cos(a)*31} y2={50+Math.sin(a)*31}
-              stroke="url(#gSteelSpoke)" strokeWidth="5.8" strokeLinecap="round"/>
-          );
-        })}
-        {/* Spoke highlight edge */}
-        {[0,90,180,270].map(deg=>{
-          const a=(deg-90)*Math.PI/180;
-          const p=(deg)*Math.PI/180;
-          return (
-            <line key={deg}
-              x1={50+Math.cos(a)*11+Math.cos(p)*1.3} y1={50+Math.sin(a)*11+Math.sin(p)*1.3}
-              x2={50+Math.cos(a)*31+Math.cos(p)*1.3} y2={50+Math.sin(a)*31+Math.sin(p)*1.3}
-              stroke="rgba(255,255,255,0.32)" strokeWidth="1.4" strokeLinecap="round"/>
+            <line key={i}
+              x1={(50+r1*Math.cos(a)).toFixed(2)}  y1={(50+r1*Math.sin(a)).toFixed(2)}
+              x2={(50+43*Math.cos(a)).toFixed(2)}  y2={(50+43*Math.sin(a)).toFixed(2)}
+              stroke={major
+                ? (lit?"rgba(255,255,255,0.85)":"rgba(255,255,255,0.52)")
+                : (lit?"rgba(255,255,255,0.45)":"rgba(255,255,255,0.20)")}
+              strokeWidth={major ? 2.8 : 1.6}
+              strokeLinecap="round"/>
           );
         })}
 
-        {/* Bronze bearing outer collar */}
-        <circle cx="50" cy="50" r="12.5" fill="#1a1d28"
-          stroke="rgba(255,255,255,0.08)" strokeWidth="0.8"/>
-        <circle cx="50" cy="50" r="11"   fill="url(#gBronze)"/>
-        <circle cx="50" cy="50" r="11"   fill="none"
-          stroke="rgba(255,210,100,0.40)" strokeWidth="0.9"/>
-        {/* Bearing balls */}
-        {Array.from({length:8},(_,i)=>{
-          const a=(i/8)*2*Math.PI;
-          return <circle key={i} cx={50+7.8*Math.cos(a)} cy={50+7.8*Math.sin(a)}
-            r="1.5" fill="#141620" stroke="rgba(255,255,255,0.18)" strokeWidth="0.4"/>;
-        })}
-        {/* Bronze cap */}
-        <circle cx="50" cy="50" r="4.8" fill="url(#gBronzeCap)"/>
-        {/* Cap specular */}
-        <circle cx="48.5" cy="48.5" r="1.4" fill="rgba(255,255,255,0.45)"/>
+        {/* Inner disk */}
+        <circle cx="50" cy="50" r="29"
+          fill={lit ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.45)"}
+          stroke={lit ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.13)"}
+          strokeWidth="1.5"/>
 
-        {/* Lit amber overlay */}
-        {lit&&<path d={GEAR_PATH} fill="rgba(255,195,55,0.16)" clipPath="url(#gClip)"/>}
+        {/* 3 spokes */}
+        {[30, 150, 270].map(deg => {
+          const a = deg*Math.PI/180;
+          return (
+            <line key={deg}
+              x1={(50+Math.cos(a)*11).toFixed(2)} y1={(50+Math.sin(a)*11).toFixed(2)}
+              x2={(50+Math.cos(a)*26).toFixed(2)} y2={(50+Math.sin(a)*26).toFixed(2)}
+              stroke={lit ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.32)"}
+              strokeWidth="3.2" strokeLinecap="round"/>
+          );
+        })}
+
+        {/* Center hub */}
+        <circle cx="50" cy="50" r="7"
+          fill={lit ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.15)"}
+          stroke={lit ? "rgba(255,255,255,0.70)" : "rgba(255,255,255,0.28)"}
+          strokeWidth="1.8"/>
+        <circle cx="50" cy="50" r="2.8"
+          fill={lit ? "#fff" : "rgba(255,255,255,0.50)"}/>
       </g>
     </svg>
   );
@@ -187,14 +102,13 @@ function GearSVG({ rotation, lit }) {
 // ─────────────────────────────────────────────────────────
 //  GEAR DRAG — tracks angular displacement around gear center.
 //  One full 360° circle = 12 teeth = 12 pts.
-//  Works correctly when mouse/finger moves in circles.
 // ─────────────────────────────────────────────────────────
 const DEG_PER_PT = 30; // 360 / 12 teeth
 
 function Gear({ onChange, size }) {
   const [rotation, setRotation] = useState(0);
   const [lit,      setLit]      = useState(false);
-  const drag   = useRef(null); // { cx, cy, lastAngle, accDeg }
+  const drag   = useRef(null);
   const litTmo = useRef(null);
   const cbRef  = useRef(onChange);
   const elRef  = useRef(null);
@@ -235,7 +149,7 @@ function Gear({ onChange, size }) {
       const newA = angleDeg(cx, cy, ev.clientX, ev.clientY);
       const diff = signedDiff(newA, drag.current.lastAngle);
       drag.current.lastAngle = newA;
-      drag.current.accDeg -= diff; // counter-clockwise = positive score
+      drag.current.accDeg -= diff;
       const pts = Math.trunc(drag.current.accDeg / DEG_PER_PT);
       if (pts !== 0) { drag.current.accDeg -= pts * DEG_PER_PT; emit(pts); }
     };
@@ -317,7 +231,7 @@ function HoldArrow({ direction, onTick, color, bg }) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  DIE FACE — rich graphical design for every die type
+//  DIE FACE
 // ─────────────────────────────────────────────────────────
 const DOT_POS={
   1:[[50,50]],
@@ -328,7 +242,6 @@ const DOT_POS={
   6:[[28,28],[72,28],[28,50],[72,50],[28,72],[72,72]],
 };
 
-// Helper: polygon points on a circle
 const polyPts = (n, r, cx=50, cy=50, offset=-90) =>
   Array.from({length:n},(_,i)=>{
     const a=(i/n*360+offset)*Math.PI/180;
@@ -374,7 +287,6 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
     );
   };
 
-  // D4 — equilateral triangle, very stylized
   if (sides===4) {
     const outer = polyPts(3, 44, 50, 54);
     const inner = polyPts(3, 22, 50, 54);
@@ -383,28 +295,21 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
         style={{ filter:`drop-shadow(0 5px 14px rgba(0,0,0,0.5))`, animation:rolling?"dieRoll .09s steps(1) infinite":"none" }}>
         {defs}
         <g filter={`url(#${shid})`}>
-          {/* Main face */}
           <polygon points={outer} fill={color}/>
-          {/* Sheen */}
           <polygon points={outer} fill={`url(#${gid})`}/>
-          {/* Bevel edges */}
           <polygon points={outer} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="1.5"/>
           <polygon points={outer} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth="0.6" strokeDasharray="2,2"/>
-          {/* Inner triangle decoration */}
           <polygon points={inner} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.2"/>
-          {/* Pip lines from center to each vertex */}
           {polyPts(3,44,50,54).split(" ").map((pt,i)=>{
             const [x,y]=pt.split(",");
             return <line key={i} x1="50" y1="54" x2={x} y2={y} stroke="rgba(255,255,255,0.12)" strokeWidth="0.8"/>;
           })}
-          {/* Value */}
           {numLabel(value, 24, 6)}
         </g>
       </svg>
     );
   }
 
-  // D6 — classic rounded square with dots
   if (sides===6) {
     const dots = DOT_POS[Math.min(value,6)]||DOT_POS[6];
     return (
@@ -414,7 +319,6 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
         <g filter={`url(#${shid})`}>
           <rect x="8" y="8" width="84" height="84" rx="18" fill={color}/>
           <rect x="8" y="8" width="84" height="84" rx="18" fill={`url(#${gid})`}/>
-          {/* Top-edge bevel */}
           <rect x="8" y="8" width="84" height="84" rx="18" fill="none"
             stroke="rgba(255,255,255,0.55)" strokeWidth="1.5"/>
           <rect x="8" y="8" width="84" height="84" rx="18" fill="none"
@@ -430,26 +334,20 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
     );
   }
 
-  // D8 — diamond / losange (octahedron front view)
   if (sides===8) {
-    // Classic D8 silhouette: vertical diamond with horizontal equator line
     const diamond = "50,6 92,50 50,94 8,50";
     return (
       <svg width={size} height={size} viewBox="0 0 100 100"
         style={{ filter:`drop-shadow(0 5px 14px rgba(0,0,0,0.5))`, animation:rolling?"dieRoll .09s steps(1) infinite":"none" }}>
         {defs}
         <g filter={`url(#${shid})`}>
-          {/* Main diamond */}
           <polygon points={diamond} fill={color}/>
           <polygon points={diamond} fill={`url(#${gid})`}/>
-          {/* Equator line */}
           <line x1="8" y1="50" x2="92" y2="50" stroke="rgba(255,255,255,0.30)" strokeWidth="1.2"/>
-          {/* Facet lines from center to each corner */}
           <line x1="50" y1="50" x2="50" y2="6"  stroke="rgba(255,255,255,0.14)" strokeWidth="0.8"/>
           <line x1="50" y1="50" x2="50" y2="94" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
           <line x1="50" y1="50" x2="92" y2="50" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
           <line x1="50" y1="50" x2="8"  y2="50" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
-          {/* Bevel */}
           <polygon points={diamond} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="1.5"/>
           <polygon points={diamond} fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="0.6"/>
           {numLabel(value, 26, -2)}
@@ -458,9 +356,7 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
     );
   }
 
-  // D10 — faceted diamond-like shape (more sides, closer to real D10)
   if (sides===10) {
-    // 9-point polygon: top point, wider upper equator, lower equator, bottom point
     const pts = "50,5 78,22 92,50 78,78 60,93 40,93 22,78 8,50 22,22";
     return (
       <svg width={size} height={size} viewBox="0 0 100 100"
@@ -469,9 +365,7 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
         <g filter={`url(#${shid})`}>
           <polygon points={pts} fill={color}/>
           <polygon points={pts} fill={`url(#${gid})`}/>
-          {/* Equator line */}
           <line x1="8" y1="50" x2="92" y2="50" stroke="rgba(255,255,255,0.22)" strokeWidth="1"/>
-          {/* Facet lines from center */}
           {pts.split(" ").map((pt,i)=>{
             const [x,y]=pt.split(",");
             return <line key={i} x1="50" y1="50" x2={x} y2={y}
@@ -485,7 +379,6 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
     );
   }
 
-  // D12 — dodecagon (12 sides)
   if (sides===12) {
     const outer = polyPts(12, 44);
     const inner = polyPts(12, 28, 50, 50, -75);
@@ -510,10 +403,9 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
     );
   }
 
-  // D20 — icosahedron front face: equilateral triangle with inner triangle + number
   if (sides===20) {
     const outer = polyPts(3, 44, 50, 56);
-    const inner = polyPts(3, 22, 50, 56, 90); // inverted inner triangle
+    const inner = polyPts(3, 22, 50, 56, 90);
     return (
       <svg width={size} height={size} viewBox="0 0 100 100"
         style={{ filter:`drop-shadow(0 5px 14px rgba(0,0,0,0.5))`, animation:rolling?"dieRoll .09s steps(1) infinite":"none" }}>
@@ -521,9 +413,7 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
         <g filter={`url(#${shid})`}>
           <polygon points={outer} fill={color}/>
           <polygon points={outer} fill={`url(#${gid})`}/>
-          {/* Sub-triangles (icosahedron face lines) */}
           <polygon points={inner} fill="rgba(0,0,0,0.10)" stroke="rgba(255,255,255,0.28)" strokeWidth="1.2"/>
-          {/* Vertex-to-center lines */}
           {outer.split(" ").map((pt,i)=>{
             const [x,y]=pt.split(",");
             return <line key={i} x1="50" y1="56" x2={x} y2={y}
@@ -537,30 +427,24 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
     );
   }
 
-  // D100 — ornate square, percentile die style
   if (sides===100) {
     return (
       <svg width={size} height={size} viewBox="0 0 100 100"
         style={{ filter:`drop-shadow(0 5px 14px rgba(0,0,0,0.5))`, animation:rolling?"dieRoll .09s steps(1) infinite":"none" }}>
         {defs}
         <g filter={`url(#${shid})`}>
-          {/* Outer square */}
           <rect x="6" y="6" width="88" height="88" rx="10" fill={color}/>
           <rect x="6" y="6" width="88" height="88" rx="10" fill={`url(#${gid})`}/>
-          {/* Inner decorative frame */}
           <rect x="12" y="12" width="76" height="76" rx="7"
             fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="1.2"/>
-          {/* Corner ornaments */}
           {[[14,14],[86,14],[14,86],[86,86]].map(([cx,cy],i)=>(
             <circle key={i} cx={cx} cy={cy} r="3"
               fill="rgba(255,255,255,0.35)" stroke="rgba(255,255,255,0.5)" strokeWidth="0.8"/>
           ))}
-          {/* Diagonal cross lines */}
           <line x1="14" y1="14" x2="86" y2="86" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
           <line x1="86" y1="14" x2="14" y2="86" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
           <rect x="6" y="6" width="88" height="88" rx="10"
             fill="none" stroke="rgba(255,255,255,0.52)" strokeWidth="1.4"/>
-          {/* Value — show "%" suffix */}
           <text x="51" y="53" textAnchor="middle" fontSize="22"
             fontWeight="900" fontFamily="Space Mono,monospace"
             fill="rgba(0,0,0,0.4)">{value===100?"00":String(value).padStart(2,"0")}</text>
@@ -575,7 +459,6 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
     );
   }
 
-  // Fallback
   return (
     <svg width={size} height={size} viewBox="0 0 100 100">
       <rect x="8" y="8" width="84" height="84" rx="14" fill={color}/>
@@ -586,34 +469,29 @@ function DieFace({ sides, value, size=86, color="#2563eb", rolling=false, percen
 }
 
 // ─────────────────────────────────────────────────────────
-//  SPINNER WHEEL — half size (85px), clean vector style
-//  Marker fixed at top. Winner = slice under marker when stopped.
+//  SPINNER WHEEL
 // ─────────────────────────────────────────────────────────
-function SpinnerWheel({ players, onResult }) {
+function SpinnerWheel({ players, onResult, acc }) {
   const [spinning,  setSpinning]  = useState(false);
   const [angle,     setAngle]     = useState(0);
   const [winner,    setWinner]    = useState(null);
-  const animRef   = useRef(null);
-  const angleRef  = useRef(0);
-  const velRef    = useRef(0);
-  const lastTsRef = useRef(null);
-  const stopFlag  = useRef(false);
-
-  const PEAK_VEL  = 2.0;
-  const ACCEL_MS  = 500;
-  const CRUISE_MS = 4000;
+  const animRef    = useRef(null);
+  const angleRef   = useRef(0);
+  const velRef     = useRef(0);
+  const lastTsRef  = useRef(null);
+  const stopFlag   = useRef(false);
+  const paramsRef  = useRef(null); // { peakVel, cruiseMs, accelMs }
 
   const resolveWinner = useCallback((totalAngle) => {
     const n  = players.length;
     const sa = 360 / n;
+    // normalize angle so 0° = top of wheel (marker position)
     const R  = ((totalAngle % 360) + 360) % 360;
-    let bestIdx = 0, bestDist = 999;
-    for (let i = 0; i < n; i++) {
-      let sliceTop = (-90 + (i + 0.5) * sa + R + 360 * 10) % 360;
-      let dist = Math.abs(((sliceTop - 270 + 540) % 360) - 180);
-      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
-    }
-    return players[bestIdx];
+    // slice i starts at (i*SA - 90)°, so after rotation R the top (0°) corresponds to
+    // original angle (0 - R) mod 360 on the wheel
+    const normalizedPos = ((360 - R) % 360);
+    const idx = Math.floor(((normalizedPos + 90) % 360) / sa) % n;
+    return players[idx];
   }, [players]);
 
   const finish = useCallback((a) => {
@@ -629,11 +507,23 @@ function SpinnerWheel({ players, onResult }) {
   const spin = useCallback(() => {
     if (spinning || players.length < 2) return;
     setWinner(null); setSpinning(true);
-    stopFlag.current = false; velRef.current = 0; lastTsRef.current = null;
+    stopFlag.current = false; lastTsRef.current = null;
+
+    // Fully random parameters each spin
+    const peakVel  = 6 + Math.random() * 6;        // 6–12 deg/ms (very fast)
+    const accelMs  = 400 + Math.random() * 300;     // 400–700 ms acceleration
+    const cruiseMs = 3000 + Math.random() * 7000;   // 3–10 s cruise (big range!)
+    // random extra offset so the final position can't be predicted
+    const extraOffset = Math.random() * 360 * (2 + Math.random() * 4); // 2-6 extra random rotations added
+    paramsRef.current = { peakVel, accelMs, cruiseMs, extraOffset };
+    velRef.current = 0;
+    // add the random offset immediately to starting angle
+    angleRef.current += extraOffset;
+    setAngle(a => a + extraOffset);
+
     let elapsed = 0;
 
     const loop = (ts) => {
-      // Skip the very first frame to avoid dt=0 causing immediate stop
       if (!lastTsRef.current) {
         lastTsRef.current = ts;
         animRef.current = requestAnimationFrame(loop);
@@ -643,16 +533,21 @@ function SpinnerWheel({ players, onResult }) {
       lastTsRef.current = ts;
       elapsed += dt;
 
+      const { peakVel, accelMs, cruiseMs } = paramsRef.current;
       let vel;
       if (stopFlag.current) {
-        velRef.current = Math.max(0, velRef.current - dt * 0.008);
+        // decelerate quickly when user presses stop
+        velRef.current = Math.max(0, velRef.current - dt * 0.012);
         vel = velRef.current;
-      } else if (elapsed < ACCEL_MS) {
-        vel = PEAK_VEL * (elapsed / ACCEL_MS);
-      } else if (elapsed < CRUISE_MS) {
-        vel = PEAK_VEL;
+      } else if (elapsed < accelMs) {
+        vel = peakVel * (elapsed / accelMs);
+      } else if (elapsed < cruiseMs) {
+        vel = peakVel;
       } else {
-        vel = Math.max(0, PEAK_VEL - (elapsed - CRUISE_MS) * 0.0006);
+        // smooth deceleration after cruise
+        const decelElapsed = elapsed - cruiseMs;
+        const decelDur = 2500 + Math.random() * 500; // ~2.5–3s stop
+        vel = Math.max(0, peakVel * (1 - decelElapsed / decelDur));
       }
       velRef.current = vel;
       angleRef.current += vel * dt;
@@ -673,7 +568,6 @@ function SpinnerWheel({ players, onResult }) {
     </div>
   );
 
-  // Large wheel: 220px with player names inside slices
   const W = 220, CX = W/2, CY = W/2, R = W/2 - 6;
   const SA = 360 / players.length;
   const nameFontSize = players.length <= 4 ? 13 : players.length <= 7 ? 10 : 8;
@@ -693,23 +587,23 @@ function SpinnerWheel({ players, onResult }) {
     };
   });
 
+  const needleColor = acc || "#f59e0b";
+
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:18 }}>
-      {/* Wheel + fixed marker */}
       <div style={{ position:"relative", width:W, height:W+18, flexShrink:0 }}>
         {/* Marker needle */}
         <div style={{
           position:"absolute", top:0, left:"50%", transform:"translateX(-50%)",
           width:0, height:0,
           borderLeft:"12px solid transparent", borderRight:"12px solid transparent",
-          borderTop:"24px solid #f59e0b",
+          borderTop:`24px solid ${needleColor}`,
           zIndex:10, filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.7))",
         }}/>
 
         <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`}
           style={{ marginTop:18, display:"block",
             filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.60))" }}>
-          {/* Outer dark ring */}
           <circle cx={CX} cy={CY} r={R+4} fill="#111318"
             stroke="rgba(255,255,255,0.10)" strokeWidth="2"/>
 
@@ -728,20 +622,17 @@ function SpinnerWheel({ players, onResult }) {
                 </g>
               </g>
             ))}
-            {/* Divider lines */}
             {players.map((p,i) => {
               const a = (i * SA - 90) * Math.PI / 180;
               return <line key={p.id} x1={CX} y1={CY}
                 x2={(CX + R * Math.cos(a)).toFixed(2)} y2={(CY + R * Math.sin(a)).toFixed(2)}
                 stroke="rgba(0,0,0,0.40)" strokeWidth="1.5"/>;
             })}
-            {/* Highlight ring */}
             <circle cx={CX} cy={CY} r={R} fill="none"
               stroke="rgba(255,255,255,0.18)" strokeWidth="1.5"/>
-            {/* Center hub */}
             <circle cx={CX} cy={CY} r="14" fill="#1a1d28"
               stroke="rgba(255,255,255,0.14)" strokeWidth="2"/>
-            <circle cx={CX} cy={CY} r="8" fill="#f59e0b"/>
+            <circle cx={CX} cy={CY} r="8" fill={needleColor}/>
             <circle cx={CX} cy={CY} r="3.5" fill="#111318"/>
           </g>
         </svg>
@@ -761,11 +652,11 @@ function SpinnerWheel({ players, onResult }) {
       <div style={{ display:"flex", gap:10 }}>
         <button onClick={spin} disabled={spinning || players.length < 2}
           style={{ padding:"12px 30px", borderRadius:12, border:"none",
-            background: spinning ? "#374151" : "linear-gradient(135deg,#f59e0b,#ef4444)",
+            background: spinning ? "#374151" : `linear-gradient(135deg,${needleColor},#ef4444)`,
             color:"#fff", fontWeight:800, fontSize:15,
             cursor: spinning || players.length < 2 ? "not-allowed" : "pointer",
             opacity: players.length < 2 ? 0.5 : 1,
-            boxShadow: spinning ? "none" : "0 4px 16px rgba(245,158,11,0.4)" }}>
+            boxShadow: spinning ? "none" : `0 4px 16px ${needleColor}55` }}>
           {spinning ? "⏳ En cours…" : "🎡 Lancer la roue"}
         </button>
         <button onClick={stopNow} disabled={!spinning}
@@ -794,11 +685,11 @@ export default function ScoreTracker() {
   const [round,       setRound]      = useState(1);
   const [history,     setHist]       = useState([]);
   const [selected,    setSelected]   = useState(null);
-  const [pending,     setPending]    = useState([]); // accumulating bonus clicks
+  const [pending,     setPending]    = useState([]);
   const [undo,        setUndo]       = useState([]);
   const [toast,       setToast]      = useState(null);
   const [tab,         setTab]        = useState("scores");
-  const [gameState,   setGameState]  = useState("idle"); // idle|playing|ended
+  const [gameState,   setGameState]  = useState("idle");
   const [gameWinner,  setGameWinner] = useState(null);
 
   const [flashCt,  setFlashCt]  = useState({});
@@ -846,7 +737,14 @@ export default function ScoreTracker() {
   useEffect(()=>{
     try { localStorage.setItem("sgt7",JSON.stringify({players,gameName,round,history,diceHistory,wheelHistory,gameState})); } catch {}
   },[players,gameName,round,history,diceHistory,wheelHistory,gameState]);
-  // (no dice player needed)
+
+  // Auto-init addColor based on restored players
+  useEffect(()=>{
+    if(players.length>0){
+      const used=new Set(players.map(p=>p.color.hex));
+      setAddColor(PALETTE.find(c=>!used.has(c.hex))||PALETTE[0]);
+    }
+  },[players.length]); // eslint-disable-line
 
   // ── Toast ────────────────────────────────────────────────
   const flash=useCallback((msg,bg)=>{
@@ -958,7 +856,6 @@ export default function ScoreTracker() {
     let n=0;
 
     if(diceType===100){
-      // D100 = percentile tens die (00-90) + units die (1-10)
       const iv=setInterval(()=>{
         const tens=Math.floor(Math.random()*10)*10;
         const units=Math.ceil(Math.random()*10);
@@ -1002,10 +899,8 @@ export default function ScoreTracker() {
   // ── Derived ───────────────────────────────────────────────
   const sorted        = [...players].sort((a,b)=>b.score-a.score);
   const topScore      = sorted[0]?.score??0;
-  // rankMap: player.id → rank position (0=leader) used for medals only
   const rankMap       = Object.fromEntries(sorted.map((p,i)=>[p.id,i]));
-  const selPlayer = players.find(p=>p.id===selected);
-  // Reset pending accumulator when selection changes
+  const selPlayer     = players.find(p=>p.id===selected);
   const prevSelectedRef = useRef(null);
   if (prevSelectedRef.current !== selected) {
     prevSelectedRef.current = selected;
@@ -1023,6 +918,7 @@ export default function ScoreTracker() {
     sub:  dark?"#50556e":"#9090a8",
     ibg:  dark?"#0b0d12":"#faf6f0",
     hbg:  dark?"rgba(11,13,18,0.96)":"rgba(240,236,228,0.96)",
+    acc:  dark?"#fcd34d":"#f59e0b",   // jaune plus pétant en mode nuit
   };
 
   return (
@@ -1047,12 +943,12 @@ export default function ScoreTracker() {
         .die-land{animation:dieLand .3s cubic-bezier(.36,.07,.19,.97)}
         .p-row{transition:box-shadow .2s}
         .p-row:hover{filter:brightness(1.06)}
-        .bonus-btn{border:none;cursor:pointer;font-family:'Space Mono',monospace;font-weight:700;font-size:15px;transition:transform .09s,opacity .1s;border-radius:12px}
+        .bonus-btn{border:none;cursor:pointer;font-family:'Space Mono',monospace;font-weight:700;font-size:16px;transition:transform .09s,opacity .1s;border-radius:12px}
         .bonus-btn:hover{opacity:.78}
         .bonus-btn:active{transform:scale(.85)}
         .cdot{width:14px;height:14px;border-radius:50%;border:none;cursor:pointer;transition:transform .12s}
         .cdot:hover{transform:scale(1.5)}
-        .sug-row{display:flex;align-items:center;gap:9px;width:100%;padding:8px 13px;background:none;border:none;cursor:pointer;font-size:12px;font-family:'Sora',sans-serif;text-align:left;transition:background .1s}
+        .sug-row{display:flex;align-items:center;gap:9px;width:100%;padding:10px 13px;background:none;border:none;cursor:pointer;font-size:13px;font-family:'Sora',sans-serif;text-align:left;transition:background .1s}
         .sug-row:hover{background:rgba(128,128,128,.12)}
         .hdr-btn{transition:color .12s,background .12s}
         .hdr-btn:hover:not(:disabled){background:rgba(128,128,128,.11)!important}
@@ -1063,7 +959,7 @@ export default function ScoreTracker() {
         input{font-family:'Sora',sans-serif}
         input:focus{outline:none}
         input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
-        .die-sel-btn{border-radius:10px;border:none;cursor:pointer;font-family:'Space Mono',monospace;font-weight:800;font-size:13px;padding:9px 13px;transition:all .13s}
+        .die-sel-btn{border-radius:10px;border:none;cursor:pointer;font-family:'Space Mono',monospace;font-weight:800;font-size:14px;padding:10px 14px;transition:all .13s}
         .die-sel-btn:hover{filter:brightness(1.13);transform:translateY(-1px)}
         .rm-btn{transition:background .12s,color .12s}
         .rm-btn:hover{background:rgba(239,68,68,0.5)!important;color:#fff!important}
@@ -1082,7 +978,7 @@ export default function ScoreTracker() {
                   onBlur={()=>setEditName(false)}
                   onKeyDown={e=>{if(e.key==="Enter"||e.key==="Escape")setEditName(false);}}
                   autoFocus
-                  style={{ background:"transparent",border:"none",borderBottom:`2px solid #f59e0b`,
+                  style={{ background:"transparent",border:"none",borderBottom:`2px solid ${D.acc}`,
                     fontWeight:800,fontSize:13,color:D.txt,width:"100%",paddingBottom:2 }}/>
               :<div onClick={()=>setEditName(true)} title="Renommer"
                   style={{ fontWeight:800,fontSize:13,color:D.txt,cursor:"text",
@@ -1093,7 +989,7 @@ export default function ScoreTracker() {
             <div style={{ fontSize:10,color:D.sub,marginTop:1 }}>
               {players.length} joueur{players.length!==1?"s":""} · Round {round}
               {isPlaying&&<span style={{ color:"#22c55e",marginLeft:6 }}>● En jeu</span>}
-              {isEnded  &&<span style={{ color:"#f59e0b",marginLeft:6 }}>● Terminée</span>}
+              {isEnded  &&<span style={{ color:D.acc,marginLeft:6 }}>● Terminée</span>}
             </div>
           </div>
 
@@ -1125,7 +1021,7 @@ export default function ScoreTracker() {
           {isEnded&&(
             <button onClick={()=>{setGameState("idle");setGameWinner(null);}}
               style={{ padding:"5px 12px",borderRadius:8,border:"none",
-                background:"#f59e0b",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer" }}>
+                background:D.acc,color:"#111",cursor:"pointer",fontWeight:700,fontSize:11 }}>
               🔁 Nouvelle</button>
           )}
 
@@ -1145,7 +1041,7 @@ export default function ScoreTracker() {
                   background:tab===t.key?D.card:"transparent",
                   color:tab===t.key?D.txt:D.sub,
                   fontWeight:tab===t.key?800:600,fontSize:11,cursor:"pointer",
-                  borderBottom:tab===t.key?`2px solid #f59e0b`:"2px solid transparent" }}>
+                  borderBottom:tab===t.key?`2px solid ${D.acc}`:"2px solid transparent" }}>
                 {t.label}
               </button>
             ))}
@@ -1174,7 +1070,7 @@ export default function ScoreTracker() {
               <div style={{ textAlign:"center",padding:"70px 20px 28px",color:D.sub }}>
                 <div style={{ fontSize:68,opacity:.65,lineHeight:1,marginBottom:12 }}>🎯</div>
                 <div style={{ fontSize:19,fontWeight:800,color:D.txt,marginBottom:7 }}>Prêt pour la partie ?</div>
-                <div style={{ fontSize:12,lineHeight:1.9 }}>
+                <div style={{ fontSize:13,lineHeight:1.9 }}>
                   Ajoutez des joueurs via le champ en bas.<br/>
                   Glissez la roue ↑ pour marquer, ↓ pour retrancher.<br/>
                   <strong style={{color:"#4ade80"}}>▲</strong> et <strong style={{color:"#f87171"}}>▼</strong> ajustent de +1/−1.
@@ -1182,7 +1078,8 @@ export default function ScoreTracker() {
               </div>
             )}
 
-            <div style={{ display:"flex",flexDirection:"column",overflow:"visible" }}>
+            {/* ← gap:14 pour espacer les lignes */}
+            <div style={{ display:"flex",flexDirection:"column",gap:14,overflow:"visible" }}>
               {players.map((player)=>{
                 const rank = rankMap[player.id] ?? 0;
                 return (
@@ -1211,23 +1108,21 @@ export default function ScoreTracker() {
         {/* ═══ DICE ═══ */}
         {tab==="dice"&&(
           <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
-            {/* Die type selector */}
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:16 }}>
-              <div style={{ fontSize:10,fontWeight:700,color:D.sub,marginBottom:11,textTransform:"uppercase",letterSpacing:1 }}>Type de dé</div>
+              <div style={{ fontSize:11,fontWeight:700,color:D.sub,marginBottom:11,textTransform:"uppercase",letterSpacing:1 }}>Type de dé</div>
               <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>
                 {DICE_TYPES.map(d=>(
                   <button key={d} className="die-sel-btn" onClick={()=>setDiceType(d)}
-                    style={{ background:diceType===d?"#f59e0b":dark?"#1a1d27":"#eee",
-                      color:diceType===d?"#fff":D.txt }}>D{d}</button>
+                    style={{ background:diceType===d?D.acc:dark?"#1a1d27":"#eee",
+                      color:diceType===d?dark?"#111":"#fff":D.txt }}>D{d}</button>
                 ))}
               </div>
             </div>
 
-            {/* Dice count — hidden for D100 */}
             {diceType!==100&&(
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:16,
               display:"flex",alignItems:"center",gap:16 }}>
-              <div style={{ fontSize:10,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1 }}>Nombre de dés</div>
+              <div style={{ fontSize:11,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1 }}>Nombre de dés</div>
               <div style={{ display:"flex",alignItems:"center",gap:12,marginLeft:"auto" }}>
                 <button onClick={()=>setDiceCount(c=>Math.max(1,c-1))}
                   style={{ width:32,height:32,borderRadius:8,border:"none",
@@ -1240,12 +1135,11 @@ export default function ScoreTracker() {
             </div>
             )}
 
-            {/* Dice display */}
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:22,textAlign:"center" }}>
               <div style={{ display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",
                 minHeight:90,alignItems:"center",marginBottom:18 }}>
                 {diceValues.length===0
-                  ?<div style={{ color:D.sub,fontSize:12 }}>Lancez les dés !</div>
+                  ?<div style={{ color:D.sub,fontSize:13 }}>Lancez les dés !</div>
                   :diceType===100&&diceValues.length>=2
                     ?<div style={{ display:"flex",alignItems:"center",gap:14 }}>
                         <div className={!rolling&&diceResult!=null?"die-land":""}>
@@ -1265,48 +1159,47 @@ export default function ScoreTracker() {
               </div>
               {diceResult!=null&&!rolling&&(
                 <div className="slide-up" style={{ marginBottom:16 }}>
-                  <div style={{ fontSize:11,color:D.sub,marginBottom:2 }}>
+                  <div style={{ fontSize:12,color:D.sub,marginBottom:2 }}>
                     {diceType===100
                       ?<span>D100 · <span style={{color:"rgba(255,255,255,0.45)"}}>
                           {diceValues[0]===0?"00":diceValues[0]} + {diceValues[1]===10?0:diceValues[1]}
                         </span></span>
                       :`${diceCount}×D${diceType}`}
                   </div>
-                  <div className="mono" style={{ fontSize:46,fontWeight:800,color:"#f59e0b" }}>{diceResult}</div>
-                  {diceCount>1&&diceType!==100&&<div style={{ fontSize:10,color:D.sub }}>[{diceValues.join(" + ")}]</div>}
+                  <div className="mono" style={{ fontSize:46,fontWeight:800,color:D.acc }}>{diceResult}</div>
+                  {diceCount>1&&diceType!==100&&<div style={{ fontSize:11,color:D.sub }}>[{diceValues.join(" + ")}]</div>}
                 </div>
               )}
               <button onClick={rollDice} disabled={rolling}
                 style={{ padding:"13px 40px",borderRadius:13,border:"none",
-                  background:rolling?"#6b7280":"linear-gradient(135deg,#f59e0b,#ef4444)",
-                  color:"#fff",fontWeight:800,fontSize:15,
+                  background:rolling?"#6b7280":`linear-gradient(135deg,${D.acc},#ef4444)`,
+                  color:dark?"#111":"#fff",fontWeight:800,fontSize:15,
                   cursor:rolling?"not-allowed":"pointer" }}>
                 {rolling?"🎲 En cours…":`🎲 Lancer ${diceType===100?"1×":(diceCount>1?`${diceCount}×`:"")}D${diceType}`}
               </button>
             </div>
 
-            {/* Dice history */}
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:16 }}>
               <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:11 }}>
-                <div style={{ fontSize:10,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1 }}>📋 Historique</div>
+                <div style={{ fontSize:11,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1 }}>📋 Historique</div>
                 <button onClick={()=>setDiceHist([])}
                   style={{ padding:"4px 11px",borderRadius:7,border:"none",
-                    background:"rgba(239,68,68,0.12)",color:"#f87171",cursor:"pointer",fontWeight:700,fontSize:10 }}>
+                    background:"rgba(239,68,68,0.12)",color:"#f87171",cursor:"pointer",fontWeight:700,fontSize:11 }}>
                   Effacer</button>
               </div>
               {diceHistory.length===0
-                ?<div style={{ textAlign:"center",padding:"18px 0",color:D.sub,fontSize:11 }}>Aucun lancé</div>
-                :<div style={{ display:"flex",flexDirection:"column",gap:5,maxHeight:240,overflowY:"auto" }}>
+                ?<div style={{ textAlign:"center",padding:"18px 0",color:D.sub,fontSize:12 }}>Aucun lancé</div>
+                :<div style={{ display:"flex",flexDirection:"column",gap:5,maxHeight:260,overflowY:"auto" }}>
                   {diceHistory.map(e=>(
                     <div key={e.id} style={{ display:"flex",alignItems:"center",gap:8,
-                      padding:"6px 10px",borderRadius:9,background:dark?"#ffffff03":"#00000003" }}>
-                      <span style={{ flex:1,fontSize:10,color:D.sub }}>
+                      padding:"8px 12px",borderRadius:9,background:dark?"#ffffff03":"#00000003" }}>
+                      <span style={{ flex:1,fontSize:12,color:D.sub }}>
                         {e.diceType===100
                           ?`D100 → [${e.values[0]===0?"00":e.values[0]}+${e.values[1]===10?0:e.values[1]}]`
                           :`${e.diceCount}×D${e.diceType} → [${e.values.join(",")}]`}
                       </span>
-                      <span className="mono" style={{ fontSize:14,fontWeight:800,color:"#f59e0b" }}>{e.total}</span>
-                      <span style={{ fontSize:9,color:D.sub,flexShrink:0 }}>{e.time}</span>
+                      <span className="mono" style={{ fontSize:15,fontWeight:800,color:D.acc }}>{e.total}</span>
+                      <span style={{ fontSize:10,color:D.sub,flexShrink:0 }}>{e.time}</span>
                     </div>
                   ))}
                 </div>
@@ -1320,32 +1213,32 @@ export default function ScoreTracker() {
           <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:22,
               display:"flex",flexDirection:"column",alignItems:"center" }}>
-              <SpinnerWheel players={players} onResult={handleWheelResult}/>
+              <SpinnerWheel players={players} onResult={handleWheelResult} acc={D.acc}/>
             </div>
             <div style={{ background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:16 }}>
               <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:11 }}>
-                <div style={{ fontSize:10,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1 }}>
+                <div style={{ fontSize:11,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1 }}>
                   🏁 Historique premiers joueurs</div>
                 <button onClick={()=>setWheelHist([])}
                   style={{ padding:"4px 11px",borderRadius:7,border:"none",
-                    background:"rgba(239,68,68,0.12)",color:"#f87171",cursor:"pointer",fontWeight:700,fontSize:10 }}>
+                    background:"rgba(239,68,68,0.12)",color:"#f87171",cursor:"pointer",fontWeight:700,fontSize:11 }}>
                   Effacer</button>
               </div>
               {wheelHistory.length===0
-                ?<div style={{ textAlign:"center",padding:"18px 0",color:D.sub,fontSize:11 }}>
+                ?<div style={{ textAlign:"center",padding:"18px 0",color:D.sub,fontSize:12 }}>
                   Aucune partie — lancez la roue !</div>
                 :<div style={{ display:"flex",flexDirection:"column",gap:6 }}>
                   {wheelHistory.map((e,i)=>(
                     <div key={e.id} style={{ display:"flex",alignItems:"center",gap:9,
-                      padding:"8px 13px",borderRadius:11,
-                      background:i===0?"rgba(245,158,11,0.07)":dark?"#ffffff02":"#00000002",
-                      border:i===0?`1px solid rgba(245,158,11,0.18)`:"1px solid transparent" }}>
+                      padding:"9px 13px",borderRadius:11,
+                      background:i===0?`rgba(${dark?"245,158,11":"245,158,11"},0.07)`:dark?"#ffffff02":"#00000002",
+                      border:i===0?`1px solid ${D.acc}30`:"1px solid transparent" }}>
                       <span style={{ fontSize:i===0?16:12,flexShrink:0 }}>{i===0?"🥇":"⚫"}</span>
                       <div style={{ width:28,height:28,borderRadius:"50%",background:e.color,
                         display:"flex",alignItems:"center",justifyContent:"center",
                         color:"#fff",fontWeight:800,fontSize:12,flexShrink:0 }}>{e.name[0]}</div>
-                      <span style={{ flex:1,fontWeight:700,fontSize:13,color:e.color }}>{e.name}</span>
-                      <span style={{ fontSize:10,color:D.sub }}>{e.date} · {e.time}</span>
+                      <span style={{ flex:1,fontWeight:700,fontSize:14,color:e.color }}>{e.name}</span>
+                      <span style={{ fontSize:11,color:D.sub }}>{e.date} · {e.time}</span>
                     </div>
                   ))}
                 </div>
@@ -1355,28 +1248,23 @@ export default function ScoreTracker() {
         )}
       </main>
 
-      {/* ══════ ADD PLAYER BAR — fixed bottom ══════ */}
+      {/* ══════ ADD PLAYER BAR — fixed bottom, taille fixe ══════ */}
       <div style={{ position:"fixed",
         bottom: selPlayer&&tab==="scores" ? 190 : 0,
         left:0, right:0, zIndex:25,
         background:D.hbg, backdropFilter:"blur(14px)",
-        borderTop:`1px solid ${D.brd}`, padding:"9px 12px 13px" }}>
+        borderTop:`1px solid ${D.brd}`, padding:"10px 12px 14px",
+        minHeight:72 }}>
         <div style={{ maxWidth:900,margin:"0 auto" }}>
-          <div style={{ fontSize:9,fontWeight:700,color:D.sub,marginBottom:6,
+          <div style={{ fontSize:10,fontWeight:700,color:D.sub,marginBottom:7,
             textTransform:"uppercase",letterSpacing:1 }}>➕ Ajouter un joueur</div>
           <div style={{ position:"relative" }}>
             <div style={{ display:"flex",gap:7,alignItems:"center" }}>
-              <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                {PALETTE.map(c=>(
-                  <button key={c.hex} className="cdot" onClick={()=>setAddColor(c)} title={c.name}
-                    style={{ background:c.hex,
-                      outline:addColor.hex===c.hex?`2px solid ${c.hex}`:"none",
-                      outlineOffset:addColor.hex===c.hex?2:0,
-                      transform:addColor.hex===c.hex?"scale(1.4)":"scale(1)" }}/>
-                ))}
-              </div>
+              {/* Indicateur de couleur auto (petite pastille, non cliquable dans le formulaire) */}
+              <div style={{ width:12,height:12,borderRadius:"50%",background:addColor.hex,
+                flexShrink:0,border:"2px solid rgba(255,255,255,0.25)" }}/>
               <div style={{ flex:1,display:"flex",alignItems:"center",gap:7,
-                padding:"8px 11px",borderRadius:10,border:`1px solid ${D.brd}`,background:D.ibg }}>
+                padding:"9px 12px",borderRadius:10,border:`1px solid ${D.brd}`,background:D.ibg }}>
                 <input ref={addRef} value={addQ}
                   onChange={e=>onQueryChange(e.target.value)}
                   onFocus={()=>addQ&&setSugOpen(sugs.length>0)}
@@ -1386,15 +1274,15 @@ export default function ScoreTracker() {
                     if(e.key==="Escape"){setAddQ("");setSugOpen(false);}
                   }}
                   placeholder="Nom du joueur…"
-                  style={{ flex:1,background:"transparent",border:"none",color:D.txt,fontSize:12 }}/>
+                  style={{ flex:1,background:"transparent",border:"none",color:D.txt,fontSize:13 }}/>
                 {addQ&&<button onClick={()=>{setAddQ("");setSugOpen(false);}}
                   style={{ background:"none",border:"none",color:D.sub,cursor:"pointer",fontSize:15,lineHeight:1 }}>×</button>}
               </div>
               <button onClick={()=>addPlayer()} disabled={!addQ.trim()}
-                style={{ padding:"8px 16px",borderRadius:9,border:"none",flexShrink:0,
-                  fontWeight:700,fontSize:12,cursor:addQ.trim()?"pointer":"default",
-                  background:addQ.trim()?"#f59e0b":dark?"#2a2d3a":"#dddad4",
-                  color:addQ.trim()?"#fff":D.sub }}>
+                style={{ padding:"9px 18px",borderRadius:9,border:"none",flexShrink:0,
+                  fontWeight:700,fontSize:13,cursor:addQ.trim()?"pointer":"default",
+                  background:addQ.trim()?D.acc:dark?"#2a2d3a":"#dddad4",
+                  color:addQ.trim()?(dark?"#111":"#fff"):D.sub }}>
                 Ajouter
               </button>
             </div>
@@ -1411,13 +1299,13 @@ export default function ScoreTracker() {
                     <span style={{ width:22,height:22,borderRadius:"50%",
                       background:addColor.hex+"28",color:addColor.hex,
                       display:"flex",alignItems:"center",justifyContent:"center",
-                      fontWeight:700,fontSize:10,flexShrink:0 }}>{n[0]}</span>
+                      fontWeight:700,fontSize:11,flexShrink:0 }}>{n[0]}</span>
                     {n}
                   </button>
                 ))}
                 {addQ&&!sugs.find(s=>s.toLowerCase()===addQ.toLowerCase())&&(
                   <button className="sug-row" onMouseDown={()=>addPlayer()}
-                    style={{ color:"#f59e0b",fontWeight:700,
+                    style={{ color:D.acc,fontWeight:700,
                       borderTop:sugs.length?`1px solid ${D.brd}`:"none" }}>
                     <span>✚</span> Ajouter « {addQ} »
                   </button>
@@ -1431,7 +1319,6 @@ export default function ScoreTracker() {
       {/* ══════ BONUS BAR ══════ */}
       {selPlayer&&tab==="scores"&&(()=>{
         const sessionTotal = pending.reduce((a,b)=>a+b,0);
-        // Build display formula: +5 +3 −1 = +7
         const formulaParts = pending.map(v=>(v>0?"+":"")+v);
         const formulaStr   = formulaParts.length
           ? formulaParts.join(" ") + " = " + (sessionTotal>=0?"+":"") + sessionTotal
@@ -1443,7 +1330,6 @@ export default function ScoreTracker() {
             padding:"8px 10px 12px" }}>
             <div style={{ maxWidth:900,margin:"0 auto" }}>
 
-              {/* Header row */}
               <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7 }}>
                 <div style={{ display:"flex",alignItems:"center",gap:8 }}>
                   <div style={{ width:26,height:26,borderRadius:"50%",background:selPlayer.color.hex,
@@ -1451,8 +1337,8 @@ export default function ScoreTracker() {
                     color:"#fff",fontWeight:800,fontSize:11,
                     boxShadow:`0 0 10px ${selPlayer.color.hex}66` }}>{selPlayer.name[0]}</div>
                   <div>
-                    <div style={{ fontWeight:700,fontSize:12,color:selPlayer.color.hex,lineHeight:1.2 }}>{selPlayer.name}</div>
-                    <div style={{ fontSize:9,color:D.sub }}>
+                    <div style={{ fontWeight:700,fontSize:13,color:selPlayer.color.hex,lineHeight:1.2 }}>{selPlayer.name}</div>
+                    <div style={{ fontSize:10,color:D.sub }}>
                       Score : <span className="mono" style={{ fontWeight:700,color:D.txt }}>
                         {selPlayer.score>=0?"+":""}{selPlayer.score}
                       </span>
@@ -1460,11 +1346,10 @@ export default function ScoreTracker() {
                   </div>
                 </div>
 
-                {/* Session history formula */}
                 <div style={{ display:"flex",alignItems:"center",gap:7 }}>
                   {formulaStr&&(
                     <>
-                      <div style={{ fontSize:10,fontWeight:700,
+                      <div style={{ fontSize:11,fontWeight:700,
                         color:sessionTotal>=0?"#4ade80":"#f87171",
                         fontFamily:"monospace",maxWidth:170,textAlign:"right",
                         lineHeight:1.3,wordBreak:"break-all",
@@ -1485,10 +1370,10 @@ export default function ScoreTracker() {
                 </div>
               </div>
 
-              {/* Card grid — each click immediately applies AND records in session */}
+              {/* Card grid */}
               <div style={{ display:"grid",
-                gridTemplateColumns:"repeat(auto-fill,minmax(42px,1fr))",
-                gap:5 }}>
+                gridTemplateColumns:"repeat(auto-fill,minmax(46px,1fr))",
+                gap:6 }}>
                 {BONUS_CARDS.map(b=>{
                   const neg=b<0;
                   const col=neg?"#f87171":"#4ade80";
@@ -1500,9 +1385,9 @@ export default function ScoreTracker() {
                         adjust(selPlayer.id, b);
                         setPending(p=>[...p,b]);
                       }}
-                      style={{ padding:"8px 2px",borderRadius:9,
+                      style={{ padding:"9px 2px",borderRadius:9,
                         border:`1.5px solid ${brd}`,background:bg,color:col,
-                        fontWeight:800,fontSize:12,fontFamily:"Space Mono,monospace",
+                        fontWeight:800,fontSize:13,fontFamily:"Space Mono,monospace",
                         cursor:"pointer",textAlign:"center",lineHeight:1,userSelect:"none",
                         transition:"transform .08s" }}
                       onMouseDown={e=>e.currentTarget.style.transform="scale(0.86)"}
@@ -1523,26 +1408,32 @@ export default function ScoreTracker() {
       {showHist&&(
         <Modal onClose={()=>setSH(false)} D={D}>
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:13 }}>
-            <h3 style={{ fontWeight:800,fontSize:15 }}>📋 Historique</h3>
+            <h3 style={{ fontWeight:800,fontSize:16 }}>📋 Historique</h3>
             <MClose onClick={()=>setSH(false)} D={D}/>
           </div>
-          <div style={{ overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:4 }}>
+          <div style={{ overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:5 }}>
             {history.length===0
-              ?<p style={{ textAlign:"center",padding:"28px 0",color:D.sub,fontSize:11 }}>Aucune action</p>
+              ?<p style={{ textAlign:"center",padding:"28px 0",color:D.sub,fontSize:12 }}>Aucune action</p>
               :[...history].reverse().map((e,i)=>{
                 const p=players.find(pp=>pp.id===e.id);
+                const isNeg = e.delta < 0;
                 return(
-                  <div key={i} style={{ display:"flex",alignItems:"center",gap:8,
-                    padding:"6px 10px",borderRadius:9,background:dark?"#ffffff03":"#00000003" }}>
-                    <span style={{ width:6,height:6,borderRadius:"50%",background:p?.color.hex||"#888",flexShrink:0 }}/>
-                    <span style={{ fontWeight:600,fontSize:11,flex:1,overflow:"hidden",
+                  <div key={i} style={{ display:"flex",alignItems:"center",gap:9,
+                    padding:"8px 12px",borderRadius:10,
+                    background: isNeg
+                      ? (dark?"rgba(239,68,68,0.11)":"rgba(239,68,68,0.07)")
+                      : (dark?"#ffffff04":"#00000004") }}>
+                    <span style={{ width:8,height:8,borderRadius:"50%",background:p?.color.hex||"#888",flexShrink:0 }}/>
+                    <span style={{ fontWeight:600,fontSize:13,flex:1,overflow:"hidden",
                       textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{e.name}</span>
-                    <span className="mono" style={{ fontSize:10,padding:"1px 6px",borderRadius:5,
-                      background:e.delta>0?"#22c55e18":"#ef444418",
-                      color:e.delta>0?"#22c55e":"#ef4444",fontWeight:700,flexShrink:0 }}>
+                    <span className="mono" style={{ fontSize:12,padding:"2px 7px",borderRadius:5,
+                      background:isNeg?"#ef444425":"#22c55e20",
+                      color:isNeg?"#f87171":"#4ade80",fontWeight:700,flexShrink:0 }}>
                       {e.delta>0?"+":""}{e.delta}</span>
-                    <span className="mono" style={{ fontSize:10,color:D.sub,flexShrink:0 }}>→ {e.score>0?"+":""}{e.score}</span>
-                    <span style={{ fontSize:9,color:D.sub,flexShrink:0 }}>R{e.round}·{e.time}</span>
+                    <span className="mono" style={{ fontSize:12,
+                      color: dark?"#e2e4f0":"#1a1a2a",fontWeight:600,flexShrink:0 }}>
+                      → {e.score>0?"+":""}{e.score}</span>
+                    <span style={{ fontSize:10,color:D.sub,flexShrink:0 }}>R{e.round}·{e.time}</span>
                   </div>
                 );
               })
@@ -1554,7 +1445,7 @@ export default function ScoreTracker() {
       {showReset&&(
         <Modal onClose={()=>setSR(false)} D={D} noScroll maxW={310}>
           <h3 style={{ fontWeight:800,fontSize:15,marginBottom:7 }}>🔄 Remettre à zéro ?</h3>
-          <p style={{ fontSize:11,color:D.sub,lineHeight:1.7,marginBottom:18 }}>
+          <p style={{ fontSize:12,color:D.sub,lineHeight:1.7,marginBottom:18 }}>
             Tous les scores reviennent à 0 et l'historique est effacé.<br/>Les joueurs restent.
           </p>
           <div style={{ display:"flex",gap:8 }}>
@@ -1577,7 +1468,7 @@ export default function ScoreTracker() {
                 margin:"0 auto 9px",display:"flex",alignItems:"center",justifyContent:"center",
                 color:"#fff",fontWeight:800,fontSize:18 }}>{p.name[0]}</div>
               <h3 style={{ fontWeight:800,fontSize:15,marginBottom:5 }}>Retirer {p.name} ?</h3>
-              <p style={{ fontSize:11,color:D.sub,lineHeight:1.6 }}>
+              <p style={{ fontSize:12,color:D.sub,lineHeight:1.6 }}>
                 Le joueur sera supprimé de la partie.<br/>Annulable via ↩.
               </p>
             </div>
@@ -1597,9 +1488,10 @@ export default function ScoreTracker() {
         <div className="slide-up" style={{ position:"fixed",
           bottom:selPlayer&&tab==="scores"?196:58,
           left:"50%",transform:"translateX(-50%)",zIndex:60,
-          padding:"9px 18px",borderRadius:11,
-          background:toast.bg||(dark?"#252938":"#1c1f2e"),
-          color:"#fff",fontWeight:700,fontSize:11,
+          padding:"10px 20px",borderRadius:11,
+          background:toast.bg||(dark?"#252938":"#e8e4dc"),
+          color: dark?"#fff":"#111",
+          fontWeight:700,fontSize:12,
           boxShadow:"0 5px 20px rgba(0,0,0,.38)",whiteSpace:"nowrap" }}>
           {toast.msg}
         </div>
@@ -1619,7 +1511,6 @@ function PlayerRow({ player, rank, medal, isLeader, isSel, flashKey, delta,
   return (
     <div style={{ position:"relative",
       paddingTop:gearOverflow, paddingBottom:gearOverflow,
-      marginTop: rank===0 ? 0 : -gearOverflow*1.05,
       zIndex: isSel?10:1 }}>
 
       <div className="p-row"
@@ -1628,25 +1519,25 @@ function PlayerRow({ player, rank, medal, isLeader, isSel, flashKey, delta,
              e.target.closest("[data-pal]")||e.target.closest("[data-arrows]")) return;
           onSelect();
         }}
-        style={{ position:"relative",height:ROW_H,borderRadius:13,
+        style={{ position:"relative",height:ROW_H,borderRadius:14,
           background:col,cursor:"pointer",overflow:"visible",
           boxShadow:isSel
             ?`inset 0 0 0 9999px rgba(0,0,0,0.09),0 0 0 2.5px ${col},0 0 0 4.5px rgba(255,255,255,0.18)`
             :`inset 0 0 0 9999px rgba(0,0,0,0.52),0 2px 7px ${col}25`,
-          display:"flex",alignItems:"center",gap:7,padding:"0 9px 0 11px" }}>
+          display:"flex",alignItems:"center",gap:9,padding:"0 10px 0 13px" }}>
 
         {/* Rank */}
-        <div style={{ minWidth:23,height:23,borderRadius:6,background:"rgba(255,255,255,0.12)",
+        <div style={{ minWidth:26,height:26,borderRadius:7,background:"rgba(255,255,255,0.12)",
           display:"flex",alignItems:"center",justifyContent:"center",
-          fontSize:rank<3?13:10,fontWeight:800,color:"#fff",flexShrink:0 }}>{medal}</div>
+          fontSize:rank<3?14:11,fontWeight:800,color:"#fff",flexShrink:0 }}>{medal}</div>
 
         {/* Avatar / palette */}
         <div style={{ position:"relative",flexShrink:0 }} data-pal>
           <button onClick={e=>{e.stopPropagation();setPalette(v=>!v);}}
-            style={{ width:34,height:34,borderRadius:"50%",
+            style={{ width:38,height:38,borderRadius:"50%",
               background:"rgba(255,255,255,0.16)",backdropFilter:"blur(4px)",
               border:"2px solid rgba(255,255,255,0.30)",color:"#fff",
-              fontWeight:800,fontSize:isLeader?15:13,cursor:"pointer",
+              fontWeight:800,fontSize:isLeader?16:14,cursor:"pointer",
               display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
             {isLeader
               ?<span style={{ display:"inline-block",animation:"crown 1.4s ease-in-out infinite" }}>👑</span>
@@ -1654,7 +1545,7 @@ function PlayerRow({ player, rank, medal, isLeader, isSel, flashKey, delta,
           </button>
           {showPalette&&(
             <div className="fade-in" data-pal
-              style={{ position:"absolute",top:42,left:0,zIndex:30,
+              style={{ position:"absolute",top:46,left:0,zIndex:30,
                 background:dark?"#1c1f2e":"#fff",
                 border:"1px solid rgba(255,255,255,0.08)",
                 borderRadius:12,padding:8,display:"flex",flexWrap:"wrap",gap:5,width:140,
@@ -1674,30 +1565,30 @@ function PlayerRow({ player, rank, medal, isLeader, isSel, flashKey, delta,
 
         {/* Name */}
         <div style={{ flex:1,minWidth:0 }}>
-          <div style={{ fontWeight:700,fontSize:13,color:"#fff",
+          <div style={{ fontWeight:700,fontSize:16,color:"#fff",
             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{player.name}</div>
-          <div style={{ fontSize:9,color:"rgba(255,255,255,0.40)",marginTop:1 }}>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",marginTop:2 }}>
             {isLeader?"👑 En tête":`#${rank+1} · ${player.color.name}`}</div>
         </div>
 
-        {/* Score — centred */}
+        {/* Score — centré */}
         <div style={{ position:"relative",textAlign:"center",
-          width:64,flexShrink:0,display:"flex",justifyContent:"center",alignItems:"center" }}>
+          width:72,flexShrink:0,display:"flex",justifyContent:"center",alignItems:"center" }}>
           <div key={flashKey} className="mono score-pop"
-            style={{ fontSize:36,fontWeight:700,color:"#fff",
+            style={{ fontSize:44,fontWeight:700,color:"#fff",
               letterSpacing:-1.5,lineHeight:1,textShadow:"0 1px 8px rgba(0,0,0,0.28)" }}>
             {player.score>0?"+":""}{player.score}
           </div>
           {delta!==undefined&&(
             <div className="delta-fly mono" style={{ position:"absolute",top:-4,right:-5,
-              zIndex:5,fontSize:14,fontWeight:700,
+              zIndex:5,fontSize:15,fontWeight:700,
               color:delta>0?"#86efac":"#fca5a5" }}>
               {delta>0?"+":""}{delta}
             </div>
           )}
         </div>
 
-        {/* ◄ Gear ► — absolutely positioned, overflows band */}
+        {/* ◄ Gear ► */}
         <div data-gear style={{
           position:"absolute",
           right: isPlaying ? 12 : 38,
@@ -1712,10 +1603,10 @@ function PlayerRow({ player, rank, medal, isLeader, isSel, flashKey, delta,
             color="#4ade80" bg="rgba(34,197,94,0.18)"/>
         </div>
 
-        {/* Spacer matching the gear column width */}
+        {/* Spacer */}
         <div style={{ width: GEAR_SZ + 3*2 + 34*2, flexShrink:0 }}/>
 
-        {/* Remove — hidden while playing */}
+        {/* Remove */}
         {!isPlaying&&(
           <button data-rm onClick={e=>{e.stopPropagation();onRemove();}}
             className="rm-btn"
@@ -1735,29 +1626,29 @@ function MiniLeaderboard({ sorted, topScore, D, dark }) {
   const min=Math.min(...sorted.map(p=>p.score));
   const range=topScore-min||1;
   return (
-    <div style={{ marginTop:14,background:D.card,border:`1px solid ${D.brd}`,
-      borderRadius:14,padding:"13px 16px" }}>
-      <div style={{ fontSize:9,fontWeight:700,color:D.sub,marginBottom:11,
+    <div style={{ marginTop:16,background:D.card,border:`1px solid ${D.brd}`,
+      borderRadius:14,padding:"15px 18px" }}>
+      <div style={{ fontSize:10,fontWeight:700,color:D.sub,marginBottom:13,
         textTransform:"uppercase",letterSpacing:1 }}>📊 Classement</div>
-      <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+      <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
         {sorted.map((p,i)=>{
           const pct=Math.max(3,((p.score-min)/range)*100);
           return(
-            <div key={p.id} style={{ display:"flex",alignItems:"center",gap:8 }}>
-              <span style={{ fontSize:i<3?12:9,minWidth:16,textAlign:"center",flexShrink:0 }}>
+            <div key={p.id} style={{ display:"flex",alignItems:"center",gap:9 }}>
+              <span style={{ fontSize:i<3?13:10,minWidth:18,textAlign:"center",flexShrink:0 }}>
                 {i<3?["🥇","🥈","🥉"][i]:`#${i+1}`}</span>
-              <div style={{ width:24,height:24,borderRadius:"50%",background:p.color.hex,
+              <div style={{ width:27,height:27,borderRadius:"50%",background:p.color.hex,
                 display:"flex",alignItems:"center",justifyContent:"center",
-                color:"#fff",fontWeight:800,fontSize:10,flexShrink:0 }}>{p.name[0]}</div>
-              <span style={{ fontSize:11,fontWeight:600,minWidth:64,overflow:"hidden",
+                color:"#fff",fontWeight:800,fontSize:11,flexShrink:0 }}>{p.name[0]}</div>
+              <span style={{ fontSize:13,fontWeight:600,minWidth:68,overflow:"hidden",
                 textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{p.name}</span>
-              <div style={{ flex:1,height:6,borderRadius:3,
+              <div style={{ flex:1,height:7,borderRadius:4,
                 background:dark?"#ffffff06":"#00000006",overflow:"hidden" }}>
-                <div style={{ width:`${pct}%`,height:"100%",borderRadius:3,
+                <div style={{ width:`${pct}%`,height:"100%",borderRadius:4,
                   background:p.color.hex,transition:"width .5s ease" }}/>
               </div>
-              <span className="mono" style={{ fontSize:10,fontWeight:700,color:p.color.hex,
-                minWidth:40,textAlign:"right",flexShrink:0 }}>
+              <span className="mono" style={{ fontSize:12,fontWeight:700,color:p.color.hex,
+                minWidth:44,textAlign:"right",flexShrink:0 }}>
                 {p.score>0?"+":""}{p.score}</span>
             </div>
           );
@@ -1779,7 +1670,7 @@ function CustomBonus({ onApply, color, D }) {
         onChange={e=>setV(e.target.value)}
         onKeyDown={e=>{if(e.key==="Enter")go();}}
         style={{ flex:1,padding:"8px 9px",borderRadius:9,border:`1px solid ${D.brd}`,
-          background:D.ibg,color:D.txt,fontSize:11,textAlign:"center",
+          background:D.ibg,color:D.txt,fontSize:12,textAlign:"center",
           fontFamily:"Space Mono,monospace" }}/>
       <button onClick={go} className="bonus-btn"
         style={{ padding:"8px 12px",background:`${color}1e`,color,border:`1px solid ${color}35` }}>OK</button>
