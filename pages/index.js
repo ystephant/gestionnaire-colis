@@ -36,6 +36,21 @@ export default function MenuPrincipal() {
   const [urgentParcels, setUrgentParcels] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [braderieBannerDismissed, setBraderieBannerDismissed] = useState(false);
+
+  function isBraderieBannerActive() {
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun, 1=Mon, 2=Tue
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const timeInMinutes = hours * 60 + minutes;
+    const sundayNoon = 12 * 60;
+    const tuesdayLimit = 11 * 60;
+
+    if (day === 0 && timeInMinutes >= sundayNoon) return true; // Dimanche à partir de midi
+    if (day === 1) return true; // Lundi toute la journée
+    if (day === 2 && timeInMinutes < tuesdayLimit) return true; // Mardi avant 11h
+    return false;
+  }
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
 
@@ -233,7 +248,7 @@ export default function MenuPrincipal() {
       )}
 
       {/* 🏪 BANDEAU BRADERIES */}
-      {!braderieBannerDismissed && (
+      {isBraderieBannerActive() && !braderieBannerDismissed && (
         <div
           className="relative w-full bg-emerald-500 text-white py-3 px-6 flex items-center justify-center cursor-pointer shadow-md"
           onClick={() => router.push('/braderies')}
