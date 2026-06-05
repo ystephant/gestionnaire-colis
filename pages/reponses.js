@@ -296,34 +296,34 @@ export default function ReponsesPrefaites() {
   }
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-gray-50 to-slate-100'} py-8 px-4 transition-colors duration-300`}>
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-gray-50 to-slate-100'} py-4 px-3 sm:py-8 sm:px-4 transition-colors duration-300`}>
       <div className="max-w-7xl mx-auto">
         {copyMessage && (
-          <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-2xl font-bold text-lg z-50 animate-bounce">
+          <div className="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-2xl font-bold text-base z-50 animate-bounce">
             {copyMessage}
           </div>
         )}
 
         {/* Header */}
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6 transition-colors duration-300`}>
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-3 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
                 onClick={() => router.push('/')}
-                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
+                className={`${darkMode ? 'text-gray-400 hover:text-indigo-400 hover:bg-gray-700' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'} p-2 rounded-lg transition flex-shrink-0`}
               >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7"/>
                 </svg>
               </button>
-              <div className="bg-indigo-600 p-3 rounded-xl">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <div className="bg-indigo-600 p-2 sm:p-3 rounded-xl flex-shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                 </svg>
               </div>
-              <div>
-                <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Réponses Préfaites</h1>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Cliquez sur une réponse pour copier • Glissez-déposez pour réorganiser</p>
+              <div className="min-w-0">
+                <h1 className={`text-lg sm:text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} leading-tight`}>Réponses Préfaites</h1>
+                <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'} hidden sm:block`}>Cliquez sur une réponse pour copier • Glissez-déposez pour réorganiser</p>
               </div>
             </div>
             
@@ -359,7 +359,7 @@ export default function ReponsesPrefaites() {
         </div>
 
         {/* Lignes de catégories */}
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {categories.map(category => {
             const categoryReponses = reponses
               .filter(r => r.category === category.id)
@@ -373,16 +373,17 @@ export default function ReponsesPrefaites() {
                 onDragStart={(e) => handleCategoryDragStart(e, category)}
                 onDragOver={handleCategoryDragOver}
                 onDrop={(e) => handleCategoryDrop(e, category)}
-                className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-4 cursor-move hover:shadow-xl transition-all duration-300 ${
+                className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-3 sm:p-4 cursor-move hover:shadow-xl transition-all duration-300 ${
                   draggedCategory?.id === category.id ? 'opacity-50' : ''
                 }`}
               >
-                <div className="flex items-start gap-4">
+                {/* Mobile: vertical layout. Desktop: horizontal layout */}
+                <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
                   {/* Colonne titre */}
-                  <div className="w-64 flex-shrink-0">
-                    <div className={`${colors.bg} rounded-lg p-4 h-full transition-colors duration-300`}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <div className="w-full sm:w-48 lg:w-64 sm:flex-shrink-0">
+                    <div className={`${colors.bg} rounded-lg p-3 sm:p-4 transition-colors duration-300`}>
+                      <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <line x1="3" y1="12" x2="21" y2="12"></line>
                           <line x1="3" y1="6" x2="21" y2="6"></line>
                           <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -406,10 +407,10 @@ export default function ReponsesPrefaites() {
 
                   {/* Colonnes de réponses */}
                   <div className="flex-1 overflow-x-auto">
-                    <div className="flex gap-3 pb-2 min-w-min">
+                    <div className="flex gap-2 sm:gap-3 pb-2 min-w-min">
                       {/* Formulaire d'ajout */}
                       {addingCategory === category.id && (
-                        <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 w-72 flex-shrink-0 transition-colors duration-300`}>
+                        <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 w-56 sm:w-72 flex-shrink-0 transition-colors duration-300`}>
                           <textarea
                             value={newResponseText}
                             onChange={(e) => setNewResponseText(e.target.value)}
@@ -450,7 +451,7 @@ export default function ReponsesPrefaites() {
                       {categoryReponses.map(reponse => (
                         <div 
                           key={reponse.id} 
-                          className="w-72 flex-shrink-0"
+                          className="w-56 sm:w-72 flex-shrink-0"
                           draggable={editingId !== reponse.id}
                           onDragStart={(e) => handleResponseDragStart(e, reponse)}
                           onDragOver={handleResponseDragOver}
@@ -495,7 +496,7 @@ export default function ReponsesPrefaites() {
                             <div className={`relative group h-full ${draggedResponse?.id === reponse.id ? 'opacity-50' : ''}`}>
                               <div
                                 onClick={() => copierReponse(reponse.text)}
-                                className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 cursor-pointer ${colors.hover} transition-all duration-300 h-full min-h-[120px] flex items-center`}
+                                className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 cursor-pointer ${colors.hover} transition-all duration-300 h-full min-h-[100px] sm:min-h-[120px] flex items-center`}
                               >
                                 <p className={`${colors.text} text-sm whitespace-pre-wrap break-words`}>
                                   {reponse.text}
@@ -543,7 +544,7 @@ export default function ReponsesPrefaites() {
                       ))}
 
                       {categoryReponses.length === 0 && addingCategory !== category.id && (
-                        <div className="w-72 flex-shrink-0 flex items-center justify-center">
+                        <div className="w-56 sm:w-72 flex-shrink-0 flex items-center justify-center">
                           <p className={`text-sm italic ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                             Aucune réponse
                           </p>
