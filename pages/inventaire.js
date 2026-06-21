@@ -1275,6 +1275,40 @@ const resetInventory = async () => {
 
 // Composant SearchGameSection
 function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults, searchResults, selectGame, deleteGame, allGames, showAllGamesList, setShowAllGamesList, openCreateModal, evaluations, deleteEvaluation, deleteAllEvaluations }) {
+  const [sendingEmail, setSendingEmail] = React.useState(false);
+  const [emailToast, setEmailToast] = React.useState(null); // { type: 'success'|'error'|'info', message: '' }
+
+  const showToast = (type, message) => {
+    setEmailToast({ type, message });
+    setTimeout(() => setEmailToast(null), 4000);
+  };
+
+  const sendEmailReport = async () => {
+    const evaluationsWithComments = evaluations.filter(e => e.comment);
+    if (evaluationsWithComments.length === 0) {
+      showToast('info', 'Aucune évaluation avec commentaire à envoyer.');
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ evaluations: evaluationsWithComments }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Erreur réseau');
+      }
+      showToast('success', `Email envoyé avec ${evaluationsWithComments.length} évaluation${evaluationsWithComments.length > 1 ? 's' : ''} commentée${evaluationsWithComments.length > 1 ? 's' : ''} !`);
+    } catch (error) {
+      console.error('Erreur envoi email:', error);
+      showToast('error', `Erreur lors de l'envoi : ${error.message}`);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   const formatDate = (isoString) => {
     const date = new Date(isoString);
     return date.toLocaleDateString('fr-FR', { 
@@ -1421,20 +1455,53 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
         </button>
       </div>
 
+      {/* Toast email */}
+      {emailToast && (
+        <div className={`fixed bottom-6 left-4 right-4 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-max`}>
+          <div className={`flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold ${
+            emailToast.type === 'success'
+              ? 'bg-orange-600 text-white'
+              : emailToast.type === 'error'
+                ? 'bg-red-600 text-white'
+                : darkMode ? 'bg-gray-700 text-gray-100 border border-gray-600' : 'bg-white text-gray-800 border border-gray-200'
+          }`}>
+            <span className="text-lg">
+              {emailToast.type === 'success' ? '📧' : emailToast.type === 'error' ? '❌' : 'ℹ️'}
+            </span>
+            {emailToast.message}
+          </div>
+        </div>
+      )}
+
       {/* Historique des évaluations */}
       {evaluations.length > 0 && (
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6`}>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} flex items-center gap-2`}>
               📋 Historique des évaluations
             </h2>
-            <button
-              onClick={deleteAllEvaluations}
-              className="text-red-500 hover:text-red-600 text-sm font-semibold flex items-center gap-1"
-            >
-              <Trash2 size={16} />
-              Tout supprimer
-            </button>
+            <div className="flex items-center gap-3 flex-wrap">
+              {evaluations.some(e => e.comment) && (
+                <button
+                  onClick={sendEmailReport}
+                  disabled={sendingEmail}
+                  className={`text-sm font-semibold flex items-center gap-1 transition ${
+                    sendingEmail
+                      ? 'text-gray-400 cursor-not-allowed'
+                      : darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
+                  }`}
+                >
+                  {sendingEmail ? '⏳' : '📧'} {sendingEmail ? 'Envoi...' : 'Envoyer un mail'}
+                </button>
+              )}
+              <button
+                onClick={deleteAllEvaluations}
+                className="text-red-500 hover:text-red-600 text-sm font-semibold flex items-center gap-1"
+              >
+                <Trash2 size={16} />
+                Tout supprimer
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3">
