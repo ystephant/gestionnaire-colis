@@ -83,7 +83,7 @@ export default async function handler(req, res) {
     <div style="background:#ffffff;border-radius:16px 16px 0 0;border:1px solid #E5E7EB;border-bottom:none;padding:28px 32px;text-align:center;">
       <div style="font-size:36px;margin-bottom:8px;">🎲</div>
       <h1 style="color:#111827;margin:0;font-size:22px;font-weight:700;">Rapport d'évaluations</h1>
-      <p style="color:#6B7280;margin:8px 0 0;font-size:14px;">Inventaire Famille</p>
+      <p style="color:#6B7280;margin:8px 0 0;font-size:14px;">Inventaire Le Petit Meeple</p>
     </div>
     <div style="background:#fff;padding:32px;border-left:1px solid #E5E7EB;border-right:1px solid #E5E7EB;">
       <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 24px;">
@@ -96,7 +96,7 @@ export default async function handler(req, res) {
       ${postItsHtml}
     </div>
     <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:0 0 16px 16px;padding:16px 32px;text-align:center;font-size:12px;color:#9CA3AF;">
-      Généré automatiquement par <strong>Inventaire Jeux Famille</strong>
+      Généré automatiquement par <strong>Inventaire Le Petit Meeple</strong>
     </div>
   </div>
 </body>
