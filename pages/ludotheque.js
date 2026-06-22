@@ -259,52 +259,6 @@ setGames(gamesData || []);
   }
 };
 
-  const exportToExcel = () => {
-  const gamesToExport = games.filter(game =>
-    matchesFilters(game)
-  );
-
-  const data = gamesToExport.map(game => ({
-    Nom: game.name,
-    Joueurs: game.players,
-    Durée: formatDuration(
-      game.duration,
-      game.duration_max
-    ),
-    Type: game.game_type || 'Versus'
-  }));
-
-  const worksheet = XLSX.utils.json_to_sheet(data);
-
-  const workbook = XLSX.utils.book_new();
-
-  XLSX.utils.book_append_sheet(
-    workbook,
-    worksheet,
-    'Ludotheque'
-  );
-
-  const excelBuffer = XLSX.write(
-    workbook,
-    {
-      bookType: 'xlsx',
-      type: 'array'
-    }
-  );
-
-  const file = new Blob(
-    [excelBuffer],
-    {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
-  );
-
-  saveAs(
-    file,
-    `ludotheque_${new Date().toISOString().split('T')[0]}.xlsx`
-  );
-};
-
   const showToastMessage = (msg) => {
     setToastMessage(msg);
     setShowToast(true);
@@ -317,14 +271,18 @@ setGames(gamesData || []);
   );
 
   const data = gamesToExport.map(game => ({
-    Nom: game.name,
-    Joueurs: game.players,
-    Durée: formatDuration(
-      game.duration,
-      game.duration_max
-    ),
-    Type: game.game_type || 'Versus'
-  }));
+  Nom: game.name,
+  Joueurs: game.players,
+  Durée: formatDuration(
+    game.duration,
+    game.duration_max
+  ),
+  Type: game.game_type || 'Versus',
+  Etagere:
+    shelves.find(
+      s => s.id === game.shelf_id
+    )?.name || 'Non rangé'
+}));
 
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();
@@ -842,11 +800,11 @@ setIsLoadingRules(false);
   const matchesPlayerFilter = (gamePlayersRange, selectedPlayerValues) => {
   if (selectedPlayerValues.length === 0) return true;
 
-  const [minPlayers, maxPlayers] = gamePlayersRange
-    .split('-')
-    .map(Number);
+  const [minPlayers, maxPlayers] =
+    gamePlayersRange.split('-').map(Number);
 
   return selectedPlayerValues.some(selected => {
+
     if (selected === '6+') {
       return maxPlayers >= 6;
     }
