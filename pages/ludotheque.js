@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -262,6 +264,52 @@ setGames(gamesData || []);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
   };
+
+  const exportToExcel = () => {
+  const gamesToExport = games.filter(game =>
+    matchesFilters(game)
+  );
+
+  const data = gamesToExport.map(game => ({
+    Nom: game.name,
+    Joueurs: game.players,
+    Durée: formatDuration(
+      game.duration,
+      game.duration_max
+    ),
+    Type: game.game_type || 'Versus'
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    'Ludotheque'
+  );
+
+  const excelBuffer = XLSX.write(
+    workbook,
+    {
+      bookType: 'xlsx',
+      type: 'array'
+    }
+  );
+
+  const file = new Blob(
+    [excelBuffer],
+    {
+      type:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }
+  );
+
+  saveAs(
+    file,
+    `ludotheque_${new Date().toISOString().split('T')[0]}.xlsx`
+  );
+};
 
   const addNewGame = async () => {
   if (!newGameName.trim() || !isOnline) return;
@@ -747,9 +795,23 @@ setIsLoadingRules(false);
 
   const matchesPlayerFilter = (gamePlayersRange, selectedPlayerValues) => {
   if (selectedPlayerValues.length === 0) return true;
-  
-  // Si on a sélectionné depuis la légende, on cherche la plage exacte
-  return selectedPlayerValues.includes(gamePlayersRange);
+
+  const [minPlayers, maxPlayers] = gamePlayersRange
+    .split('-')
+    .map(Number);
+
+  return selectedPlayerValues.some(selected => {
+    if (selected === '6+') {
+      return maxPlayers >= 6;
+    }
+
+    const nbPlayers = parseInt(selected);
+
+    return (
+      nbPlayers >= minPlayers &&
+      nbPlayers <= maxPlayers
+    );
+  });
 };
 
 const matchesDurationFilter = (gameDuration, gameDurationMax, selectedDurationValues) => {
@@ -823,9 +885,9 @@ const matchesFilters = (game) => {
 
   const unplacedGames = games.filter(g => !g.position);
   const filteredUnplacedGames = unplacedGames.filter(g =>
-    g.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
+  matchesFilters(g)
+);
+  
   const getGamesAtPosition = (row, col, shelfId) => {
     return games.filter(g => g.position === `${row}-${col}` && g.shelf_id === shelfId);
   };
@@ -1006,6 +1068,13 @@ const matchesFilters = (game) => {
               ))}
             </div>
           </div>
+
+        <button
+          onClick={exportToExcel}
+          className="w-full mb-3 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700"
+        >
+          📊 Télécharger Excel
+        </button>
 
           {hasActiveFilters && (
             <button
@@ -1572,8 +1641,8 @@ const matchesFilters = (game) => {
                                     className={`rounded shadow-sm cursor-move group relative transition-all p-0.5 sm:p-1 ${gameColor} ${
                                       hasActiveFilters
                                         ? isHighlighted
-                                          ? 'ring-2 ring-blue-500 scale-105 z-10 opacity-100'
-                                          : 'opacity-20 grayscale hover:opacity-40'
+                                          ? 'ring-4 ring-green-500 scale-110 z-20 opacity-100 shadow-2xl'
+                                          : 'opacity-10 grayscale'
                                         : 'opacity-90 hover:opacity-100'
                                     }`}
                                     style={{ 
@@ -1607,7 +1676,7 @@ const matchesFilters = (game) => {
                                       {showDetailedView && (
                                         <div className="flex items-center gap-1 text-gray-700" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
                                           <span className="font-bold whitespace-nowrap">👥{game.players}</span>
-                                          {numGames <= 3 && (
+                                         true && (
                                             <>
                                               <span className="whitespace-nowrap">⏱️{formatDuration(game.duration, game.duration_max)}</span>
                                               {game.game_type && (
