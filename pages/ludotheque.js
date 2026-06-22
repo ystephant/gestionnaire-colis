@@ -1680,9 +1680,11 @@ const matchesFilters = (game) => {
                                       {showDetailedView && (
                                         <div className="flex items-center gap-1 text-gray-700" style={{ fontSize: `${Math.max(0.4, finalFontSize * 0.8)}rem` }}>
                                           <span className="font-bold whitespace-nowrap">👥{game.players}</span>
-                                         true && (
+                                         {true && (
                                             <>
-                                              <span className="whitespace-nowrap">⏱️{formatDuration(game.duration, game.duration_max)}</span>
+                                              <span className="whitespace-nowrap">
+                                                ⏱️{formatDuration(game.duration, game.duration_max)}
+                                              </span>
                                               {game.game_type && (
                                                 <span className="px-1 bg-white/30 rounded text-[0.85em]">
                                                   {game.game_type}
