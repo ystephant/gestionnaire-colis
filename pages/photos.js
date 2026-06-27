@@ -7,7 +7,7 @@ import {
   Upload, Tag, Trash2, X, Check, ChevronDown, ChevronRight,
   Image as ImageIcon, Loader2, Sun, Moon, LogOut, ArrowLeft,
   Folder, FolderOpen, Download, ZoomIn, Clipboard, Search,
-  RotateCcw, RotateCw, ChevronLeft,
+  RotateCcw, RotateCw, ChevronLeft, AlertTriangle,
 } from 'lucide-react';
 
 const supabase = createClient(
@@ -256,6 +256,28 @@ export default function PhotosManager() {
   const [showFolderSuggestions, setShowFolderSuggestions] = useState(false);
   // Onglet colonne actif sur mobile
   const [mobileCol, setMobileCol] = useState('pas_encore_en_vente');
+
+  // Filtre/surbrillance des jeux en attente depuis 20+ jours
+  const [filterOldAttente, setFilterOldAttente] = useState(false); // false=surbrillance seulement, true=filtre
+
+  // Retourne true si le tag correspond à un jeu ajouté il y a 20 jours ou plus
+  // Le tag a le format "Nom du jeu • DD/MM HH:MM" (année courante implicite)
+  const isOlderThan20Days = useCallback((tag) => {
+    if (!tag) return false;
+    const ts = tag.split(' \u2022 ')[1]; // "DD/MM HH:MM"
+    if (!ts) return false;
+    const [datePart, timePart] = ts.split(' ');
+    if (!datePart || !timePart) return false;
+    const [day, month] = datePart.split('/').map(Number);
+    const [hours, minutes] = timePart.split(':').map(Number);
+    if (!day || !month) return false;
+    const now = new Date();
+    let year = now.getFullYear();
+    const tagDate = new Date(year, month - 1, day, hours || 0, minutes || 0);
+    if (tagDate > now) tagDate.setFullYear(year - 1);
+    const diffMs = now - tagDate;
+    return diffMs >= 20 * 24 * 60 * 60 * 1000;
+  }, []);
 
   // Lightbox
   const [lightbox, setLightbox] = useState(null);
@@ -1500,6 +1522,28 @@ export default function PhotosManager() {
                           {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                         </button>
                       )}
+                      {col.id === 'en_attente_reception' && (() => {
+                        const oldCount = Object.keys(groupByTag(colPhotos).groups).filter(tag => isOlderThan20Days(tag)).length;
+                        return (
+                          <button
+                            onClick={() => setFilterOldAttente(p => !p)}
+                            title={filterOldAttente ? `Afficher tous (${oldCount} jeu${oldCount > 1 ? 'x' : ''} en attente 20j+)` : `Filtrer les jeux en attente 20j+ (${oldCount})`}
+                            className={[
+                              'p-1 rounded-lg transition-colors flex-shrink-0',
+                              filterOldAttente
+                                ? 'bg-red-500 text-white'
+                                : oldCount > 0
+                                  ? darkMode ? 'text-red-400 hover:bg-red-500/20' : 'text-red-500 hover:bg-red-100'
+                                  : darkMode ? 'text-gray-600 hover:bg-white/10' : 'text-gray-300 hover:bg-white',
+                            ].join(' ')}
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            {oldCount > 0 && (
+                              <span className={`ml-0.5 text-[9px] font-bold align-middle ${filterOldAttente ? 'text-white' : darkMode ? 'text-red-400' : 'text-red-500'}`}>{oldCount}</span>
+                            )}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1551,14 +1595,17 @@ export default function PhotosManager() {
                         const filteredEntries = q2
                           ? sortedEntries.filter(([tagLabel]) => baseGameName(tagLabel).toLowerCase().includes(q2))
                           : sortedEntries;
+                        const filteredByOld = (col.id === 'en_attente_reception' && filterOldAttente)
+                          ? filteredEntries.filter(([tagLabel]) => isOlderThan20Days(tagLabel))
+                          : filteredEntries;
                         const isPaginated = (col.id === 'en_vente' || col.id === 'en_attente_reception') && !q2;
                         const currentPage    = col.id === 'en_attente_reception' ? enAttenteReceptionPage : enVentePage;
                         const setCurrentPage = col.id === 'en_attente_reception' ? setEnAttenteReceptionPage : setEnVentePage;
-                        const totalPages  = isPaginated ? Math.ceil(filteredEntries.length / FOLDERS_PER_PAGE) : 1;
+                        const totalPages  = isPaginated ? Math.ceil(filteredByOld.length / FOLDERS_PER_PAGE) : 1;
                         const safePage    = Math.min(Math.max(currentPage, 1), totalPages || 1);
                         const pageEntries = isPaginated
-                          ? filteredEntries.slice((safePage - 1) * FOLDERS_PER_PAGE, safePage * FOLDERS_PER_PAGE)
-                          : filteredEntries;
+                          ? filteredByOld.slice((safePage - 1) * FOLDERS_PER_PAGE, safePage * FOLDERS_PER_PAGE)
+                          : filteredByOld;
                         return (
                           <>
                             {/* ── Pagination haut ── */}
@@ -1607,7 +1654,11 @@ export default function PhotosManager() {
                                 ? darkMode
                                   ? 'border-blue-400 bg-blue-500/15 shadow-lg shadow-blue-500/20 scale-[1.02]'
                                   : 'border-blue-400 bg-blue-50 shadow-lg shadow-blue-200 scale-[1.02]'
-                                : darkMode ? 'border-amber-500/40 bg-amber-500/15' : 'border-amber-300 bg-amber-100/80',
+                                : col.id === 'en_attente_reception' && isOlderThan20Days(tagLabel)
+                                  ? darkMode
+                                    ? 'border-red-500 bg-red-500/15 shadow-md shadow-red-500/20'
+                                    : 'border-red-500 bg-red-50/60 shadow-md shadow-red-200'
+                                  : darkMode ? 'border-amber-500/40 bg-amber-500/15' : 'border-amber-300 bg-amber-100/80',
                             ].join(' ')}
                           >
                             {/* En-tête du dossier */}
