@@ -1312,7 +1312,7 @@ export default function PhotosManager() {
         </div>
       )}
 
-      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-3 sm:space-y-6">
+      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-3 sm:space-y-6 overflow-x-auto">
 
         {/* ── Zone d'upload ── */}
         <div
@@ -1842,7 +1842,7 @@ export default function PhotosManager() {
           return (
             <>
               {/* Desktop : 2 grandes colonnes + colonne droite compacte (en attente + vendu) */}
-              <div className="hidden sm:grid sm:grid-cols-[1fr_1fr_1fr] gap-4 items-start">
+              <div className="hidden sm:grid sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(220px,1fr)] gap-4 items-start pr-1">
                 {leftCols.map(col => renderCol(col))}
                 <div className="flex flex-col gap-4">
                   {attenteCol && renderCol(attenteCol)}
