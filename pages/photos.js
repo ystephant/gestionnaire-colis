@@ -260,22 +260,13 @@ export default function PhotosManager() {
   // Filtre/surbrillance des jeux en attente depuis 20+ jours
   const [filterOldAttente, setFilterOldAttente] = useState(false); // false=surbrillance seulement, true=filtre
 
-  // Retourne true si le tag correspond à un jeu ajouté il y a 20 jours ou plus
-  // Le tag a le format "Nom du jeu • DD/MM HH:MM" (année courante implicite)
-  const isOlderThan20Days = useCallback((tag) => {
-    if (!tag) return false;
-    const ts = tag.split(' \u2022 ')[1]; // "DD/MM HH:MM"
-    if (!ts) return false;
-    const [datePart, timePart] = ts.split(' ');
-    if (!datePart || !timePart) return false;
-    const [day, month] = datePart.split('/').map(Number);
-    const [hours, minutes] = timePart.split(':').map(Number);
-    if (!day || !month) return false;
-    const now = new Date();
-    let year = now.getFullYear();
-    const tagDate = new Date(year, month - 1, day, hours || 0, minutes || 0);
-    if (tagDate > now) tagDate.setFullYear(year - 1);
-    const diffMs = now - tagDate;
+  // Retourne true si le tag correspond à un groupe entré en attente réception il y a 20 jours ou plus
+  // Utilise le champ attente_since de la première photo du groupe
+  const isOlderThan20Days = useCallback((tag, groupPhotos) => {
+    if (!groupPhotos || groupPhotos.length === 0) return false;
+    const since = groupPhotos[0].attente_since;
+    if (!since) return false;
+    const diffMs = Date.now() - new Date(since).getTime();
     return diffMs >= 20 * 24 * 60 * 60 * 1000;
   }, []);
 
@@ -680,8 +671,13 @@ export default function PhotosManager() {
       });
     }
     try {
+      const now = new Date().toISOString();
       await supabase.from('sale_photos')
-        .update({ status: toColumn, updated_at: new Date().toISOString() })
+        .update({
+          status: toColumn,
+          updated_at: now,
+          attente_since: toColumn === 'en_attente_reception' ? now : null,
+        })
         .in('id', ids);
     } catch { showToast('Erreur deplacement', 'error'); loadPhotos(); }
   };
@@ -1523,7 +1519,8 @@ export default function PhotosManager() {
                         </button>
                       )}
                       {col.id === 'en_attente_reception' && (() => {
-                        const oldCount = Object.keys(groupByTag(colPhotos).groups).filter(tag => isOlderThan20Days(tag)).length;
+                        const { groups: attenteGroups } = groupByTag(colPhotos);
+                        const oldCount = Object.entries(attenteGroups).filter(([tag, gPhotos]) => isOlderThan20Days(tag, gPhotos)).length;
                         return (
                           <button
                             onClick={() => setFilterOldAttente(p => !p)}
@@ -1596,7 +1593,7 @@ export default function PhotosManager() {
                           ? sortedEntries.filter(([tagLabel]) => baseGameName(tagLabel).toLowerCase().includes(q2))
                           : sortedEntries;
                         const filteredByOld = (col.id === 'en_attente_reception' && filterOldAttente)
-                          ? filteredEntries.filter(([tagLabel]) => isOlderThan20Days(tagLabel))
+                          ? filteredEntries.filter(([tagLabel, gPhotos]) => isOlderThan20Days(tagLabel, gPhotos))
                           : filteredEntries;
                         const isPaginated = (col.id === 'en_vente' || col.id === 'en_attente_reception') && !q2;
                         const currentPage    = col.id === 'en_attente_reception' ? enAttenteReceptionPage : enVentePage;
@@ -1654,7 +1651,7 @@ export default function PhotosManager() {
                                 ? darkMode
                                   ? 'border-blue-400 bg-blue-500/15 shadow-lg shadow-blue-500/20 scale-[1.02]'
                                   : 'border-blue-400 bg-blue-50 shadow-lg shadow-blue-200 scale-[1.02]'
-                                : col.id === 'en_attente_reception' && isOlderThan20Days(tagLabel)
+                                : col.id === 'en_attente_reception' && isOlderThan20Days(tagLabel, gPhotos)
                                   ? darkMode
                                     ? 'border-red-500 bg-red-500/15 shadow-md shadow-red-500/20'
                                     : 'border-red-500 bg-red-50/60 shadow-md shadow-red-200'
