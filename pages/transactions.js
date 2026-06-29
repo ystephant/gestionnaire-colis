@@ -1699,8 +1699,9 @@ const loadUserPreferences = async () => {
           <>
             {/* Input Section */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mb-6`}>
-              <div className="grid md:grid-cols-3 gap-4">
-                <div className="relative">
+              <div className="flex flex-col gap-4">
+                {/* Nom du jeu — pleine largeur */}
+                <div className="relative w-full">
                   <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                     Nom du jeu (optionnel)
                   </label>
@@ -1738,55 +1739,58 @@ const loadUserPreferences = async () => {
                   )}
                 </div>
 
-                <div>
-                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Prix d'achat (€)
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={buyPrice}
-                      onChange={(e) => setBuyPrice(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && addBuy()}
-                      placeholder="8 ou 8.5"
-                      className={`flex-1 px-4 py-3 rounded-lg border-2 focus:border-red-500 focus:outline-none transition ${
-                        darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                          : 'bg-white border-gray-200 text-gray-900'
-                      }`}
-                    />
-                    <button
-                      onClick={addBuy}
-                      className="px-6 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition"
-                    >
-                      +
-                    </button>
+                {/* Achat + Vente côte à côte, chacun 50% */}
+                <div className="flex gap-4 w-full">
+                  <div className="flex-1 min-w-0">
+                    <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Prix d'achat (€)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={buyPrice}
+                        onChange={(e) => setBuyPrice(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && addBuy()}
+                        placeholder="8 ou 8.5"
+                        className={`min-w-0 flex-1 px-4 py-3 rounded-lg border-2 focus:border-red-500 focus:outline-none transition ${
+                          darkMode 
+                            ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                            : 'bg-white border-gray-200 text-gray-900'
+                        }`}
+                      />
+                      <button
+                        onClick={addBuy}
+                        className="flex-shrink-0 w-12 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Prix de vente (€)
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={sellPrice}
-                      onChange={(e) => setSellPrice(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && addSell()}
-                      placeholder="25 ou 25.5"
-                      className={`flex-1 px-4 py-3 rounded-lg border-2 focus:border-green-500 focus:outline-none transition ${
-                        darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                          : 'bg-white border-gray-200 text-gray-900'
-                      }`}
-                    />
-                    <button
-                      onClick={addSell}
-                      className="px-6 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition"
-                    >
-                      +
-                    </button>
+                  <div className="flex-1 min-w-0">
+                    <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Prix de vente (€)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={sellPrice}
+                        onChange={(e) => setSellPrice(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && addSell()}
+                        placeholder="25 ou 25.5"
+                        className={`min-w-0 flex-1 px-4 py-3 rounded-lg border-2 focus:border-green-500 focus:outline-none transition ${
+                          darkMode 
+                            ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                            : 'bg-white border-gray-200 text-gray-900'
+                        }`}
+                      />
+                      <button
+                        onClick={addSell}
+                        className="flex-shrink-0 w-12 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
