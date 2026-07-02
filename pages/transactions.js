@@ -50,7 +50,8 @@ export default function TransactionsTracker() {
     detailProfitable: true,
     detailLosses: true,
     detailLossesWithSales: true,
-    avgPrices: false 
+    avgPrices: false,
+    dayOfMonth: true
     
   });
 
@@ -1387,6 +1388,36 @@ const loadUserPreferences = async () => {
     });
   };
 
+  // Distribution par jour du mois (1-31), agrégée sur TOUT l'historique
+  // (tous les mois/années confondus) afin d'identifier les jours où les
+  // gens achètent le plus de jeux, indépendamment des filtres de période.
+  const getDayOfMonthDistribution = () => {
+    const buyByDay = {};
+    const sellByDay = {};
+    for (let d = 1; d <= 31; d++) {
+      buyByDay[d] = 0;
+      sellByDay[d] = 0;
+    }
+
+    buyTransactions.forEach(t => {
+      const day = new Date(t.created_at).getDate();
+      buyByDay[day] = (buyByDay[day] || 0) + 1;
+    });
+    sellTransactions.forEach(t => {
+      const day = new Date(t.created_at).getDate();
+      sellByDay[day] = (sellByDay[day] || 0) + 1;
+    });
+
+    return Array.from({ length: 31 }, (_, i) => {
+      const day = i + 1;
+      return {
+        jour: `${day}`,
+        achats: buyByDay[day] || 0,
+        ventes: sellByDay[day] || 0
+      };
+    });
+  };
+
   const toggleMonth = (month, type) => {
     if (type === 'buy') {
       const newExpanded = new Set(expandedBuyMonths);
@@ -1448,6 +1479,9 @@ const loadUserPreferences = async () => {
   const top10MostProfitable = getTop10MostProfitableGames();
   const top10LeastProfitable = getTop10LeastProfitableGames();
   const top10LeastProfitableWithSales = getTop10LeastProfitableGamesWithSales();
+  const dayOfMonthData = getDayOfMonthDistribution();
+  const topSellDays = [...dayOfMonthData].sort((a, b) => b.ventes - a.ventes).slice(0, 3).filter(d => d.ventes > 0);
+  const topBuyDays = [...dayOfMonthData].sort((a, b) => b.achats - a.achats).slice(0, 3).filter(d => d.achats > 0);
 
   const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#8b5cf6'];
 
@@ -2545,6 +2579,86 @@ const loadUserPreferences = async () => {
                       <Bar dataKey="ventes" fill="#22c55e" name="Ventes" />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Bar Chart - Jours du mois où les gens achètent le plus */}
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
+              <button
+                onClick={() => toggleSection('dayOfMonth')}
+                className={`w-full p-6 flex items-center justify-between hover:bg-opacity-80 transition ${
+                  darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                }`}
+              >
+                <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  📅 Jours du mois les plus actifs (tout l'historique)
+                </h2>
+                <div className={`text-2xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {expandedSections.dayOfMonth ? '▼' : '▶'}
+                </div>
+              </button>
+
+              {expandedSections.dayOfMonth && (
+                <div className="p-6 pt-0">
+                  <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Nombre de transactions par jour du mois (1 à 31), cumulées sur tous les mois et toutes les années.
+                  </p>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={dayOfMonthData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#374151' : '#e5e7eb'} />
+                      <XAxis dataKey="jour" stroke={darkMode ? '#9ca3af' : '#6b7280'} interval={0} tick={{ fontSize: 11 }} />
+                      <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} allowDecimals={false} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                          borderRadius: '8px',
+                          color: darkMode ? '#f3f4f6' : '#111827'
+                        }}
+                        labelFormatter={(label) => `Jour ${label} du mois`}
+                      />
+                      <Legend />
+                      <Bar dataKey="achats" fill="#ef4444" name="Achats" />
+                      <Bar dataKey="ventes" fill="#22c55e" name="Ventes" />
+                    </BarChart>
+                  </ResponsiveContainer>
+
+                  <div className="grid sm:grid-cols-2 gap-4 mt-4">
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-green-50'}`}>
+                      <div className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        🏆 Top jours - Ventes
+                      </div>
+                      {topSellDays.length > 0 ? (
+                        <div className="space-y-1">
+                          {topSellDays.map((d, i) => (
+                            <div key={i} className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              {i + 1}. Jour {d.jour} — <span className="font-bold text-green-500">{d.ventes} vente{d.ventes > 1 ? 's' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Aucune vente enregistrée</div>
+                      )}
+                    </div>
+
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-red-50'}`}>
+                      <div className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        🏆 Top jours - Achats
+                      </div>
+                      {topBuyDays.length > 0 ? (
+                        <div className="space-y-1">
+                          {topBuyDays.map((d, i) => (
+                            <div key={i} className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              {i + 1}. Jour {d.jour} — <span className="font-bold text-red-500">{d.achats} achat{d.achats > 1 ? 's' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Aucun achat enregistré</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
