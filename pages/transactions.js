@@ -41,6 +41,15 @@ export default function TransactionsTracker() {
   const [editingTransaction, setEditingTransaction] = useState(null); // { id, price }
   const [showDormantStock, setShowDormantStock] = useState(false);
   const [affluenceMetric, setAffluenceMetric] = useState('ventes'); // 'ventes' | 'achats'
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 640);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const [expandedSections, setExpandedSections] = useState({
     evolution: true,
     comparison: true,
@@ -1437,6 +1446,29 @@ const loadUserPreferences = async () => {
     });
   };
 
+  // Palette d'affluence à fort contraste : dégradé "gris neutre -> couleur vive"
+  // basé sur le min/max réels du jeu de données (et non 0), avec une courbe
+  // d'accentuation pour que les jours calmes restent nettement en retrait
+  // des jours qui ressortent, y compris en mode sombre.
+  const hexToRgb = (hex) => {
+    const v = hex.replace('#', '');
+    return [parseInt(v.substring(0, 2), 16), parseInt(v.substring(2, 4), 16), parseInt(v.substring(4, 6), 16)];
+  };
+
+  const rgbToHex = (r, g, b) => '#' + [r, g, b].map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
+
+  const getAffluenceColor = (value, min, max, metric, isDark) => {
+    const coldHex = isDark ? '#3f4757' : '#e2e8f0';
+    const hotHex = metric === 'ventes' ? '#22c55e' : '#ef4444';
+    if (max === min) return hotHex;
+    let ratio = (value - min) / (max - min);
+    ratio = Math.max(0, Math.min(1, ratio));
+    ratio = Math.pow(ratio, 1.6); // accentue l'écart visuel entre jours calmes et jours forts
+    const [r1, g1, b1] = hexToRgb(coldHex);
+    const [r2, g2, b2] = hexToRgb(hotHex);
+    return rgbToHex(r1 + (r2 - r1) * ratio, g1 + (g2 - g1) * ratio, b1 + (b2 - b1) * ratio);
+  };
+
   const toggleMonth = (month, type) => {
     if (type === 'buy') {
       const newExpanded = new Set(expandedBuyMonths);
@@ -1504,6 +1536,8 @@ const loadUserPreferences = async () => {
   const peakDayOfMonth = [...dayOfMonthData].sort((a, b) => b[affluenceMetric] - a[affluenceMetric])[0];
   const maxDowValue = Math.max(1, ...dayOfWeekData.map(d => d[affluenceMetric]));
   const maxDomValue = Math.max(1, ...dayOfMonthData.map(d => d[affluenceMetric]));
+  const minDowValue = Math.min(...dayOfWeekData.map(d => d[affluenceMetric]));
+  const minDomValue = Math.min(...dayOfMonthData.map(d => d[affluenceMetric]));
 
   const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#8b5cf6'];
 
@@ -2607,8 +2641,8 @@ const loadUserPreferences = async () => {
 
             {/* Graphiques d'affluence façon "horaires les plus fréquentés" */}
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl overflow-hidden`}>
-              <div className="p-6 pb-0 flex items-center justify-between flex-wrap gap-3">
-                <h2 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+              <div className="p-4 sm:p-6 pb-0 flex items-center justify-between flex-wrap gap-3">
+                <h2 className={`text-lg sm:text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   📊 Tendance d'affluence (tout l'historique)
                 </h2>
                 <div className={`flex rounded-xl p-1 ${darkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
@@ -2616,7 +2650,7 @@ const loadUserPreferences = async () => {
                     <button
                       key={m}
                       onClick={() => setAffluenceMetric(m)}
-                      className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition capitalize ${
+                      className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition capitalize ${
                         affluenceMetric === m
                           ? m === 'ventes' ? 'bg-green-600 text-white shadow' : 'bg-red-600 text-white shadow'
                           : darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'
@@ -2625,19 +2659,19 @@ const loadUserPreferences = async () => {
                   ))}
                 </div>
               </div>
-              <p className={`px-6 pt-3 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                Comme les horaires d'affluence d'un magasin : plus la barre est haute (et foncée), plus il y a de {affluenceMetric} à ce moment-là, cumulé sur tous les mois et toutes les années.
+              <p className={`px-4 sm:px-6 pt-3 text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                Plus la barre est haute (et foncée), plus il y a {affluenceMetric === 'achats' ? "d'achats" : 'de ventes'} à ce moment-là ; les barres grises correspondent aux jours calmes. Cumulé sur tous les mois et toutes les années.
               </p>
 
               {/* Jour du mois */}
-              <div className={`mx-6 mt-5 rounded-xl border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className={`mx-3 sm:mx-6 mt-5 rounded-xl border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                 <button
                   onClick={() => toggleSection('affluenceDom')}
-                  className={`w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition ${
+                  className={`w-full p-3 sm:p-4 flex items-center justify-between hover:bg-opacity-80 transition ${
                     darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
                   }`}
                 >
-                  <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  <h3 className={`text-sm sm:text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                     📅 Par jour du mois (1 à 31)
                   </h3>
                   <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -2646,31 +2680,40 @@ const loadUserPreferences = async () => {
                 </button>
 
                 {expandedSections.affluenceDom && (
-                  <div className="p-4 pt-0">
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={dayOfMonthData}>
-                        <XAxis dataKey="label" stroke={darkMode ? '#9ca3af' : '#6b7280'} interval={0} tick={{ fontSize: 10 }} />
-                        <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} allowDecimals={false} />
+                  <div className="p-2 sm:p-4 pt-0">
+                    <ResponsiveContainer width="100%" height={isMobile ? 260 : 220}>
+                      <BarChart data={dayOfMonthData} margin={{ top: 8, right: 8, left: -12, bottom: isMobile ? 20 : 0 }}>
+                        <XAxis
+                          dataKey="label"
+                          stroke={darkMode ? '#9ca3af' : '#6b7280'}
+                          interval={isMobile ? 1 : 0}
+                          tick={{ fontSize: isMobile ? 9 : 10 }}
+                          angle={isMobile ? -60 : 0}
+                          textAnchor={isMobile ? 'end' : 'middle'}
+                          height={isMobile ? 35 : 20}
+                        />
+                        <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} allowDecimals={false} width={30} tick={{ fontSize: isMobile ? 10 : 12 }} />
                         <Tooltip
+                          cursor={{ fill: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
                           contentStyle={{
-                            backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-                            border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                            backgroundColor: darkMode ? '#111827' : '#ffffff',
+                            border: `1px solid ${darkMode ? '#4b5563' : '#e5e7eb'}`,
                             borderRadius: '8px',
-                            color: darkMode ? '#f3f4f6' : '#111827'
+                            color: darkMode ? '#f9fafb' : '#111827'
                           }}
+                          labelStyle={{ color: darkMode ? '#f9fafb' : '#111827', fontWeight: 700, marginBottom: 4 }}
+                          itemStyle={{ color: affluenceMetric === 'ventes' ? '#4ade80' : '#f87171', fontWeight: 700 }}
                           labelFormatter={(_, payload) => payload?.[0]?.payload?.fullLabel || ''}
                           formatter={(value) => [`${value} ${affluenceMetric}`, null]}
                         />
                         <Bar dataKey={affluenceMetric} radius={[4, 4, 0, 0]}>
                           {dayOfMonthData.map((d, i) => {
-                            const intensity = 0.25 + 0.75 * (d[affluenceMetric] / maxDomValue);
                             const isPeak = d.label === peakDayOfMonth?.label && d[affluenceMetric] > 0;
                             return (
                               <Cell
                                 key={i}
-                                fill={affluenceMetric === 'ventes' ? '#22c55e' : '#ef4444'}
-                                fillOpacity={intensity}
-                                stroke={isPeak ? (affluenceMetric === 'ventes' ? '#166534' : '#7f1d1d') : 'none'}
+                                fill={getAffluenceColor(d[affluenceMetric], minDomValue, maxDomValue, affluenceMetric, darkMode)}
+                                stroke={isPeak ? '#fbbf24' : 'none'}
                                 strokeWidth={isPeak ? 2 : 0}
                               />
                             );
@@ -2679,7 +2722,7 @@ const loadUserPreferences = async () => {
                       </BarChart>
                     </ResponsiveContainer>
                     {peakDayOfMonth && peakDayOfMonth[affluenceMetric] > 0 && (
-                      <div className={`text-sm mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <div className={`text-xs sm:text-sm mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         🏆 Jour du mois le plus actif : <span className="font-bold">{peakDayOfMonth.fullLabel}</span> avec{' '}
                         <span className={`font-bold ${affluenceMetric === 'ventes' ? 'text-green-500' : 'text-red-500'}`}>
                           {peakDayOfMonth[affluenceMetric]} {affluenceMetric}
@@ -2691,14 +2734,14 @@ const loadUserPreferences = async () => {
               </div>
 
               {/* Jour de la semaine */}
-              <div className={`mx-6 my-5 rounded-xl border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className={`mx-3 sm:mx-6 my-5 rounded-xl border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                 <button
                   onClick={() => toggleSection('affluenceDow')}
-                  className={`w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition ${
+                  className={`w-full p-3 sm:p-4 flex items-center justify-between hover:bg-opacity-80 transition ${
                     darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
                   }`}
                 >
-                  <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  <h3 className={`text-sm sm:text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                     🗓️ Par jour de la semaine
                   </h3>
                   <div className={`text-xl ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -2707,31 +2750,32 @@ const loadUserPreferences = async () => {
                 </button>
 
                 {expandedSections.affluenceDow && (
-                  <div className="p-4 pt-0">
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={dayOfWeekData}>
-                        <XAxis dataKey="label" stroke={darkMode ? '#9ca3af' : '#6b7280'} />
-                        <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} allowDecimals={false} />
+                  <div className="p-2 sm:p-4 pt-0">
+                    <ResponsiveContainer width="100%" height={isMobile ? 220 : 220}>
+                      <BarChart data={dayOfWeekData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                        <XAxis dataKey="label" stroke={darkMode ? '#9ca3af' : '#6b7280'} tick={{ fontSize: isMobile ? 10 : 12 }} />
+                        <YAxis stroke={darkMode ? '#9ca3af' : '#6b7280'} allowDecimals={false} width={30} tick={{ fontSize: isMobile ? 10 : 12 }} />
                         <Tooltip
+                          cursor={{ fill: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
                           contentStyle={{
-                            backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-                            border: `1px solid ${darkMode ? '#374151' : '#e5e7eb'}`,
+                            backgroundColor: darkMode ? '#111827' : '#ffffff',
+                            border: `1px solid ${darkMode ? '#4b5563' : '#e5e7eb'}`,
                             borderRadius: '8px',
-                            color: darkMode ? '#f3f4f6' : '#111827'
+                            color: darkMode ? '#f9fafb' : '#111827'
                           }}
+                          labelStyle={{ color: darkMode ? '#f9fafb' : '#111827', fontWeight: 700, marginBottom: 4 }}
+                          itemStyle={{ color: affluenceMetric === 'ventes' ? '#4ade80' : '#f87171', fontWeight: 700 }}
                           labelFormatter={(_, payload) => payload?.[0]?.payload?.fullLabel || ''}
                           formatter={(value) => [`${value} ${affluenceMetric}`, null]}
                         />
                         <Bar dataKey={affluenceMetric} radius={[6, 6, 0, 0]}>
                           {dayOfWeekData.map((d, i) => {
-                            const intensity = 0.25 + 0.75 * (d[affluenceMetric] / maxDowValue);
                             const isPeak = d.label === peakDayOfWeek?.label && d[affluenceMetric] > 0;
                             return (
                               <Cell
                                 key={i}
-                                fill={affluenceMetric === 'ventes' ? '#22c55e' : '#ef4444'}
-                                fillOpacity={intensity}
-                                stroke={isPeak ? (affluenceMetric === 'ventes' ? '#166534' : '#7f1d1d') : 'none'}
+                                fill={getAffluenceColor(d[affluenceMetric], minDowValue, maxDowValue, affluenceMetric, darkMode)}
+                                stroke={isPeak ? '#fbbf24' : 'none'}
                                 strokeWidth={isPeak ? 2 : 0}
                               />
                             );
@@ -2740,7 +2784,7 @@ const loadUserPreferences = async () => {
                       </BarChart>
                     </ResponsiveContainer>
                     {peakDayOfWeek && peakDayOfWeek[affluenceMetric] > 0 && (
-                      <div className={`text-sm mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <div className={`text-xs sm:text-sm mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         🏆 Jour le plus actif : <span className="font-bold">{peakDayOfWeek.fullLabel}</span> avec{' '}
                         <span className={`font-bold ${affluenceMetric === 'ventes' ? 'text-green-500' : 'text-red-500'}`}>
                           {peakDayOfWeek[affluenceMetric]} {affluenceMetric}
