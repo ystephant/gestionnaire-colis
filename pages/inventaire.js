@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, List, ArrowLeft, Copy, ClipboardPaste } from 'lucide-react';
+import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, List, ArrowLeft, Copy, ClipboardPaste, FileDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🔗 Connexion Supabase
@@ -100,6 +100,7 @@ export default function InventaireJeux() {
   const [photoRotations, setPhotoRotations] = useState({});
   const [sortOrder, setSortOrder] = useState('default'); // 'default', 'asc', 'desc'
   const [scrollPosition, setScrollPosition] = useState(0);
+  const [downloadingWord, setDownloadingWord] = useState(false);
 
   // 📸 Upload vers Cloudinary
   const uploadToCloudinary = async (file, folder = 'boardgames') => {
@@ -707,6 +708,14 @@ const resetInventory = async () => {
     setNewGameItems(updated);
   };
 
+  const moveItemField = (index, direction) => {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= newGameItems.length) return;
+    const updated = [...newGameItems];
+    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+    setNewGameItems(updated);
+  };
+
   const openDetailedView = (itemIndex, itemName) => {
     // Sauvegarder la position de scroll actuelle
     setScrollPosition(window.scrollY || window.pageYOffset);
@@ -979,6 +988,62 @@ const resetInventory = async () => {
     }
   };
   
+  const downloadGameWord = async () => {
+    if (!selectedGame) return;
+    setDownloadingWord(true);
+    try {
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import('docx');
+
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              text: selectedGame.name,
+              heading: HeadingLevel.TITLE,
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 120 },
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `${selectedGame.items.length} élément${selectedGame.items.length > 1 ? 's' : ''}`,
+                  italics: true,
+                  color: '888888',
+                }),
+              ],
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 400 },
+            }),
+            new Paragraph({
+              children: [new TextRun({ text: 'Composition du jeu :', bold: true })],
+              spacing: { after: 200 },
+            }),
+            ...selectedGame.items.map(item => new Paragraph({
+              children: [new TextRun(item)],
+              spacing: { after: 120 },
+            })),
+          ],
+        }],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedGame.name.replace(/[^a-zA-Z0-9À-ÿ ]/g, '').trim() || 'jeu'}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erreur génération Word:', error);
+      alert('❌ Erreur lors de la génération du fichier Word');
+    } finally {
+      setDownloadingWord(false);
+    }
+  };
+
 // Loading screen
   if (loading) {
     return (
@@ -1077,9 +1142,17 @@ const resetInventory = async () => {
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3 flex-1 flex-wrap">
               <button
-                onClick={() => window.location.href = '/'}
+                onClick={() => {
+                  if (selectedGame) {
+                    // Sur une page de jeu : on revient d'abord à la recherche
+                    changeGame();
+                  } else {
+                    // Déjà sur la recherche : on revient au menu
+                    window.location.href = '/';
+                  }
+                }}
                 className={`${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-gray-700' : 'text-gray-600 hover:text-orange-600 hover:bg-gray-100'} p-2 rounded-lg transition`}
-                title="Retour à l'accueil"
+                title={selectedGame ? 'Retour à la recherche de jeu' : "Retour à l'accueil"}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
   <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -1197,6 +1270,8 @@ const resetInventory = async () => {
             sortOrder={sortOrder}
             setSortOrder={setSortOrder}
             getSortedItems={getSortedItems}
+            downloadGameWord={downloadGameWord}
+            downloadingWord={downloadingWord}
           />
         )}
 
@@ -1214,6 +1289,7 @@ const resetInventory = async () => {
             removeItemField={removeItemField}
             bulkRemoveItemFields={bulkRemoveItemFields}
             addItemField={addItemField}
+            moveItemField={moveItemField}
             saveEdit={saveEdit}
             cancelEdit={cancelEdit}
           />
@@ -1555,7 +1631,7 @@ function SearchGameSection({ darkMode, searchQuery, setSearchQuery, showResults,
 }
 
 // Composant GameInventorySection avec AGRÉGATION
-function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, showResetModal, setShowResetModal, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, getDetailPdfCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems }) {
+function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGame, getProgress, resetInventory, showResetModal, setShowResetModal, getAggregatedItems, getAggregatedProgress, checkedItems, toggleItem, itemDetails, getDetailPhotoCount, getDetailPdfCount, openDetailedView, supabase, setSyncStatus, toggleAggregatedType, gameRating, setGameRating, senderName, setSenderName, additionalComment, setAdditionalComment, saveEvaluation, sortOrder, setSortOrder, getSortedItems, downloadGameWord, downloadingWord }) {
   const StarSelector = ({ rating, setRating }) => {
     return (
       <div className="flex gap-1">
@@ -1593,6 +1669,19 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
             >
               <Edit size={16} />
               Éditer
+            </button>
+            <button
+              onClick={downloadGameWord}
+              disabled={downloadingWord}
+              title="Télécharger la liste des éléments au format Word"
+              className={`px-3 py-2 rounded-lg font-medium transition flex items-center gap-2 text-sm ${
+                downloadingWord
+                  ? 'opacity-60 cursor-not-allowed'
+                  : darkMode ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-indigo-500 text-white hover:bg-indigo-600'
+              }`}
+            >
+              <FileDown size={16} />
+              {downloadingWord ? 'Génération...' : 'Word'}
             </button>
             <button
               onClick={() => deleteGame(selectedGame.id, selectedGame.name)}
@@ -1870,7 +1959,7 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
 }
 
 // Composant EditGameSection
-function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, editingGameName, setEditingGameName, newGameItems, updateItemField, removeItemField, bulkRemoveItemFields, addItemField, saveEdit, cancelEdit }) {
+function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, editingGameName, setEditingGameName, newGameItems, updateItemField, removeItemField, bulkRemoveItemFields, addItemField, moveItemField, saveEdit, cancelEdit }) {
   const [copiedItem, setCopiedItem] = React.useState(null);
   const [pasteFlash, setPasteFlash] = React.useState(null);
   const [multiDeleteMode, setMultiDeleteMode] = React.useState(false);
@@ -2067,6 +2156,30 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
               />
               {!multiDeleteMode && (
                 <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => moveItemField(index, -1)}
+                    disabled={index === 0}
+                    title="Déplacer vers le haut"
+                    className={`p-2 rounded-lg transition ${
+                      index === 0
+                        ? 'opacity-30 cursor-not-allowed'
+                        : darkMode ? 'bg-gray-600 hover:bg-gray-500 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                    }`}
+                  >
+                    <ArrowUp size={18} />
+                  </button>
+                  <button
+                    onClick={() => moveItemField(index, 1)}
+                    disabled={index === newGameItems.length - 1}
+                    title="Déplacer vers le bas"
+                    className={`p-2 rounded-lg transition ${
+                      index === newGameItems.length - 1
+                        ? 'opacity-30 cursor-not-allowed'
+                        : darkMode ? 'bg-gray-600 hover:bg-gray-500 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                    }`}
+                  >
+                    <ArrowDown size={18} />
+                  </button>
                   <button
                     onClick={() => handleCopy(index)}
                     title="Copier cet élément"
