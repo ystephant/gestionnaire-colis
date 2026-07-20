@@ -19,7 +19,8 @@
     "pdfjs-dist": "^3.11.174",
     "browser-image-compression": "^2.0.2",
     "xlsx": "^0.18.5",
-    "file-saver": "^2.0.5"
+    "file-saver": "^2.0.5",
+    "docx": "^8.5.0"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.0",
