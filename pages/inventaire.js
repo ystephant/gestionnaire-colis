@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, List, ArrowLeft, Copy, ClipboardPaste, FileDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Camera, Search, RotateCcw, Package, AlertCircle, Plus, Edit, Check, X, Trash2, Grid, List, ArrowLeft, Copy, ClipboardPaste, FileDown, GripVertical } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🔗 Connexion Supabase
@@ -708,11 +708,11 @@ const resetInventory = async () => {
     setNewGameItems(updated);
   };
 
-  const moveItemField = (index, direction) => {
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= newGameItems.length) return;
+  const reorderItemField = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= newGameItems.length || toIndex >= newGameItems.length) return;
     const updated = [...newGameItems];
-    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+    const [moved] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, moved);
     setNewGameItems(updated);
   };
 
@@ -992,7 +992,81 @@ const resetInventory = async () => {
     if (!selectedGame) return;
     setDownloadingWord(true);
     try {
-      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import('docx');
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, ImageRun, BorderStyle } = await import('docx');
+
+      // Cache pour éviter de re-télécharger la même image plusieurs fois
+      const imageCache = {};
+      const fetchImageForWord = async (url) => {
+        if (imageCache[url]) return imageCache[url];
+        try {
+          // On force un format jpg léger et prévisible pour le docx
+          const jpgUrl = url.includes('/upload/')
+            ? url.replace('/upload/', '/upload/w_700,q_auto,f_jpg/')
+            : url;
+          const response = await fetch(jpgUrl);
+          if (!response.ok) return null;
+          const arrayBuffer = await response.arrayBuffer();
+          const bitmap = await createImageBitmap(new Blob([arrayBuffer]));
+          const maxWidth = 200;
+          const ratio = bitmap.width / bitmap.height;
+          const result = {
+            data: arrayBuffer,
+            width: maxWidth,
+            height: Math.round(maxWidth / ratio),
+          };
+          imageCache[url] = result;
+          return result;
+        } catch (error) {
+          console.error('Erreur chargement image pour Word:', error);
+          return null;
+        }
+      };
+
+      const itemBlocks = [];
+      for (let i = 0; i < selectedGame.items.length; i++) {
+        const item = selectedGame.items[i];
+        const details = itemDetails[i] || [];
+        const photos = details.filter(p => p.image && p.type !== 'pdf');
+        const pdfCount = details.filter(p => p.type === 'pdf').length;
+
+        itemBlocks.push(new Paragraph({
+          children: [new TextRun({ text: `${i + 1}. ${item}`, bold: true, size: 24 })],
+          spacing: { before: 300, after: 120 },
+          border: {
+            bottom: { color: 'CCCCCC', space: 4, style: BorderStyle.SINGLE, size: 4 },
+          },
+        }));
+
+        if (photos.length > 0) {
+          const loadedPhotos = await Promise.all(photos.map(p => fetchImageForWord(p.image)));
+          const imageRuns = [];
+          loadedPhotos.forEach(img => {
+            if (img) {
+              imageRuns.push(new ImageRun({
+                type: 'jpg',
+                data: img.data,
+                transformation: { width: img.width, height: img.height },
+              }));
+              imageRuns.push(new TextRun({ text: '  ' }));
+            }
+          });
+          if (imageRuns.length > 0) {
+            itemBlocks.push(new Paragraph({ children: imageRuns, spacing: { after: 100 } }));
+          }
+        }
+
+        if (pdfCount > 0) {
+          itemBlocks.push(new Paragraph({
+            children: [new TextRun({
+              text: `📎 ${pdfCount} livret${pdfCount > 1 ? 's' : ''} PDF joint${pdfCount > 1 ? 's' : ''} (non inclus dans ce document)`,
+              italics: true,
+              size: 18,
+              color: '999999',
+            })],
+            spacing: { after: 100 },
+          }));
+        }
+      }
 
       const doc = new Document({
         sections: [{
@@ -1019,10 +1093,7 @@ const resetInventory = async () => {
               children: [new TextRun({ text: 'Composition du jeu :', bold: true })],
               spacing: { after: 200 },
             }),
-            ...selectedGame.items.map(item => new Paragraph({
-              children: [new TextRun(item)],
-              spacing: { after: 120 },
-            })),
+            ...itemBlocks,
           ],
         }],
       });
@@ -1289,7 +1360,7 @@ const resetInventory = async () => {
             removeItemField={removeItemField}
             bulkRemoveItemFields={bulkRemoveItemFields}
             addItemField={addItemField}
-            moveItemField={moveItemField}
+            reorderItemField={reorderItemField}
             saveEdit={saveEdit}
             cancelEdit={cancelEdit}
           />
@@ -1959,11 +2030,60 @@ function GameInventorySection({ darkMode, selectedGame, startEditMode, deleteGam
 }
 
 // Composant EditGameSection
-function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, editingGameName, setEditingGameName, newGameItems, updateItemField, removeItemField, bulkRemoveItemFields, addItemField, moveItemField, saveEdit, cancelEdit }) {
+function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, editingGameName, setEditingGameName, newGameItems, updateItemField, removeItemField, bulkRemoveItemFields, addItemField, reorderItemField, saveEdit, cancelEdit }) {
   const [copiedItem, setCopiedItem] = React.useState(null);
   const [pasteFlash, setPasteFlash] = React.useState(null);
   const [multiDeleteMode, setMultiDeleteMode] = React.useState(false);
   const [selectedForDelete, setSelectedForDelete] = React.useState(new Set());
+  const [draggedIndex, setDraggedIndex] = React.useState(null);
+  const [dragOverIndex, setDragOverIndex] = React.useState(null);
+  const itemRefs = React.useRef([]);
+  const dragFromRef = React.useRef(null);
+  const dragOverRef = React.useRef(null);
+
+  const handleDragStart = (e, index) => {
+    if (multiDeleteMode) return;
+    e.preventDefault();
+    dragFromRef.current = index;
+    dragOverRef.current = index;
+    setDraggedIndex(index);
+    setDragOverIndex(index);
+    window.addEventListener('pointermove', handleDragMove);
+    window.addEventListener('pointerup', handleDragEnd);
+    window.addEventListener('pointercancel', handleDragEnd);
+  };
+
+  const handleDragMove = (e) => {
+    const y = e.clientY;
+    const refs = itemRefs.current;
+    for (let i = 0; i < refs.length; i++) {
+      const el = refs[i];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (y >= rect.top && y <= rect.bottom) {
+        if (dragOverRef.current !== i) {
+          dragOverRef.current = i;
+          setDragOverIndex(i);
+        }
+        break;
+      }
+    }
+  };
+
+  const handleDragEnd = () => {
+    window.removeEventListener('pointermove', handleDragMove);
+    window.removeEventListener('pointerup', handleDragEnd);
+    window.removeEventListener('pointercancel', handleDragEnd);
+    const from = dragFromRef.current;
+    const to = dragOverRef.current;
+    if (from !== null && to !== null && from !== to) {
+      reorderItemField(from, to);
+    }
+    dragFromRef.current = null;
+    dragOverRef.current = null;
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
 
   const toggleSelectForDelete = (index) => {
     setSelectedForDelete(prev => {
@@ -2131,7 +2251,11 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
         </div>
         <div className="space-y-3">
           {newGameItems.map((item, index) => (
-            <div key={index} className={`flex flex-wrap gap-2 rounded-lg transition-all ${pasteFlash === index ? 'ring-2 ring-blue-400' : ''} ${multiDeleteMode && selectedForDelete.has(index) ? (darkMode ? 'bg-red-900 bg-opacity-20' : 'bg-red-50') : ''}`}>
+            <div
+              key={index}
+              ref={el => itemRefs.current[index] = el}
+              className={`flex flex-wrap gap-2 rounded-lg transition-all ${pasteFlash === index ? 'ring-2 ring-blue-400' : ''} ${multiDeleteMode && selectedForDelete.has(index) ? (darkMode ? 'bg-red-900 bg-opacity-20' : 'bg-red-50') : ''} ${draggedIndex === index ? 'opacity-40' : ''} ${dragOverIndex === index && draggedIndex !== null && draggedIndex !== index ? (darkMode ? 'border-t-4 border-orange-400' : 'border-t-4 border-orange-500') : 'border-t-4 border-transparent'}`}
+            >
               {multiDeleteMode && (
                 <div className="flex items-center pl-1">
                   <input
@@ -2157,28 +2281,16 @@ function EditGameSection({ darkMode, selectedGame, newGameName, setNewGameName, 
               {!multiDeleteMode && (
                 <div className="flex gap-2 flex-shrink-0">
                   <button
-                    onClick={() => moveItemField(index, -1)}
-                    disabled={index === 0}
-                    title="Déplacer vers le haut"
-                    className={`p-2 rounded-lg transition ${
-                      index === 0
-                        ? 'opacity-30 cursor-not-allowed'
+                    onPointerDown={(e) => handleDragStart(e, index)}
+                    title="Glisser pour réordonner"
+                    style={{ touchAction: 'none' }}
+                    className={`p-2 rounded-lg transition cursor-grab active:cursor-grabbing select-none ${
+                      draggedIndex === index
+                        ? darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
                         : darkMode ? 'bg-gray-600 hover:bg-gray-500 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
                     }`}
                   >
-                    <ArrowUp size={18} />
-                  </button>
-                  <button
-                    onClick={() => moveItemField(index, 1)}
-                    disabled={index === newGameItems.length - 1}
-                    title="Déplacer vers le bas"
-                    className={`p-2 rounded-lg transition ${
-                      index === newGameItems.length - 1
-                        ? 'opacity-30 cursor-not-allowed'
-                        : darkMode ? 'bg-gray-600 hover:bg-gray-500 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                    }`}
-                  >
-                    <ArrowDown size={18} />
+                    <GripVertical size={18} />
                   </button>
                   <button
                     onClick={() => handleCopy(index)}
