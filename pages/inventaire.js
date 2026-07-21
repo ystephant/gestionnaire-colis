@@ -78,6 +78,7 @@ export default function InventaireJeux() {
   const [editingGameName, setEditingGameName] = useState(false);
   const [newGameName, setNewGameName] = useState('');
   const [newGameItems, setNewGameItems] = useState(['']);
+  const [newGameItemsOriginalIndex, setNewGameItemsOriginalIndex] = useState([]);
   
   const [detailedView, setDetailedView] = useState(null);
   const [itemDetails, setItemDetails] = useState({});
@@ -681,6 +682,7 @@ const resetInventory = async () => {
   const openCreateModal = () => {
     setNewGameName(searchQuery);
     setNewGameItems(['']);
+    setNewGameItemsOriginalIndex([]);
     setShowCreateModal(true);
   };
 
@@ -688,18 +690,24 @@ const resetInventory = async () => {
     setShowCreateModal(false);
     setNewGameName('');
     setNewGameItems(['']);
+    setNewGameItemsOriginalIndex([]);
   };
 
-  const addItemField = () => setNewGameItems([...newGameItems, '']);
+  const addItemField = () => {
+    setNewGameItems([...newGameItems, '']);
+    setNewGameItemsOriginalIndex([...newGameItemsOriginalIndex, null]);
+  };
   
   const removeItemField = (index) => {
     if (newGameItems.length <= 1) return;
     setNewGameItems(newGameItems.filter((_, i) => i !== index));
+    setNewGameItemsOriginalIndex(newGameItemsOriginalIndex.filter((_, i) => i !== index));
   };
 
   const bulkRemoveItemFields = (indices) => {
     const indexSet = new Set(indices);
     setNewGameItems(newGameItems.filter((_, i) => !indexSet.has(i)));
+    setNewGameItemsOriginalIndex(newGameItemsOriginalIndex.filter((_, i) => !indexSet.has(i)));
   };
   
   const updateItemField = (index, value) => {
@@ -714,6 +722,12 @@ const resetInventory = async () => {
     const [moved] = updated.splice(fromIndex, 1);
     updated.splice(toIndex, 0, moved);
     setNewGameItems(updated);
+
+    // On déplace l'index d'origine de la même façon pour que les photos suivent l'élément
+    const updatedOriginalIndex = [...newGameItemsOriginalIndex];
+    const [movedOriginalIndex] = updatedOriginalIndex.splice(fromIndex, 1);
+    updatedOriginalIndex.splice(toIndex, 0, movedOriginalIndex);
+    setNewGameItemsOriginalIndex(updatedOriginalIndex);
   };
 
   const openDetailedView = (itemIndex, itemName) => {
@@ -947,6 +961,7 @@ const resetInventory = async () => {
   const startEditMode = () => {
     setNewGameName(selectedGame.name);
     setNewGameItems([...selectedGame.items]);
+    setNewGameItemsOriginalIndex(selectedGame.items.map((_, i) => i));
     setEditingGameName(false);
     setEditMode(true);
   };
@@ -955,12 +970,15 @@ const resetInventory = async () => {
     setEditMode(false);
     setEditingGameName(false);
     setNewGameItems([]);
+    setNewGameItemsOriginalIndex([]);
     setNewGameName('');
   };
 
   const saveEdit = async () => {
-    const validItems = newGameItems.filter(item => item.trim() !== '');
-    if (validItems.length === 0) {
+    const validEntries = newGameItems
+      .map((item, idx) => ({ item, originalIndex: newGameItemsOriginalIndex[idx] }))
+      .filter(entry => entry.item.trim() !== '');
+    if (validEntries.length === 0) {
       alert('Le jeu doit contenir au moins un élément');
       return;
     }
@@ -968,18 +986,31 @@ const resetInventory = async () => {
       alert('Le nom du jeu ne peut pas être vide');
       return;
     }
+    const validItems = validEntries.map(entry => entry.item);
+
+    // On reconstruit item_details pour que chaque photo/PDF suive son élément
+    // après réorganisation, ajout ou suppression de lignes
+    const updatedItemDetails = {};
+    validEntries.forEach((entry, newIndex) => {
+      if (entry.originalIndex !== null && entry.originalIndex !== undefined && itemDetails[entry.originalIndex]) {
+        updatedItemDetails[newIndex] = itemDetails[entry.originalIndex];
+      }
+    });
+
     try {
       const { error } = await supabase.from('games').update({ 
         name: newGameName.trim(),
         search_name: newGameName.trim().toLowerCase(),
-        items: validItems 
+        items: validItems,
+        item_details: updatedItemDetails
       }).eq('id', selectedGame.id);
       if (error) throw error;
       showToast(`✅ Jeu "${newGameName.trim()}" édité avec succès`, 'success');
       setEditMode(false);
       setEditingGameName(false);
       setCheckedItems({});
-      const updatedGame = { ...selectedGame, name: newGameName.trim(), search_name: newGameName.trim().toLowerCase(), items: validItems };
+      setItemDetails(updatedItemDetails);
+      const updatedGame = { ...selectedGame, name: newGameName.trim(), search_name: newGameName.trim().toLowerCase(), items: validItems, item_details: updatedItemDetails };
       setSelectedGame(updatedGame);
       setAllGames(prev => prev.map(g => g.id === selectedGame.id ? updatedGame : g));
     } catch (error) {
