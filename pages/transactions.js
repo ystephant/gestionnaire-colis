@@ -22,6 +22,8 @@ export default function TransactionsTracker() {
   const [gameName, setGameName] = useState('');
   const [buyPrice, setBuyPrice] = useState('');
   const [sellPrice, setSellPrice] = useState('');
+  // [transit] Achat reçu directement en main propre (ex: braderie) → pas de statut "en transit"
+  const [buyReceivedDirectly, setBuyReceivedDirectly] = useState(false);
   
   const [expandedBuyMonths, setExpandedBuyMonths] = useState(new Set());
   const [expandedSellMonths, setExpandedSellMonths] = useState(new Set());
@@ -258,7 +260,8 @@ const loadUserPreferences = async () => {
           type: 'buy',
           game_name: gameName.trim() || null,
           price: price,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          in_transit: !buyReceivedDirectly
         }])
         .select();
 
@@ -267,7 +270,8 @@ const loadUserPreferences = async () => {
       console.log('Transaction ajoutée:', data);
       setBuyPrice('');
       setGameName('');
-      setToast({ message: `Achat ajouté${gameName.trim() ? ` — ${gameName.trim()}` : ''}`, type: 'buy' });
+      setToast({ message: `Achat ajouté${gameName.trim() ? ` — ${gameName.trim()}` : ''}${buyReceivedDirectly ? ' (reçu directement)' : ''}`, type: 'buy' });
+      setBuyReceivedDirectly(false);
       setTimeout(() => setToast(null), 2500);
     } catch (error) {
       console.error('Erreur d\'ajout:', error);
@@ -313,6 +317,241 @@ const loadUserPreferences = async () => {
   const deleteTransaction = async (id) => {
     if (!confirm('Supprimer cette transaction ?')) return;
 
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Erreur de suppression:', error);
+    }
+  };
+
+  const updateTransactionPrice = async (id, newPrice) => {
+    const price = parseFloat(String(newPrice).replace(',', '.'));
+    if (!price || price <= 0) return;
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ price })
+        .eq('id', id);
+      if (error) throw error;
+      setEditingTransaction(null);
+    } catch (error) {
+      console.error('Erreur de mise à jour:', error);
+    }
+  };
+
+  const archiveOldData = async () => {
+    const cutoffDate = new Date();
+    cutoffDate.setFullYear(cutoffDate.getFullYear() - 2);
+
+    try {
+      const { data: oldTransactions } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', username)
+        .lt('created_at', cutoffDate.toISOString());
+
+      if (oldTransactions && oldTransactions.length > 0) {
+        await supabase
+          .from('transactions_archive')
+          .insert(oldTransactions);
+
+        await supabase
+          .from('transactions')
+          .delete()
+          .eq('user_id', username)
+          .lt('created_at', cutoffDate.toISOString());
+
+        alert(`${oldTransactions.length} transaction(s) archivée(s)`);
+      } else {
+        alert('Aucune transaction à archiver');
+      }
+    } catch (error) {
+      console.error('Erreur d\'archivage:', error);
+    }
+  };
+
+  // ── Génération PDF ───────────────────────────────────────────
+  const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  const getAvailableYears = () => {
+    const all = [...buyTransactions, ...sellTransactions];
+    return [...new Set(all.map(t => new Date(t.created_at).getFullYear()))].sort().reverse();
+  };
+
+  const loadJsPDF = () => new Promise((resolve, reject) => {
+    if (window.jspdf?.jsPDF) { resolve(window.jspdf.jsPDF); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = () => resolve(window.jspdf.jsPDF);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+
+  const generatePDF = async () => {
+    setPdfGenerating(true);
+    try {
+      const JsPDF = await loadJsPDF();
+      const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const W = 210, H = 297, M = 14;
+      const CW = W - M * 2;
+
+      // ── Filtrage des transactions selon la période ──────────
+      const targetYear  = parseInt(pdfPeriodType === 'year' ? pdfSelectedYear : pdfSelectedYear);
+      const targetMonth = pdfPeriodType === 'month' ? parseInt(pdfSelectedMonth) : null;
+
+      const filterTx = (txs) => txs.filter(t => {
+        const d = new Date(t.created_at);
+        if (pdfPeriodType === 'year') return d.getFullYear() === targetYear;
+        return d.getFullYear() === targetYear && d.getMonth() === targetMonth;
+      });
+
+      const buys  = filterTx(buyTransactions);
+      const sells = filterTx(sellTransactions);
+      const stats = calculateStats(buys, sells);
+      const avgBuy  = stats.buyCount  > 0 ? stats.totalBuy  / stats.buyCount  : 0;
+      const avgSell = stats.sellCount > 0 ? stats.totalSell / stats.sellCount : 0;
+
+      const periodLabel = pdfPeriodType === 'year'
+        ? `Année ${pdfSelectedYear}`
+        : `${MONTH_NAMES[targetMonth]} ${pdfSelectedYear}`;
+
+      // ── Palette ─────────────────────────────────────────────
+      const C = {
+        bg:      [15,  23,  42],   // slate-900
+        card:    [30,  41,  59],   // slate-800
+        border:  [51,  65,  85],   // slate-700
+        indigo:  [99,  102, 241],  // indigo-500
+        green:   [16,  185, 129],  // emerald-500
+        amber:   [245, 158, 11],   // amber-500
+        red:     [239, 68,  68],   // red-500
+        blue:    [59,  130, 246],  // blue-500
+        white:   [255, 255, 255],
+        gray:    [148, 163, 184],  // slate-400
+        lgray:   [100, 116, 139],  // slate-500
+      };
+
+      const setFill = (col) => doc.setFillColor(...col);
+      const setDraw = (col) => doc.setDrawColor(...col);
+      const setFont = (col, size, style='normal') => {
+        doc.setTextColor(...col);
+        doc.setFontSize(size);
+        doc.setFont('helvetica', style);
+      };
+
+      // ── Fond page ───────────────────────────────────────────
+      setFill(C.bg); doc.rect(0, 0, W, H, 'F');
+
+      // ── Header ──────────────────────────────────────────────
+      // Bande de fond
+      setFill(C.card); doc.roundedRect(M, 8, CW, 22, 3, 3, 'F');
+      // Accent gauche
+      setFill(C.indigo); doc.rect(M, 8, 3, 22, 'F');
+
+      setFont(C.white, 14, 'bold');
+      doc.text('Rapport de Transactions', M + 8, 16);
+      setFont(C.gray, 8);
+      doc.text(periodLabel, M + 8, 22);
+
+      const now = new Date();
+      const dateStr = `Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
+      setFont(C.lgray, 7);
+      doc.text(dateStr, W - M - 4, 22, { align: 'right' });
+
+      // ── KPI Cards ───────────────────────────────────────────
+      let y = 38;
+      const kpis = [
+        { label: 'Total Achats',       value: `${stats.totalBuy.toFixed(2)} €`,  sub: `${stats.buyCount} transaction${stats.buyCount>1?'s':''}`,  color: C.blue   },
+        { label: 'Total Ventes',       value: `${stats.totalSell.toFixed(2)} €`, sub: `${stats.sellCount} transaction${stats.sellCount>1?'s':''}`, color: C.green  },
+        { label: stats.profit >= 0 ? 'Bénéfice' : 'Perte',
+                                       value: `${stats.profit >= 0 ? '+' : ''}${stats.profit.toFixed(2)} €`,
+                                       sub: stats.profitPercent !== null
+                                         ? `${stats.profitPercent >= 0 ? '+' : ''}${stats.profitPercent.toFixed(1)} %`
+                                         : 'Marge N/A',
+                                       color: stats.profit >= 0 ? C.green : C.red },
+        { label: 'Nb Transactions',    value: `${stats.buyCount + stats.sellCount}`, sub: `${stats.buyCount} achats · ${stats.sellCount} ventes`, color: C.indigo },
+        { label: 'Prix Achat Moyen',   value: `${avgBuy.toFixed(2)} €`,          sub: 'par achat',                                                color: C.amber  },
+        { label: 'Prix Vente Moyen',   value: `${avgSell.toFixed(2)} €`,         sub: 'par vente',                                                color: C.amber  },
+      ];
+
+      const cols   = 3;
+      const cw     = (CW - 4) / cols;
+      const ch     = 20;
+      const gutter = 2;
+
+      kpis.forEach((k, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = M + col * (cw + gutter);
+        const cy = y + row * (ch + gutter);
+
+        setFill(C.card); doc.roundedRect(x, cy, cw, ch, 2, 2, 'F');
+        // Barre de couleur en haut
+        setFill(k.color); doc.roundedRect(x, cy, cw, 2.5, 1, 1, 'F');
+
+        setFont(C.gray, 6.5);
+        doc.text(k.label.toUpperCase(), x + 4, cy + 7);
+        setFont(C.white, 11, 'bold');
+        doc.text(k.value, x + 4, cy + 13.5);
+        setFont(C.lgray, 6);
+        doc.text(k.sub, x + 4, cy + 18);
+      });
+
+      y += 2 * (ch + gutter) + 8;
+
+      // ── Graphique en barres ──────────────────────────────────
+      // Construire les données par période
+      let chartData = [];
+      if (pdfPeriodType === 'year') {
+        for (let m = 0; m < 12; m++) {
+          const mb = buys.filter(t => new Date(t.created_at).getMonth() === m);
+          const ms = sells.filter(t => new Date(t.created_at).getMonth() === m);
+          const tb = mb.reduce((s,t) => s+t.price, 0);
+          const ts = ms.reduce((s,t) => s+t.price, 0);
+          if (tb > 0 || ts > 0) chartData.push({ label: MONTH_NAMES[m].slice(0,3), buy: tb, sell: ts });
+        }
+      } else {
+        // Par jour du mois
+        const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        for (let d = 1; d <= daysInMonth; d++) {
+          const db = buys.filter(t => new Date(t.created_at).getDate() === d);
+          const ds = sells.filter(t => new Date(t.created_at).getDate() === d);
+          const tb = db.reduce((s,t) => s+t.price, 0);
+          const ts = ds.reduce((s,t) => s+t.price, 0);
+          if (tb > 0 || ts > 0) chartData.push({ label: `${d}`, buy: tb, sell: ts });
+        }
+      }
+
+      if (chartData.length > 0) {
+        // Titre section
+        setFont(C.white, 9, 'bold');
+        doc.text('Évolution', M, y);
+        setFont(C.gray, 7);
+        doc.text(pdfPeriodType === 'year' ? 'par mois' : 'par jour', M + 22, y);
+        y += 5;
+
+        const legW    = 6; // largeur de la légende à gauche
+        const yAxisW  = 18; // largeur axe Y (labels €)
+        const leftW   = legW + yAxisW; // total espace gauche
+        const chartH  = 48, chartW = CW - leftW;
+        const topPad  = 5;  // espace en haut pour ne pas tronquer la barre max
+        const maxVal  = Math.max(...chartData.flatMap(d => [d.buy, d.sell]));
+        const barAreaH = chartH - 8 - topPad;
+        const barCount = chartData.length;
+        const barGroupW = Math.min((chartW - 4) / barCount, 14);
+        const barW = (barGroupW - 2) / 2;
+        const chartX = M + leftW;
+
+        // Fond du graphique
+        setFill(C.card); doc.roundedRect(M, y, CW, chartH, 2, 2, 'F');
+
+        // ── Légende à gauche (avant l'axe Y) ──
+        const legBaseY = y + topPad + 4;
+        setFill(C.blue);  doc.roundedR
     try {
       const { error } = await supabase
         .from('transactions')
