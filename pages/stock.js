@@ -146,7 +146,7 @@ export default function StockManager() {
       const [txRes, photoRes, incRes] = await Promise.all([
         supabase
           .from('transactions')
-          .select('id, type, game_name, price, created_at')
+          .select('id, type, game_name, price, created_at, in_transit')
           .eq('user_id', username)
           .in('type', ['buy', 'sell', 'stock_add', 'game_ref', 'stock_remove'])
           .order('created_at', { ascending: false }),
@@ -224,7 +224,8 @@ export default function StockManager() {
 
       if (t.type === 'buy') {
         g.buys++;
-        if (now - d.getTime() < LIMIT) g.incomingBuys.push(d);
+        // [14] Un achat "sorti du transit" (t.in_transit === false) n'est plus compté comme en transit
+        if (t.in_transit !== false && now - d.getTime() < LIMIT) g.incomingBuys.push(d);
         if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
       } else if (t.type === 'stock_add') {
         g.buys++;
@@ -359,6 +360,39 @@ export default function StockManager() {
       showToast(`1 "${gameName}" ajouté au stock`);
       await loadData();
     } catch (err) { showToast("Erreur lors de l'ajout", 'error'); }
+  };
+
+  // [14] Sortir 1 exemplaire du mode transit (ex: achat en braderie, reçu directement en main propre)
+  const handleExitTransit = async (gameName) => {
+    try {
+      const now   = Date.now();
+      const LIMIT = INCOMING_DAYS * 24 * 60 * 60 * 1000;
+      const candidate = (transactions || [])
+        .filter(t =>
+          t.type === 'buy' &&
+          baseName(t.game_name) === gameName &&
+          t.in_transit !== false &&
+          (now - new Date(t.created_at).getTime()) < LIMIT
+        )
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0]; // le plus ancien d'abord
+      if (!candidate) return;
+
+      const { error } = await supabase
+        .from('transactions')
+        .update({ in_transit: false })
+        .eq('id', candidate.id);
+      if (error) throw error;
+
+      showToast(`1 "${gameName}" sorti du transit — déjà en stock`, 'success', {
+        label: 'Annuler',
+        fn: async () => {
+          await supabase.from('transactions').update({ in_transit: true }).eq('id', candidate.id);
+          await loadData();
+          showToast('Action annulée ✓');
+        },
+      });
+      await loadData();
+    } catch (err) { showToast('Erreur lors de la mise à jour', 'error'); }
   };
 
   const handleMoveToIncomplete = async () => {
@@ -754,10 +788,15 @@ export default function StockManager() {
                               🟢 En vente{g.enVenteCopies > 1 ? ` (×${g.enVenteCopies})` : ''}
                             </span>
                           )}
-                          {/* [9] Badge transit avec J-X plus lisible */}
+                          {/* [9] Badge transit avec J-X plus lisible + [14] sortie manuelle du transit */}
                           {g.incomingCount > 0 && (
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
-                              🚚 {g.incomingCount} en transit{g.daysLeft !== null ? (g.daysLeft > 0 ? ` · J-${g.daysLeft}` : ' · Imminent') : ''}
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
+                              <span>🚚 {g.incomingCount} en transit{g.daysLeft !== null ? (g.daysLeft > 0 ? ` · J-${g.daysLeft}` : ' · Imminent') : ''}</span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleExitTransit(g.name); }}
+                                title="Achat reçu en main propre (ex: braderie) → le sortir du transit"
+                                className={`flex-shrink-0 font-bold underline underline-offset-2 ${dm ? 'text-orange-300 hover:text-orange-100' : 'text-orange-700 hover:text-orange-900'}`}
+                              >✓ Reçu</button>
                             </span>
                           )}
                           {g.incompletCount > 0 && (
