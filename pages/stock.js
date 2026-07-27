@@ -296,9 +296,12 @@ export default function StockManager() {
           n.includes(nameLow) || nameLow.includes(n)
         );
 
-        return { ...g, incomingCount, daysLeft, incompletCount, net, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
+        // [15] Stock négatif = plus de sorties (ventes/retraits) que d'entrées (achats), signe d'un écart d'historique
+        const isNegativeStock = netRaw < 0;
+
+        return { ...g, incomingCount, daysLeft, incompletCount, net, netRaw, isNegativeStock, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
       })
-      .filter(g => g.net > 0);
+      .filter(g => g.net > 0 || g.isNegativeStock);
   };
 
   // ── [2] Toast avec action (undo) ─────────────────────────────
@@ -468,11 +471,14 @@ export default function StockManager() {
       if (filter === 'available') return g.canList;
       if (filter === 'incoming')  return g.incomingCount > 0;
       if (filter === 'low')       return g.net === 1;
+      if (filter === 'negative')  return g.isNegativeStock;
       return true;
     })
     .sort((a, b) => {
       if (sortMode === 'desc')  return b.net - a.net;
       if (sortMode === 'alpha') return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
+      if (a.isNegativeStock && !b.isNegativeStock) return -1;
+      if (!a.isNegativeStock && b.isNegativeStock) return 1;
       if (a.canList && !b.canList)                       return -1;
       if (!a.canList && b.canList)                       return 1;
       if (a.incomingCount > 0 && b.incomingCount === 0) return -1;
@@ -481,11 +487,12 @@ export default function StockManager() {
     });
 
   const kpis = {
-    games:     stockItems.length,
+    games:     stockItems.filter(g => g.net > 0).length,
     copies:    stockItems.reduce((s, g) => s + g.net, 0),
     incoming:  stockItems.reduce((s, g) => s + g.incomingCount, 0),
     enVente:   stockItems.reduce((sum, g) => sum + (g.enVenteCopies || 0), 0),
     available: stockItems.filter(g => g.canList).length,
+    negative:  stockItems.filter(g => g.isNegativeStock).length, // [15]
   };
 
   const stockNameSet  = new Set(stockItems.map(g => baseNameLow(g.name)));
@@ -606,6 +613,8 @@ export default function StockManager() {
               { label: 'À vendre',    value: kpis.available, icon: '🏷️', cls: 'text-amber-500',  filterId: 'available', tabSwitch: null },
               { label: 'En vente',    value: kpis.enVente,   icon: '🟢', cls: 'text-green-500',  filterId: 'en_vente',  tabSwitch: null },
               { label: 'Incomplets',  value: (incompleteGames || []).length, icon: '🧩', cls: 'text-rose-500', filterId: null, tabSwitch: 'incomplet' },
+              // [15] Tuile visible seulement s'il existe un écart (plus de ventes que d'achats dans l'historique)
+              ...(kpis.negative > 0 ? [{ label: 'Stock négatif', value: kpis.negative, icon: '🔻', cls: 'text-red-500', filterId: 'negative', tabSwitch: null }] : []),
             ].map(({ label, value, icon, cls, filterId, tabSwitch }) => {
               const isActive    = filterId && filter === filterId;
               const isClickable = !!(filterId || tabSwitch);
@@ -679,6 +688,7 @@ export default function StockManager() {
                 { id: 'incoming',  label: `🚚 Transit${kpis.incoming > 0 ? ' (' + kpis.incoming + ')' : ''}` },
                 // [12] Compteur stock bas dans le filtre
                 { id: 'low',       label: `⚠️ Stock bas${lowStockCount > 0 ? ' (' + lowStockCount + ')' : ''}` },
+                { id: 'negative',  label: `🔻 Stock négatif${kpis.negative > 0 ? ' (' + kpis.negative + ')' : ''}` },
               ].map(f => (
                 <button
                   key={f.id}
@@ -768,6 +778,17 @@ export default function StockManager() {
                         </span>
                       </div>
                     )}
+
+                    {/* [15] Bannière stock négatif : plus de ventes que d'achats enregistrés (écart d'historique) */}
+                    {g.isNegativeStock && (
+                      <div className={`px-4 py-2 flex items-center gap-2 border-b-2 border-red-400 ${dm ? 'bg-red-900/25 text-red-300' : 'bg-red-50 text-red-700'}`}>
+                        <span className="text-sm flex-shrink-0">🔻</span>
+                        <span className="text-xs font-semibold truncate">
+                          Stock négatif ({g.netRaw}) — {Math.abs(g.netRaw)} vente(s) sans achat correspondant enregistré
+                        </span>
+                      </div>
+                    )}
+
 
                     <div className="px-4 py-3 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
