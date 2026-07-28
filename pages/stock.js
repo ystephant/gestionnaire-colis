@@ -63,6 +63,8 @@ export default function StockManager() {
   const [transactions,    setTransactions]    = useState([]);
   const [salePhotos,      setSalePhotos]      = useState([]);
   const [incompleteGames, setIncompleteGames] = useState([]);
+  // [16] Jeux évincés manuellement du stock (masqués), ex: écarts d'historique non fondés
+  const [hiddenGames, setHiddenGames] = useState([]);
   const [allGameNames,    setAllGameNames]    = useState([]);
 
   // ── Onglet actif ─────────────────────────────────────────────
@@ -143,7 +145,7 @@ export default function StockManager() {
   const loadData = async () => {
     if (!username) return;
     try {
-      const [txRes, photoRes, incRes] = await Promise.all([
+      const [txRes, photoRes, incRes, hiddenRes] = await Promise.all([
         supabase
           .from('transactions')
           .select('id, type, game_name, price, created_at, in_transit')
@@ -159,15 +161,22 @@ export default function StockManager() {
           .select('id, game_name, missing_items, created_at')
           .eq('user_id', username)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('stock_hidden')
+          .select('id, game_name, created_at')
+          .eq('user_id', username)
+          .order('created_at', { ascending: false }),
       ]);
 
       if (txRes.error)    throw txRes.error;
       if (photoRes.error) throw photoRes.error;
       if (incRes.error)   throw incRes.error;
+      if (hiddenRes.error) throw hiddenRes.error;
 
       setTransactions(txRes.data    || []);
       setSalePhotos(photoRes.data   || []);
       setIncompleteGames(incRes.data || []);
+      setHiddenGames(hiddenRes.data || []);
 
       const names = [...new Set(
         (txRes.data || []).map(t => t.game_name).filter(n => n && !isLot(n)).map(n => baseName(n))
@@ -187,6 +196,7 @@ export default function StockManager() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions',     filter: `user_id=eq.${username}` }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_photos',      filter: `user_id=eq.${username}` }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_incomplete', filter: `user_id=eq.${username}` }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_hidden',     filter: `user_id=eq.${username}` }, loadData)
       .subscribe();
     return () => supabase.removeChannel(channel);
   };
@@ -247,6 +257,9 @@ export default function StockManager() {
       incompleteMap[i.game_name] = (incompleteMap[i.game_name] || 0) + 1;
     });
 
+    // [16] Jeux évincés manuellement — exclus quel que soit le solde calculé
+    const hiddenSetLow = new Set((hiddenGames || []).map(h => baseNameLow(h.game_name)));
+
     const enVenteTagsPerName = {};
     (salePhotos || [])
       .filter(p => p.status === 'en_vente' && p.game_tag)
@@ -301,7 +314,7 @@ export default function StockManager() {
 
         return { ...g, incomingCount, daysLeft, incompletCount, net, netRaw, isNegativeStock, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
       })
-      .filter(g => g.net > 0 || g.isNegativeStock);
+      .filter(g => (g.net > 0 || g.isNegativeStock) && !hiddenSetLow.has(baseNameLow(g.name)));
   };
 
   // ── [2] Toast avec action (undo) ─────────────────────────────
@@ -363,6 +376,36 @@ export default function StockManager() {
       showToast(`1 "${gameName}" ajouté au stock`);
       await loadData();
     } catch (err) { showToast("Erreur lors de l'ajout", 'error'); }
+  };
+
+  // [16] Évincer un jeu du stock (masquage manuel, ex: écart d'historique non fondé)
+  const handleHideGame = async (gameName) => {
+    try {
+      const { data, error } = await supabase
+        .from('stock_hidden')
+        .insert({ user_id: username, game_name: gameName })
+        .select('id')
+        .single();
+      if (error) throw error;
+      await loadData();
+      showToast(`"${gameName}" évincé du stock`, 'success', {
+        label: 'Annuler',
+        fn: async () => {
+          await supabase.from('stock_hidden').delete().eq('id', data.id);
+          await loadData();
+          showToast('Action annulée ✓');
+        },
+      });
+    } catch (err) { showToast("Erreur lors de l'éviction", 'error'); }
+  };
+
+  const handleUnhideGame = async (id, gameName) => {
+    try {
+      const { error } = await supabase.from('stock_hidden').delete().eq('id', id);
+      if (error) throw error;
+      showToast(`"${gameName}" réaffiché dans le stock`);
+      await loadData();
+    } catch (err) { showToast('Erreur lors de la restauration', 'error'); }
   };
 
   // [14] Sortir 1 exemplaire du mode transit (ex: achat en braderie, reçu directement en main propre)
@@ -848,6 +891,15 @@ export default function StockManager() {
                         }`}
                       >🧩</button>
 
+                      {/* [16] Bouton → évincer du stock (masquer entièrement, peu importe le solde calculé) */}
+                      <button
+                        onClick={() => handleHideGame(g.name)}
+                        title="Évincer ce jeu du stock (le masquer entièrement)"
+                        className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition ${
+                          dm ? 'text-slate-600 hover:text-red-400 hover:bg-red-900/20' : 'text-gray-300 hover:text-red-400 hover:bg-red-50'
+                        }`}
+                      >🚫</button>
+
                       {/* − N + */}
                       <div className="flex-shrink-0 flex items-center gap-1">
                         <button
@@ -905,12 +957,38 @@ export default function StockManager() {
               </div>
             </div>
           )}
+          {/* [16] Jeux évincés manuellement du stock */}
+          {hiddenGames.length > 0 && (
+            <div className={`rounded-2xl overflow-hidden shadow-sm ${dm ? 'bg-slate-800/60 border border-slate-700' : 'bg-white border border-gray-200'}`}>
+              <div className={`px-4 py-3 border-b flex items-start gap-2 ${dm ? 'border-slate-700' : 'border-gray-200'}`}>
+                <span className="text-base mt-0.5">🚫</span>
+                <div>
+                  <span className={`font-bold text-sm ${dm ? 'text-slate-300' : 'text-gray-700'}`}>
+                    {hiddenGames.length} jeu{hiddenGames.length > 1 ? 'x' : ''} évincé{hiddenGames.length > 1 ? 's' : ''} du stock
+                  </span>
+                  <p className={`text-xs mt-0.5 ${dm ? 'text-slate-500' : 'text-gray-500'}`}>
+                    Masqués manuellement — ils n'entrent plus dans le calcul du stock affiché.
+                  </p>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex flex-wrap gap-2">
+                {hiddenGames.map(h => (
+                  <span key={h.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                    dm ? 'bg-slate-700 text-slate-300' : 'bg-gray-50 text-gray-700 border border-gray-200'
+                  }`}>
+                    {h.game_name}
+                    <button
+                      onClick={() => handleUnhideGame(h.id, h.game_name)}
+                      title="Réafficher dans le stock"
+                      className={`font-bold ${dm ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-600 hover:text-indigo-800'}`}
+                    >↩️</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
-
-      {/* ════════════════════════════════════════════════════════
-          ONGLET INCOMPLETS
-          ════════════════════════════════════════════════════════ */}
       {activeTab === 'incomplet' && (
         <div className="max-w-4xl mx-auto px-4 py-5 space-y-5 pb-10">
 
