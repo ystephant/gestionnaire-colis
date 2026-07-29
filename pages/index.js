@@ -340,15 +340,13 @@ export default function MenuPrincipal() {
                             const filePath = '/Etiquettes_LePetitMeeple.pdf';
                             const ext = filePath.split('.').pop().toLowerCase();
                             if (ext === 'pdf') {
-                              const newWindow = window.open(filePath, '_blank');
-                              if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                                const debloquer = window.confirm(
-                                  "Le navigateur a bloqué l'ouverture des étiquettes (pop-up). Voulez-vous les ouvrir directement dans cet onglet à la place ?"
-                                );
-                                if (debloquer) {
-                                  window.location.href = filePath;
-                                }
-                              }
+                              const link = document.createElement('a');
+                              link.href = filePath;
+                              link.target = '_blank';
+                              link.rel = 'noopener noreferrer';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
                             } else {
                               const w = window.open('', '_blank');
                               w.document.write(
