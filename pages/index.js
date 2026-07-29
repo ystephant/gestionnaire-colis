@@ -26,6 +26,16 @@ function getFlashSaleStatus() {
   return { active: false, message: '' };
 }
 
+function openInNewTab(url) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 export default function MenuPrincipal() {
   const router = useRouter();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -220,7 +230,7 @@ export default function MenuPrincipal() {
       {flashStatus.active && !bannerDismissed && (
         <div
           className="relative w-full bg-amber-400 text-black py-3 px-6 flex items-center justify-center cursor-pointer shadow-md"
-          onClick={() => window.open(PHILIBERT_FLASH_URL, '_blank')}
+          onClick={() => openInNewTab(PHILIBERT_FLASH_URL)}
         >
           <span className="font-semibold text-sm sm:text-base text-center pr-8 flex items-center gap-2">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="black" stroke="black" strokeWidth="1">
@@ -450,7 +460,7 @@ export default function MenuPrincipal() {
                 {/* ⚡ Bouton Vente flash (visible si bandeau fermé ou hors période de ventes flash) */}
                 {(!flashStatus.active || bannerDismissed) && (
                   <button
-                    onClick={() => window.open(PHILIBERT_FLASH_URL, '_blank')}
+                    onClick={() => openInNewTab(PHILIBERT_FLASH_URL)}
                     className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 bg-amber-400 hover:bg-amber-500 text-black"
                     title="Voir les ventes flash Philibert"
                   >
