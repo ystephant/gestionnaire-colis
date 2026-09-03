@@ -93,8 +93,18 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Coefficient d'approximation route réelle vs vol d'oiseau */
+/** Coefficient d'approximation route réelle vs vol d'oiseau (utilisé uniquement en repli si le routing échoue) */
 const ROUTE_FACTOR = 1.3;
+
+/** Distance routière réelle (km) via l'API de routing publique OSRM (sans clé) */
+async function fetchRouteDistanceKm(lat1, lon1, lat2, lon2) {
+  try {
+    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`);
+    const data = await res.json();
+    const meters = data?.routes?.[0]?.distance;
+    return typeof meters === 'number' ? meters / 1000 : null;
+  } catch { return null; }
+}
 
 /** Charge Leaflet depuis le CDN (idempotent) */
 function loadLeaflet(cb) {
@@ -249,6 +259,8 @@ export default function Braderies() {
   const [showFuelSettings, setShowFuelSettings] = useState(false);
   const villeCoordsRef = useRef({});
   const [coordsVersion, setCoordsVersion] = useState(0);
+  const routeKmRef = useRef({});
+  const [routeVersion, setRouteVersion] = useState(0);
 
   // Toast
   const [toast, setToast] = useState(null);
@@ -322,12 +334,33 @@ export default function Braderies() {
     });
   }, [braderies, geocodeVille]);
 
-  /** Estimation essence/gazoil aller simple + aller-retour depuis la position GPS jusqu'à la braderie */
+  /** Calcule (une fois, avec cache) la distance routière réelle vers une ville via OSRM */
+  const fetchRouteForVille = useCallback(async (ville) => {
+    if (!userPos) return;
+    const coords = villeCoordsRef.current[ville.toLowerCase()];
+    if (!coords) return;
+    const key = `${ville.toLowerCase()}_${userPos.lat.toFixed(3)}_${userPos.lon.toFixed(3)}`;
+    if (routeKmRef.current[key] !== undefined) return;
+    routeKmRef.current[key] = null; // marque "en cours" pour éviter les doublons
+    const km = await fetchRouteDistanceKm(userPos.lat, userPos.lon, coords.lat, coords.lon);
+    // Repli sur le vol d'oiseau × facteur si l'API de routing est indisponible
+    routeKmRef.current[key] = km !== null ? km : distanceKm(userPos.lat, userPos.lon, coords.lat, coords.lon) * ROUTE_FACTOR;
+    setRouteVersion(v => v + 1);
+  }, [userPos]);
+
+  useEffect(() => {
+    if (!userPos) return;
+    braderies.forEach(b => {
+      if (villeCoordsRef.current[b.ville.toLowerCase()]) fetchRouteForVille(b.ville);
+    });
+  }, [braderies, userPos, coordsVersion, fetchRouteForVille]);
+
+  /** Estimation essence/gazoil aller simple + aller-retour, basée sur la distance routière réelle */
   const getFuelEstimate = useCallback((ville) => {
     if (!userPos) return null;
-    const coords = villeCoordsRef.current[ville.toLowerCase()];
-    if (!coords) return null;
-    const allerKm = distanceKm(userPos.lat, userPos.lon, coords.lat, coords.lon) * ROUTE_FACTOR;
+    const key = `${ville.toLowerCase()}_${userPos.lat.toFixed(3)}_${userPos.lon.toFixed(3)}`;
+    const allerKm = routeKmRef.current[key];
+    if (allerKm == null) return 'loading'; // pas encore calculé (ou calcul en cours)
     const arKm = allerKm * 2;
     const coutPour = (km) => ({
       essence: (km * fuelSettings.consoEssence / 100) * fuelSettings.prixEssence,
@@ -337,8 +370,7 @@ export default function Braderies() {
       aller: { km: allerKm, ...coutPour(allerKm) },
       allerRetour: { km: arKm, ...coutPour(arKm) },
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userPos, fuelSettings, coordsVersion]);
+  }, [userPos, fuelSettings, routeVersion]);
 
   // ── Toast ─────────────────────────────────────────────────────────────────
 
@@ -733,6 +765,9 @@ export default function Braderies() {
             {(() => {
               const est = getFuelEstimate(b.ville);
               if (!est) return null;
+              if (est === 'loading') {
+                return <p className={`ml-5 text-xs opacity-50 italic ${ns.text}`}>⛽ Calcul du trajet…</p>;
+              }
               return (
                 <div className={`ml-5 text-xs opacity-70 space-y-0.5 ${ns.text}`}>
                   <p>⛽ Aller ({est.aller.km.toFixed(0)} km) — essence ≈ {est.aller.essence.toFixed(2)} € · gazoil ≈ {est.aller.gazoil.toFixed(2)} €</p>
