@@ -73,6 +73,29 @@ function openItineraire(ville, quartier) {
   openUrl('https://www.google.com/maps/dir/?api=1&destination=' + dest);
 }
 
+// ── Calcul du coût carburant ─────────────────────────────────────────────────
+
+/** Réglages carburant par défaut (modifiables via le panneau ⛽) */
+const FUEL_DEFAULTS = {
+  consoEssence: 7,    // L/100km
+  consoGazoil: 6,     // L/100km
+  prixEssence: 1.85,  // €/L
+  prixGazoil: 1.75,   // €/L
+};
+
+/** Distance à vol d'oiseau (km) entre deux points GPS, formule de Haversine */
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Coefficient d'approximation route réelle vs vol d'oiseau */
+const ROUTE_FACTOR = 1.3;
+
 /** Charge Leaflet depuis le CDN (idempotent) */
 function loadLeaflet(cb) {
   if (typeof window === 'undefined') return;
@@ -219,6 +242,14 @@ export default function Braderies() {
 
   const [showGpsModal, setShowGpsModal] = useState(false);
 
+  // ── Coût carburant ──
+  const [userPos, setUserPos] = useState(null);
+  const [geoDenied, setGeoDenied] = useState(false);
+  const [fuelSettings, setFuelSettings] = useState(FUEL_DEFAULTS);
+  const [showFuelSettings, setShowFuelSettings] = useState(false);
+  const villeCoordsRef = useRef({});
+  const [coordsVersion, setCoordsVersion] = useState(0);
+
   // Toast
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
@@ -238,6 +269,76 @@ export default function Braderies() {
   const toggleDarkMode = () => {
     setDarkMode(p => { localStorage.setItem('darkMode', String(!p)); return !p; });
   };
+
+  // ── Réglages carburant (localStorage) ────────────────────────────────────
+
+  useEffect(() => {
+    const saved = localStorage.getItem('fuelSettings');
+    if (saved) {
+      try { setFuelSettings({ ...FUEL_DEFAULTS, ...JSON.parse(saved) }); } catch { /* ignore */ }
+    }
+  }, []);
+
+  const saveFuelSettings = (next) => {
+    setFuelSettings(next);
+    localStorage.setItem('fuelSettings', JSON.stringify(next));
+  };
+
+  // ── Géolocalisation utilisateur (pour le calcul essence) ─────────────────
+
+  useEffect(() => {
+    if (!navigator.geolocation) { setGeoDenied(true); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => setUserPos({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => setGeoDenied(true),
+      { enableHighAccuracy: false, timeout: 12000 }
+    );
+  }, []);
+
+  // ── Géocodage des braderies (cache) ───────────────────────────────────────
+
+  const geocodeVille = useCallback(async (ville) => {
+    const key = ville.toLowerCase();
+    if (villeCoordsRef.current[key] !== undefined) return villeCoordsRef.current[key];
+    try {
+      const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(ville)}&fields=nom,centre&limit=1`);
+      const data = await res.json();
+      const coords = data?.[0]?.centre?.coordinates;
+      const result = coords ? { lat: coords[1], lon: coords[0] } : null;
+      villeCoordsRef.current[key] = result;
+      setCoordsVersion(v => v + 1);
+      return result;
+    } catch {
+      villeCoordsRef.current[key] = null;
+      setCoordsVersion(v => v + 1);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    braderies.forEach(b => {
+      const key = b.ville.toLowerCase();
+      if (villeCoordsRef.current[key] === undefined) geocodeVille(b.ville);
+    });
+  }, [braderies, geocodeVille]);
+
+  /** Estimation essence/gazoil aller simple + aller-retour depuis la position GPS jusqu'à la braderie */
+  const getFuelEstimate = useCallback((ville) => {
+    if (!userPos) return null;
+    const coords = villeCoordsRef.current[ville.toLowerCase()];
+    if (!coords) return null;
+    const allerKm = distanceKm(userPos.lat, userPos.lon, coords.lat, coords.lon) * ROUTE_FACTOR;
+    const arKm = allerKm * 2;
+    const coutPour = (km) => ({
+      essence: (km * fuelSettings.consoEssence / 100) * fuelSettings.prixEssence,
+      gazoil: (km * fuelSettings.consoGazoil / 100) * fuelSettings.prixGazoil,
+    });
+    return {
+      aller: { km: allerKm, ...coutPour(allerKm) },
+      allerRetour: { km: arKm, ...coutPour(arKm) },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userPos, fuelSettings, coordsVersion]);
 
   // ── Toast ─────────────────────────────────────────────────────────────────
 
@@ -629,6 +730,16 @@ export default function Braderies() {
               className={`mt-2 ml-5 text-xs font-medium underline underline-offset-2 opacity-70 hover:opacity-100 inline-block py-1 ${ns.text}`}>
               🗺️ Itinéraire
             </a>
+            {(() => {
+              const est = getFuelEstimate(b.ville);
+              if (!est) return null;
+              return (
+                <div className={`ml-5 text-xs opacity-70 space-y-0.5 ${ns.text}`}>
+                  <p>⛽ Aller ({est.aller.km.toFixed(0)} km) — essence ≈ {est.aller.essence.toFixed(2)} € · gazoil ≈ {est.aller.gazoil.toFixed(2)} €</p>
+                  <p>⛽ Aller-retour ({est.allerRetour.km.toFixed(0)} km) — essence ≈ {est.allerRetour.essence.toFixed(2)} € · gazoil ≈ {est.allerRetour.gazoil.toFixed(2)} €</p>
+                </div>
+              );
+            })()}
           </div>
           <div className="flex gap-1 shrink-0">
             {isDel ? (
@@ -730,6 +841,54 @@ export default function Braderies() {
         </div>
       )}
 
+      {/* ── Popin réglages carburant ── */}
+      {showFuelSettings && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className={`w-full max-w-sm rounded-3xl shadow-2xl p-6 ${dm ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'}`}>
+            <h3 className="text-lg font-bold mb-1 flex items-center gap-2">⛽ Réglages carburant</h3>
+            <p className={`text-xs mb-4 ${dm ? 'text-gray-400' : 'text-gray-500'}`}>
+              Utilisés pour estimer le coût aller-retour vers chaque braderie.
+            </p>
+            <div className="grid grid-cols-2 gap-3 mb-2">
+              <label className="text-xs font-medium">
+                Conso essence (L/100km)
+                <input type="number" step="0.1" value={fuelSettings.consoEssence}
+                  onChange={e => setFuelSettings(s => ({ ...s, consoEssence: parseFloat(e.target.value) || 0 }))}
+                  className={`w-full mt-1 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${inputCls}`} />
+              </label>
+              <label className="text-xs font-medium">
+                Conso gazoil (L/100km)
+                <input type="number" step="0.1" value={fuelSettings.consoGazoil}
+                  onChange={e => setFuelSettings(s => ({ ...s, consoGazoil: parseFloat(e.target.value) || 0 }))}
+                  className={`w-full mt-1 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${inputCls}`} />
+              </label>
+              <label className="text-xs font-medium">
+                Prix essence (€/L)
+                <input type="number" step="0.01" value={fuelSettings.prixEssence}
+                  onChange={e => setFuelSettings(s => ({ ...s, prixEssence: parseFloat(e.target.value) || 0 }))}
+                  className={`w-full mt-1 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${inputCls}`} />
+              </label>
+              <label className="text-xs font-medium">
+                Prix gazoil (€/L)
+                <input type="number" step="0.01" value={fuelSettings.prixGazoil}
+                  onChange={e => setFuelSettings(s => ({ ...s, prixGazoil: parseFloat(e.target.value) || 0 }))}
+                  className={`w-full mt-1 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${inputCls}`} />
+              </label>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <button onClick={() => setShowFuelSettings(false)}
+                className={`px-4 py-2.5 rounded-xl text-sm font-medium min-h-[44px] ${dm ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
+                Annuler
+              </button>
+              <button onClick={() => { saveFuelSettings(fuelSettings); setShowFuelSettings(false); }}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white min-h-[44px]">
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Popin GPS refusé ── */}
       {showGpsModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -794,6 +953,10 @@ export default function Braderies() {
             <button onClick={toggleDarkMode}
               className={`p-2.5 rounded-xl min-h-[40px] min-w-[40px] flex items-center justify-center ${dm ? 'bg-gray-700 text-yellow-300' : 'bg-gray-100 text-gray-600'}`}>
               {dm ? '☀️' : '🌙'}
+            </button>
+            <button onClick={() => setShowFuelSettings(true)} title="Réglages carburant"
+              className={`p-2.5 rounded-xl min-h-[40px] min-w-[40px] flex items-center justify-center ${dm ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
+              ⛽
             </button>
             <button onClick={openMap}
               className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-sm font-semibold min-h-[40px] transition ${dm ? 'bg-indigo-700 text-white hover:bg-indigo-600' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
