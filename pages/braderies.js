@@ -16,6 +16,10 @@
  * Si la table existe déjà, ajouter la colonne quartier :
  *   ALTER TABLE braderies ADD COLUMN quartier text;
  *
+ * Si la table existe déjà, ajouter la colonne code_postal (désambiguïsation des villes homonymes,
+ * ex: Châteaubourg 35 / Châteaubourg 07) :
+ *   ALTER TABLE braderies ADD COLUMN code_postal text;
+ *
  * ⚠️  TEMPS RÉEL : dans le dashboard Supabase → Database → Replication,
  *     activer la table "braderies" pour que le realtime fonctionne.
  */
@@ -134,7 +138,7 @@ function loadLeaflet(cb) {
 
 // ── Composant VilleField (autocomplétion) ─────────────────────────────────────
 
-function VilleField({ value, onChange, darkMode, inputCls, placeholder, autoFocus }) {
+function VilleField({ value, onChange, onSelect, darkMode, inputCls, placeholder, autoFocus }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showDrop, setShowDrop] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -174,7 +178,7 @@ function VilleField({ value, onChange, darkMode, inputCls, placeholder, autoFocu
         <ul className={`absolute z-50 w-full mt-1 rounded-xl border shadow-xl overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
           {suggestions.map((s, i) => (
             <li key={i}>
-              <button onMouseDown={e => { e.preventDefault(); onChange(s.nom); setShowDrop(false); setSuggestions([]); }}
+              <button onMouseDown={e => { e.preventDefault(); onChange(s.nom); onSelect?.(s); setShowDrop(false); setSuggestions([]); }}
                 className={`w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-2 transition ${darkMode ? 'hover:bg-gray-700 text-gray-100' : 'hover:bg-blue-50 text-gray-800'}`}>
                 <span className="flex items-center gap-1.5"><MapPin size={12} className="text-gray-400 shrink-0" /><span className="font-medium">{s.nom}</span></span>
                 <span className={`text-xs shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>{s.cp}{s.dept ? ` — ${s.dept}` : ''}</span>
@@ -219,6 +223,7 @@ export default function Braderies() {
   // Formulaire ajout manuel
   const [showForm, setShowForm] = useState(false);
   const [formVille, setFormVille] = useState('');
+  const [formCp, setFormCp] = useState('');
   const [formQuartier, setFormQuartier] = useState('');
   const [formNote, setFormNote] = useState('');
   const [formComment, setFormComment] = useState('');
@@ -227,6 +232,7 @@ export default function Braderies() {
   // Édition inline
   const [editingId, setEditingId] = useState(null);
   const [editVille, setEditVille] = useState('');
+  const [editCp, setEditCp] = useState('');
   const [editQuartier, setEditQuartier] = useState('');
   const [editNote, setEditNote] = useState('');
   const [editComment, setEditComment] = useState('');
@@ -309,11 +315,17 @@ export default function Braderies() {
 
   // ── Géocodage des braderies (cache) ───────────────────────────────────────
 
-  const geocodeVille = useCallback(async (ville) => {
-    const key = ville.toLowerCase();
+  /** Clé de cache : désambiguïse les villes homonymes grâce au code postal quand il est connu */
+  const villeKey = (ville, cp) => `${ville.toLowerCase()}|${cp || ''}`;
+
+  const geocodeVille = useCallback(async (ville, cp) => {
+    const key = villeKey(ville, cp);
     if (villeCoordsRef.current[key] !== undefined) return villeCoordsRef.current[key];
     try {
-      const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(ville)}&fields=nom,centre&limit=1`);
+      const url = cp
+        ? `https://geo.api.gouv.fr/communes?codePostal=${encodeURIComponent(cp)}&nom=${encodeURIComponent(ville)}&fields=nom,centre&limit=1`
+        : `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(ville)}&fields=nom,centre&limit=1&boost=population`;
+      const res = await fetch(url);
       const data = await res.json();
       const coords = data?.[0]?.centre?.coordinates;
       const result = coords ? { lat: coords[1], lon: coords[0] } : null;
@@ -329,17 +341,17 @@ export default function Braderies() {
 
   useEffect(() => {
     braderies.forEach(b => {
-      const key = b.ville.toLowerCase();
-      if (villeCoordsRef.current[key] === undefined) geocodeVille(b.ville);
+      const key = villeKey(b.ville, b.code_postal);
+      if (villeCoordsRef.current[key] === undefined) geocodeVille(b.ville, b.code_postal);
     });
   }, [braderies, geocodeVille]);
 
   /** Calcule (une fois, avec cache) la distance routière réelle vers une ville via OSRM */
-  const fetchRouteForVille = useCallback(async (ville) => {
+  const fetchRouteForVille = useCallback(async (ville, cp) => {
     if (!userPos) return;
-    const coords = villeCoordsRef.current[ville.toLowerCase()];
+    const coords = villeCoordsRef.current[villeKey(ville, cp)];
     if (!coords) return;
-    const key = `${ville.toLowerCase()}_${userPos.lat.toFixed(3)}_${userPos.lon.toFixed(3)}`;
+    const key = `${villeKey(ville, cp)}_${userPos.lat.toFixed(3)}_${userPos.lon.toFixed(3)}`;
     if (routeKmRef.current[key] !== undefined) return;
     routeKmRef.current[key] = null; // marque "en cours" pour éviter les doublons
     const km = await fetchRouteDistanceKm(userPos.lat, userPos.lon, coords.lat, coords.lon);
@@ -351,14 +363,14 @@ export default function Braderies() {
   useEffect(() => {
     if (!userPos) return;
     braderies.forEach(b => {
-      if (villeCoordsRef.current[b.ville.toLowerCase()]) fetchRouteForVille(b.ville);
+      if (villeCoordsRef.current[villeKey(b.ville, b.code_postal)]) fetchRouteForVille(b.ville, b.code_postal);
     });
   }, [braderies, userPos, coordsVersion, fetchRouteForVille]);
 
   /** Estimation essence/gazoil aller simple + aller-retour, basée sur la distance routière réelle */
-  const getFuelEstimate = useCallback((ville) => {
+  const getFuelEstimate = useCallback((ville, cp) => {
     if (!userPos) return null;
-    const key = `${ville.toLowerCase()}_${userPos.lat.toFixed(3)}_${userPos.lon.toFixed(3)}`;
+    const key = `${villeKey(ville, cp)}_${userPos.lat.toFixed(3)}_${userPos.lon.toFixed(3)}`;
     const allerKm = routeKmRef.current[key];
     if (allerKm == null) return 'loading'; // pas encore calculé (ou calcul en cours)
     const arKm = allerKm * 2;
@@ -411,14 +423,14 @@ export default function Braderies() {
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
 
-  const resetForm = () => { setFormVille(''); setFormQuartier(''); setFormNote(''); setFormComment(''); };
+  const resetForm = () => { setFormVille(''); setFormCp(''); setFormQuartier(''); setFormNote(''); setFormComment(''); };
 
   const handleAdd = async () => {
     if (!formVille.trim() || !formNote) { showToast('Remplis la ville et la note', 'error'); return; }
     setFormLoading(true);
     try {
       const { error } = await supabase.from('braderies').insert({
-        ville: formVille.trim(), quartier: formQuartier.trim() || null,
+        ville: formVille.trim(), code_postal: formCp || null, quartier: formQuartier.trim() || null,
         note: formNote, commentaire: formComment.trim() || null,
       });
       if (error) throw error;
@@ -429,7 +441,7 @@ export default function Braderies() {
   };
 
   const startEdit = (b) => {
-    setEditingId(b.id); setEditVille(b.ville); setEditQuartier(b.quartier || '');
+    setEditingId(b.id); setEditVille(b.ville); setEditCp(b.code_postal || ''); setEditQuartier(b.quartier || '');
     setEditNote(b.note); setEditComment(b.commentaire || '');
   };
 
@@ -437,7 +449,7 @@ export default function Braderies() {
     if (!editVille.trim() || !editNote) return;
     try {
       const { error } = await supabase.from('braderies').update({
-        ville: editVille.trim(), quartier: editQuartier.trim() || null,
+        ville: editVille.trim(), code_postal: editCp || null, quartier: editQuartier.trim() || null,
         note: editNote, commentaire: editComment.trim() || null,
       }).eq('id', id);
       if (error) throw error;
@@ -461,11 +473,12 @@ export default function Braderies() {
     try {
       const existing = braderies.find(b =>
         b.ville.toLowerCase() === quickCity.nom.toLowerCase() &&
+        (b.code_postal || '') === (quickCity.cp || '') &&
         (b.quartier || '').toLowerCase() === quickQuartier.trim().toLowerCase()
       );
-      const payload = { ville: quickCity.nom, quartier: quickQuartier.trim() || null, note: quickNote, commentaire: quickComment.trim() || null };
+      const payload = { ville: quickCity.nom, code_postal: quickCity.cp || null, quartier: quickQuartier.trim() || null, note: quickNote, commentaire: quickComment.trim() || null };
       if (existing) {
-        const { error } = await supabase.from('braderies').update({ note: quickNote, quartier: quickQuartier.trim() || null, commentaire: quickComment.trim() || null }).eq('id', existing.id);
+        const { error } = await supabase.from('braderies').update({ note: quickNote, code_postal: quickCity.cp || null, quartier: quickQuartier.trim() || null, commentaire: quickComment.trim() || null }).eq('id', existing.id);
         if (error) throw error;
         showToast(`${quickCity.nom} mis à jour ✅`);
       } else {
@@ -490,9 +503,10 @@ export default function Braderies() {
     }
     markersLayerRef.current = [];
 
-    // Regrouper par ville (plusieurs quartiers = un seul marqueur)
+    // Regrouper par ville + code postal (plusieurs quartiers d'une même ville = un seul marqueur,
+    // mais deux villes homonymes avec un code postal différent restent bien distinctes)
     const byVille = list.reduce((acc, b) => {
-      const key = b.ville.toLowerCase();
+      const key = villeKey(b.ville, b.code_postal);
       if (!acc[key]) acc[key] = [];
       acc[key].push(b);
       return acc;
@@ -500,8 +514,12 @@ export default function Braderies() {
 
     await Promise.all(Object.values(byVille).map(async (items) => {
       const ville = items[0].ville;
+      const cp = items[0].code_postal;
       try {
-        const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(ville)}&fields=nom,centre,codesPostaux&limit=1`);
+        const url = cp
+          ? `https://geo.api.gouv.fr/communes?codePostal=${encodeURIComponent(cp)}&nom=${encodeURIComponent(ville)}&fields=nom,centre,codesPostaux&limit=1`
+          : `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(ville)}&fields=nom,centre,codesPostaux&limit=1&boost=population`;
+        const res = await fetch(url);
         const data = await res.json();
         if (!data || data.length === 0) return;
         const coords = data[0].centre?.coordinates;
@@ -527,20 +545,32 @@ export default function Braderies() {
                 <span style="font-size:11px;color:${bn.mapColor};font-weight:700;white-space:nowrap">${bn.emoji} ${bn.label}</span>
               </div>
               ${b.commentaire ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">${b.commentaire}</div>` : ''}
-              <button data-id="${b.id}" data-ville="${b.ville}" data-quartier="${b.quartier || ''}" data-note="${b.note}" data-comment="${b.commentaire || ''}" data-cp="${(data[0].codesPostaux || [''])[0]}"
+              <button data-id="${b.id}" data-ville="${b.ville}" data-quartier="${b.quartier || ''}" data-note="${b.note}" data-comment="${b.commentaire || ''}" data-cp="${b.code_postal || (data[0].codesPostaux || [''])[0]}"
                 style="margin-top:5px;background:#2563eb;color:white;border:none;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;width:100%">
                 ✏️ Modifier
               </button>
             </div>`;
         }).join('');
 
+        // Bloc coût carburant (aller / aller-retour) pour cette ville
+        const est = getFuelEstimate(ville, cp);
+        const fuelHtml = est === 'loading'
+          ? `<div style="font-size:11px;color:#9ca3af;font-style:italic;margin-top:6px;border-top:1px solid #e5e7eb;padding-top:6px">⛽ Calcul du trajet…</div>`
+          : est
+          ? `<div style="font-size:11px;color:#374151;margin-top:6px;border-top:1px solid #e5e7eb;padding-top:6px">
+              <div>⛽ Aller (${est.aller.km.toFixed(0)} km) — essence ≈ ${est.aller.essence.toFixed(2)} € · gazoil ≈ ${est.aller.gazoil.toFixed(2)} €</div>
+              <div style="margin-top:2px">⛽ Aller-retour (${est.allerRetour.km.toFixed(0)} km) — essence ≈ ${est.allerRetour.essence.toFixed(2)} € · gazoil ≈ ${est.allerRetour.gazoil.toFixed(2)} €</div>
+            </div>`
+          : '';
+
         marker.bindPopup(`
           <div style="font-family:sans-serif;min-width:160px;max-width:220px">
             <div style="font-weight:700;font-size:14px;margin-bottom:2px">${ville}</div>
             <div style="font-size:11px;color:#6b7280">${items.length} braderie${items.length > 1 ? 's' : ''}</div>
             ${rowsHtml}
+            ${fuelHtml}
           </div>
-        `, { maxHeight: 300 });
+        `, { maxHeight: 320 });
 
         marker.on('popupopen', () => {
           marker.getPopup().getElement()?.querySelectorAll('button[data-id]').forEach(btn => {
@@ -557,7 +587,7 @@ export default function Braderies() {
         markersLayerRef.current.push(marker);
       } catch { /* silencieux */ }
     }));
-  }, []);
+  }, [getFuelEstimate]);
   const openMap = useCallback(() => {
     setShowMap(true);
     setMapError('');
@@ -712,7 +742,7 @@ export default function Braderies() {
       return (
         <div key={b.id} className={`rounded-2xl border-2 p-4 ${clr}`}>
           <div className="space-y-2 mb-3">
-            <VilleField value={editVille} onChange={setEditVille} darkMode={dm} inputCls={inputCls} placeholder="Ville..." />
+            <VilleField value={editVille} onChange={v => { setEditVille(v); setEditCp(''); }} onSelect={s => setEditCp(s.cp)} darkMode={dm} inputCls={inputCls} placeholder="Ville..." />
             <input value={editQuartier} onChange={e => setEditQuartier(e.target.value)}
               placeholder="Quartier / secteur (optionnel)"
               className={`w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${inputCls}`} />
@@ -763,7 +793,7 @@ export default function Braderies() {
               🗺️ Itinéraire
             </a>
             {(() => {
-              const est = getFuelEstimate(b.ville);
+              const est = getFuelEstimate(b.ville, b.code_postal);
               if (!est) return null;
               if (est === 'loading') {
                 return <p className={`ml-5 text-xs opacity-50 italic ${ns.text}`}>⛽ Calcul du trajet…</p>;
@@ -1034,7 +1064,7 @@ export default function Braderies() {
               <Plus size={16} className="text-blue-500" /> Nouvelle braderie
             </h2>
             <div className="space-y-2 mb-3">
-              <VilleField value={formVille} onChange={setFormVille} darkMode={dm} inputCls={inputCls} placeholder="Ville..." autoFocus />
+              <VilleField value={formVille} onChange={v => { setFormVille(v); setFormCp(''); }} onSelect={s => setFormCp(s.cp)} darkMode={dm} inputCls={inputCls} placeholder="Ville..." autoFocus />
               <input value={formQuartier} onChange={e => setFormQuartier(e.target.value)}
                 placeholder="Quartier / secteur (ex: Sainte-Thérèse)"
                 className={`w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${inputCls}`} />
