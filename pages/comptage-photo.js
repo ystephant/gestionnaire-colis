@@ -5,10 +5,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
    Page autonome. Aucune dépendance npm, aucun appel réseau, aucune table.
    Profils stockés dans localStorage (clé: meeple_detect_profiles)
 
-   Un gabarit retient la couleur ET la forme d'une pièce. La forme est décrite
-   par quatre mesures qui ne changent pas quand la pièce tourne : allongement,
-   étalement, solidité et rayon relatif. Une route de Catan reste une route
-   quel que soit son angle sur la table.
+   Une pièce est une silhouette pleine, pas un assemblage de couleurs : le
+   motif imprimé dessus est rebouché avant comptage. Un gabarit se crée en
+   entourant une pièce à la main, avec un lissage réglable.
    ========================================================================== */
 
 const STORAGE_KEY = 'meeple_detect_profiles';
@@ -35,16 +34,13 @@ function deltaE(a, b) {
   return Math.sqrt(dl * dl + da * da + db * db);
 }
 
-/* Écart au fond : la luminance compte moitié moins, sinon une ombre portée
-   sur une table claire est prise pour une pièce. */
 function deltaFond(a, b) {
   const dl = (a[0] - b[0]) * 0.5, da = a[1] - b[1], db = a[2] - b[2];
   return Math.sqrt(dl * dl + da * da + db * db);
 }
 
-/* Comparaison à un gabarit. Une pièce à l'ombre garde sa teinte mais perd en
-   clarté : on remet la couleur du gabarit à la clarté du pixel avant de
-   comparer, sinon une tuile jaune dans l'ombre n'est plus reconnue. */
+/* Comparaison à un gabarit : une pièce à l'ombre garde sa teinte mais perd en
+   clarté, donc on remet la couleur du gabarit à la clarté observée. */
 function deltaGab(lab, gLab) {
   let k = 1;
   if (gLab[0] > 8) k = Math.min(1.5, Math.max(0.6, lab[0] / gLab[0]));
@@ -54,8 +50,15 @@ function deltaGab(lab, gLab) {
   return Math.sqrt(dl * dl + da * da + db * db);
 }
 
+/* Une ombre portée assombrit les trois canaux dans la même proportion, alors
+   qu'une vraie pièce change aussi de teinte. C'est ce qui les distingue. */
+function estOmbre(r, g, b, bg) {
+  const kr = r / Math.max(1, bg[0]), kg = g / Math.max(1, bg[1]), kb = b / Math.max(1, bg[2]);
+  const mx = Math.max(kr, kg, kb), mn = Math.min(kr, kg, kb);
+  return mx <= 1.06 && mn >= 0.33 && mx / Math.max(0.01, mn) <= 1.16;
+}
+
 const cssRgb = rgb => `rgb(${rgb[0] | 0}, ${rgb[1] | 0}, ${rgb[2] | 0})`;
-const isLight = rgb => (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 > 150;
 
 /* ------------------------------------------------------ Morphologie binaire */
 
@@ -89,8 +92,8 @@ function morph(mask, w, h, radius, erode) {
   return out;
 }
 
-/* Rebouche les trous internes : tout ce qui n'est pas relié au bord de la
-   zone est considéré comme intérieur à la pièce. */
+/* Rebouche les trous internes : c'est ce qui transforme une tuile à motifs en
+   une seule silhouette pleine au lieu d'une douzaine de morceaux. */
 function remplirTrous(mask, w, h) {
   const out = Uint8Array.from(mask);
   const vu = new Uint8Array(w * h);
@@ -108,6 +111,47 @@ function remplirTrous(mask, w, h) {
     if (y < h - 1) pousser(p + w);
   }
   for (let i = 0; i < w * h; i++) if (!mask[i] && !vu[i]) out[i] = 1;
+  return out;
+}
+
+/* Lissage du contour : 0 garde le détourage exact, 8 donne une silhouette
+   très simplifiée qui ignore les creux et les échancrures. */
+function lisser(mask, w, h, force) {
+  let m = remplirTrous(mask, w, h);
+  if (force > 0) {
+    m = morph(m, w, h, force, false);
+    m = morph(m, w, h, force, true);
+    m = morph(m, w, h, Math.max(1, force - 1), true);
+    m = morph(m, w, h, Math.max(1, force - 1), false);
+    m = remplirTrous(m, w, h);
+  }
+  return m;
+}
+
+function plusGrandeComposante(mask, w, h) {
+  const lab = new Int32Array(w * h);
+  const pile = new Int32Array(w * h);
+  let cur = 0, meilleur = 0, tailleMax = 0;
+  const tailles = [0];
+  for (let s = 0; s < w * h; s++) {
+    if (!mask[s] || lab[s]) continue;
+    cur++;
+    let sp = 0, n = 0;
+    pile[sp++] = s; lab[s] = cur;
+    while (sp > 0) {
+      const p = pile[--sp]; n++;
+      const x = p % w, y = (p / w) | 0;
+      if (x > 0 && mask[p - 1] && !lab[p - 1]) { lab[p - 1] = cur; pile[sp++] = p - 1; }
+      if (x < w - 1 && mask[p + 1] && !lab[p + 1]) { lab[p + 1] = cur; pile[sp++] = p + 1; }
+      if (y > 0 && mask[p - w] && !lab[p - w]) { lab[p - w] = cur; pile[sp++] = p - w; }
+      if (y < h - 1 && mask[p + w] && !lab[p + w]) { lab[p + w] = cur; pile[sp++] = p + w; }
+    }
+    tailles[cur] = n;
+    if (n > tailleMax) { tailleMax = n; meilleur = cur; }
+  }
+  const out = new Uint8Array(w * h);
+  if (!meilleur) return out;
+  for (let i = 0; i < w * h; i++) if (lab[i] === meilleur) out[i] = 1;
   return out;
 }
 
@@ -138,8 +182,8 @@ function airePolygone(h) {
   return Math.abs(a) / 2;
 }
 
-/* Quatre mesures invariantes à la rotation (vérifiées : moins de 4 % de
-   variation entre 0° et 90° sur des formes de route, maison, wagon, meeple). */
+/* Quatre mesures qui ne bougent pas quand la pièce tourne (moins de 4 % de
+   variation entre 0° et 90° sur route, maison, wagon, meeple). */
 function descripteurs(mask, w, h) {
   let area = 0, sx = 0, sy = 0;
   for (let i = 0; i < w * h; i++) if (mask[i]) { area++; sx += i % w; sy += (i / w) | 0; }
@@ -177,11 +221,10 @@ function descripteurs(mask, w, h) {
   };
 }
 
-/* Distance entre une tache et un gabarit. 0 = identique. */
 function scoreGabarit(b, g, echelle, tolCouleur, poidsForme) {
   const dc = deltaGab(b.lab, g.lab) / Math.max(1, tolCouleur);
   let s = dc * dc;
-  if (g.elong) {
+  if (g.elong && poidsForme > 0) {
     const f = [
       Math.log(Math.max(1e-3, b.elong / g.elong)) / 0.24,
       (b.etalement - g.etalement) / (0.13 * g.etalement + 0.006),
@@ -201,24 +244,25 @@ function scoreGabarit(b, g, echelle, tolCouleur, poidsForme) {
 
 /* -------------------------------------------------------------- Estimations */
 
-function estimateBackground(data, w, h) {
-  const band = Math.max(3, Math.round(Math.min(w, h) * 0.04));
-  const Ls = [], As = [], Bs = [];
+function estimateBackground(data, w, h, x0, y0, rw, rh) {
+  x0 = x0 || 0; y0 = y0 || 0; rw = rw || w; rh = rh || h;
+  const band = Math.max(3, Math.round(Math.min(rw, rh) * 0.05));
+  const R = [], G = [], B = [];
   const push = (x, y) => {
     const i = (y * w + x) * 4;
-    const lab = rgbToLab(data[i], data[i + 1], data[i + 2]);
-    Ls.push(lab[0]); As.push(lab[1]); Bs.push(lab[2]);
+    R.push(data[i]); G.push(data[i + 1]); B.push(data[i + 2]);
   };
-  for (let y = 0; y < h; y += 2) {
-    for (let x = 0; x < band; x += 2) push(x, y);
-    for (let x = w - band; x < w; x += 2) push(x, y);
+  for (let y = y0; y < y0 + rh; y += 2) {
+    for (let x = x0; x < Math.min(x0 + band, x0 + rw); x += 2) push(x, y);
+    for (let x = Math.max(x0, x0 + rw - band); x < x0 + rw; x += 2) push(x, y);
   }
-  for (let x = 0; x < w; x += 2) {
-    for (let y = 0; y < band; y += 2) push(x, y);
-    for (let y = h - band; y < h; y += 2) push(x, y);
+  for (let x = x0; x < x0 + rw; x += 2) {
+    for (let y = y0; y < Math.min(y0 + band, y0 + rh); y += 2) push(x, y);
+    for (let y = Math.max(y0, y0 + rh - band); y < y0 + rh; y += 2) push(x, y);
   }
   const med = arr => { arr.sort((a, b) => a - b); return arr[arr.length >> 1] || 0; };
-  return [med(Ls), med(As), med(Bs)];
+  const rgb = [med(R), med(G), med(B)];
+  return { rgb, lab: rgbToLab(rgb[0], rgb[1], rgb[2]) };
 }
 
 function modeArea(areas) {
@@ -240,19 +284,37 @@ const median = arr => {
   return s[s.length >> 1];
 };
 
-/* Familles de couleur : deux gabarits de même couleur (route rouge et colonie
-   rouge) doivent partager la même zone, sinon une seule pièce serait coupée
-   en morceaux au moment de la segmentation. */
-function famillesDeCouleur(gabs) {
-  const fam = [];
-  const idx = gabs.map(g => {
-    for (let k = 0; k < fam.length; k++) {
-      if (deltaGab(g.lab, fam[k].lab) <= 12) { fam[k].n++; return k; }
+/* ------------------------------------------- Masque premier plan / arrière */
+
+function masqueSilhouette(imageData, opts, bg, x0, y0, rw, rh) {
+  const { width: w, data } = imageData;
+  const n = rw * rh;
+  const m = new Uint8Array(n);
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0; x < rw; x++) {
+      const si = ((y0 + y) * w + (x0 + x)) * 4;
+      const r = data[si], g = data[si + 1], b = data[si + 2];
+      if (opts.ignorerOmbres && estOmbre(r, g, b, bg.rgb)) continue;
+      if (deltaFond(rgbToLab(r, g, b), bg.lab) > opts.seuilFond) m[y * rw + x] = 1;
     }
-    fam.push({ lab: g.lab.slice(), n: 1 });
-    return fam.length - 1;
-  });
-  return { fam, idx };
+  }
+  let out = m;
+  if (opts.fermeture > 0) {
+    out = morph(out, rw, rh, opts.fermeture, false);
+    out = morph(out, rw, rh, opts.fermeture, true);
+  }
+  out = morph(out, rw, rh, opts.separation, true);
+  out = morph(out, rw, rh, opts.separation, false);
+  return remplirTrous(out, rw, rh);
+}
+
+/* Extraction d'une pièce dans le rectangle tracé par l'utilisateur. */
+function extraireDansRect(imageData, rect, opts, lissage) {
+  const { x0, y0, w: rw, h: rh } = rect;
+  const bg = estimateBackground(imageData.data, imageData.width, imageData.height, x0, y0, rw, rh);
+  let m = masqueSilhouette(imageData, { ...opts, fermeture: Math.max(2, opts.fermeture) }, bg, x0, y0, rw, rh);
+  m = plusGrandeComposante(m, rw, rh);
+  return lisser(m, rw, rh, lissage);
 }
 
 /* --------------------------------------------------------------- Détection */
@@ -261,75 +323,50 @@ function detectPieces(imageData, opts, gabarits) {
   const { width: w, height: h, data } = imageData;
   const n = w * h;
   const gabs = gabarits && gabarits.length ? gabarits : null;
-  const familles = gabs ? famillesDeCouleur(gabs) : null;
 
-  const bgLab = opts.fondManuel || estimateBackground(data, w, h);
+  const bg = opts.fondManuel
+    ? { rgb: opts.fondManuel.rgb, lab: opts.fondManuel.lab }
+    : estimateBackground(data, w, h);
 
-  const labL = new Float32Array(n), labA = new Float32Array(n), labB = new Float32Array(n);
+  const mask = masqueSilhouette(imageData, opts, bg, 0, 0, w, h);
+
+  /* Zones de couleur : seulement si l'utilisateur le demande. Sur des pièces
+     à motifs, ce découpage casserait chaque pièce en morceaux. */
   const zone = new Uint8Array(n);
-  const raw = new Uint8Array(n);
-
-  if (gabs) {
-    const tol = opts.tolGabarit;
-    for (let i = 0, p = 0; i < n; i++, p += 4) {
-      const lab = rgbToLab(data[p], data[p + 1], data[p + 2]);
-      labL[i] = lab[0]; labA[i] = lab[1]; labB[i] = lab[2];
-      if (deltaFond(lab, bgLab) <= opts.seuilFond * 0.55) continue;
-      let best = -1, bestD = Infinity;
-      for (let k = 0; k < familles.fam.length; k++) {
-        const d = deltaGab(lab, familles.fam[k].lab);
-        if (d < bestD) { bestD = d; best = k; }
-      }
-      if (bestD <= tol) { raw[i] = 1; zone[i] = best + 1; }
-    }
-  } else {
-    for (let i = 0, p = 0; i < n; i++, p += 4) {
-      const lab = rgbToLab(data[p], data[p + 1], data[p + 2]);
-      labL[i] = lab[0]; labA[i] = lab[1]; labB[i] = lab[2];
-      raw[i] = deltaFond(lab, bgLab) > opts.seuilFond ? 1 : 0;
-    }
-  }
-
-  let mask = raw;
-  if (opts.fermeture > 0) {
-    mask = morph(mask, w, h, opts.fermeture, false);
-    mask = morph(mask, w, h, opts.fermeture, true);
-  }
-  mask = morph(mask, w, h, opts.separation, true);
-  mask = morph(mask, w, h, opts.separation, false);
-
-  const core = morph(mask, w, h, 2, true);
-
   let teintes = [];
-  if (!gabs && opts.parCouleur) {
+  if (opts.parCouleur) {
+    const core = morph(mask, w, h, 2, true);
     const tol = Math.max(14, opts.tolerance);
     const acc = [];
     for (let i = 0; i < n; i += 3) {
       if (!core[i]) continue;
-      const L = labL[i], A = labA[i], B = labB[i];
+      const p = i * 4;
+      const lab = rgbToLab(data[p], data[p + 1], data[p + 2]);
       let best = -1, bestD = Infinity;
       for (let k = 0; k < acc.length; k++) {
         const t = acc[k];
-        const d = deltaE([L, A, B], [t.L / t.n, t.A / t.n, t.B / t.n]);
+        const d = deltaE(lab, [t.L / t.n, t.A / t.n, t.B / t.n]);
         if (d < bestD) { bestD = d; best = k; }
       }
-      if (best >= 0 && bestD <= tol) { const t = acc[best]; t.L += L; t.A += A; t.B += B; t.n++; }
-      else if (acc.length < 14) acc.push({ L, A, B, n: 1 });
+      if (best >= 0 && bestD <= tol) { const t = acc[best]; t.L += lab[0]; t.A += lab[1]; t.B += lab[2]; t.n++; }
+      else if (acc.length < 12) acc.push({ L: lab[0], A: lab[1], B: lab[2], n: 1 });
     }
-    teintes = acc.filter(t => t.n >= 8).map(t => [t.L / t.n, t.A / t.n, t.B / t.n]);
+    teintes = acc.filter(t => t.n >= 10).map(t => [t.L / t.n, t.A / t.n, t.B / t.n]);
     if (teintes.length > 1) {
       for (let i = 0; i < n; i++) {
         if (!mask[i]) continue;
+        const p = i * 4;
+        const lab = rgbToLab(data[p], data[p + 1], data[p + 2]);
         let best = 0, bestD = Infinity;
         for (let k = 0; k < teintes.length; k++) {
-          const d = deltaE([labL[i], labA[i], labB[i]], teintes[k]);
+          const d = deltaE(lab, teintes[k]);
           if (d < bestD) { bestD = d; best = k; }
         }
         zone[i] = best + 1;
       }
     }
   }
-  const useZones = gabs ? true : teintes.length > 1;
+  const useZones = teintes.length > 1;
 
   const labels = new Int32Array(n);
   const stack = new Int32Array(n);
@@ -344,7 +381,7 @@ function detectPieces(imageData, opts, gabarits) {
     stack[sp++] = start;
     labels[start] = current;
 
-    let area = 0, sx = 0, sy = 0, cr = 0, cg = 0, cb = 0, cn = 0, ar = 0, ag = 0, ab = 0;
+    let area = 0, sx = 0, sy = 0, ar = 0, ag = 0, ab = 0;
     let minX = w, maxX = 0, minY = h, maxY = 0;
 
     while (sp > 0) {
@@ -355,7 +392,6 @@ function detectPieces(imageData, opts, gabarits) {
       if (y < minY) minY = y; if (y > maxY) maxY = y;
       const q = p * 4;
       ar += data[q]; ag += data[q + 1]; ab += data[q + 2];
-      if (core[p]) { cr += data[q]; cg += data[q + 1]; cb += data[q + 2]; cn++; }
       const ok = t => mask[t] && !labels[t] && (!useZones || zone[t] === z);
       if (x > 0 && ok(p - 1)) { labels[p - 1] = current; stack[sp++] = p - 1; }
       if (x < w - 1 && ok(p + 1)) { labels[p + 1] = current; stack[sp++] = p + 1; }
@@ -363,21 +399,22 @@ function detectPieces(imageData, opts, gabarits) {
       if (y < h - 1 && ok(p + w)) { labels[p + w] = current; stack[sp++] = p + w; }
     }
 
-    const rgb = cn > 20 ? [cr / cn, cg / cn, cb / cn] : [ar / area, ag / area, ab / area];
+    const rgb = [ar / area, ag / area, ab / area];
     comps.push({
       label: current, area, cx: sx / area, cy: sy / area,
       minX, maxX, minY, maxY, bw: maxX - minX + 1, bh: maxY - minY + 1,
-      famille: z - 1, rgb, lab: rgbToLab(rgb[0], rgb[1], rgb[2])
+      rgb, lab: rgbToLab(rgb[0], rgb[1], rgb[2])
     });
   }
 
-  const plancher = Math.max(10, n * 0.000015);
+  const plancher = Math.max(24, n * 0.00006);
   const retenus = comps.filter(c => c.area >= plancher);
+  let rejets = comps.length - retenus.length;
+
   if (!retenus.length) {
-    return { blobs: [], labels, mask, bgLab, unit: {}, echelle: 1, w, h, warn: null, rejets: comps.length };
+    return { blobs: [], labels, mask, bg, w, h, warn: null, rejets };
   }
 
-  // descripteurs de forme pour chaque tache retenue
   retenus.forEach(c => {
     const d = descripteursDeLabel(labels, w, c);
     if (d) Object.assign(c, d);
@@ -385,11 +422,10 @@ function detectPieces(imageData, opts, gabarits) {
   });
 
   const blobs = [];
-  let fusionMax = 1, rejets = comps.length - retenus.length;
+  let fusionMax = 1;
 
   if (gabs) {
     const pf = opts.poidsForme;
-    // passe 1 : sans la taille, pour estimer l'échelle de la photo
     retenus.forEach(c => {
       let best = 0, bestS = Infinity;
       gabs.forEach((g, k) => {
@@ -399,21 +435,19 @@ function detectPieces(imageData, opts, gabarits) {
       c.gab = best; c.score = bestS;
     });
 
-    const bons = retenus.filter(c => c.score <= opts.seuilForme);
+    const bons = retenus.filter(c => c.score <= opts.seuilForme && gabs[c.gab].area);
     const parSession = {};
     bons.forEach(c => {
       const g = gabs[c.gab];
-      if (!g.area) return;
       const s = g.session || 'x';
       (parSession[s] = parSession[s] || []).push(c.area / g.area);
     });
-    const global = median(bons.map(c => gabs[c.gab].area ? c.area / gabs[c.gab].area : 0).filter(Boolean)) || 1;
+    const global = median(bons.map(c => c.area / gabs[c.gab].area)) || 1;
     const echelleDe = g => {
       const l = parSession[g.session || 'x'];
       return l && l.length >= 2 ? median(l) : global;
     };
 
-    // passe 2 : avec la taille relative, qui sépare colonie et ville
     retenus.forEach(c => {
       let best = 0, bestS = Infinity;
       gabs.forEach((g, k) => {
@@ -436,56 +470,38 @@ function detectPieces(imageData, opts, gabarits) {
       }
       blobs.push({ ...c, count, excluded: false, manual: false });
     });
-
-    blobs.sort((a, b) => (a.cy - b.cy) || (a.cx - b.cx));
-    blobs.forEach((b, i) => { b.id = i; });
-    return {
-      blobs, labels, mask, bgLab, unit: {}, echelle: global, w, h, rejets,
-      warn: fusionMax >= 4 ? `Jusqu'à ${fusionMax} pièces se touchent à un même endroit — vérifie les pastilles chiffrées.` : null
-    };
-  }
-
-  // --- sans gabarit : comptage à l'aveugle, sur la taille dominante
-  const unitOf = {};
-  const cles = [-1];
-  cles.forEach(k => {
+  } else {
     let u = modeArea(retenus.map(c => c.area));
     const cote = median(retenus.map(c => Math.min(c.bw, c.bh)));
     const rho = median(retenus.map(c => c.area / (c.bw * c.bh)));
     const est = cote * cote * rho;
     if (est > plancher * 2 && est < u * 0.7) u = est;
-    unitOf[k] = u;
-  });
 
-  retenus.forEach(c => {
-    const u = unitOf[-1] || 0;
-    if (!u || c.area < u * opts.tailleMin) { rejets++; return; }
-    if (opts.ignorerBords && (c.minX <= 1 || c.minY <= 1 || c.maxX >= w - 2 || c.maxY >= h - 2)) { rejets++; return; }
-    let count = 1;
-    const ratio = c.area / u;
-    const allonge = Math.max(c.bw, c.bh) / Math.min(c.bw, c.bh);
-    if (ratio > 1.55 && (allonge >= 1.6 || c.solidite < 0.8 || ratio >= 2.6)) {
-      count = Math.max(1, Math.round(ratio));
-      if (count > fusionMax) fusionMax = count;
-    }
-    blobs.push({ ...c, count, excluded: false, manual: false });
-  });
+    retenus.forEach(c => {
+      if (!u || c.area < u * opts.tailleMin) { rejets++; return; }
+      if (opts.ignorerBords && (c.minX <= 1 || c.minY <= 1 || c.maxX >= w - 2 || c.maxY >= h - 2)) { rejets++; return; }
+      let count = 1;
+      const ratio = c.area / u;
+      const allonge = Math.max(c.bw, c.bh) / Math.min(c.bw, c.bh);
+      if (ratio > 1.55 && (allonge >= 1.6 || c.solidite < 0.82 || ratio >= 2.6)) {
+        count = Math.max(1, Math.round(ratio));
+        if (count > fusionMax) fusionMax = count;
+      }
+      blobs.push({ ...c, count, excluded: false, manual: false });
+    });
+  }
 
   blobs.sort((a, b) => (a.cy - b.cy) || (a.cx - b.cx));
   blobs.forEach((b, i) => { b.id = i; });
 
   let warn = null;
-  const surfaceTotale = blobs.reduce((s, b) => s + b.area, 0);
-  if (blobs.length && blobs.length <= 3 && surfaceTotale > n * 0.08) {
-    warn = "Les pièces forment un seul bloc : la taille d'une pièce n'a pas pu être déduite. Espace-les et refais la photo.";
-  } else if (fusionMax >= 4) {
-    warn = `Jusqu'à ${fusionMax} pièces se touchent à un même endroit — vérifie les pastilles chiffrées.`;
+  if (fusionMax >= 4) {
+    warn = `Jusqu'à ${fusionMax} pièces se touchent à un même endroit — vérifie les cadres chiffrés.`;
   }
 
-  return { blobs, labels, mask, bgLab, unit: unitOf, echelle: 1, w, h, warn, rejets };
+  return { blobs, labels, mask, bg, w, h, warn, rejets };
 }
 
-/* Extrait le masque local d'une tache puis en calcule les descripteurs. */
 function descripteursDeLabel(labels, w, c) {
   const rw = c.bw + 2, rh = c.bh + 2;
   const m = new Uint8Array(rw * rh);
@@ -540,7 +556,7 @@ function vignetteDepuisMasque(imageData, ox, oy, mask, rw, rh, maxSize = 110) {
 }
 
 function couleurMoyenne(imageData, ox, oy, mask, rw, rh) {
-  const coeur = morph(mask, rw, rh, 2, true);
+  const coeur = morph(mask, rw, rh, 3, true);
   let r = 0, g = 0, b = 0, n = 0;
   const lire = m => {
     r = g = b = n = 0;
@@ -553,7 +569,7 @@ function couleurMoyenne(imageData, ox, oy, mask, rw, rh) {
     }
   };
   lire(coeur);
-  if (n < 20) lire(mask);
+  if (n < 30) lire(mask);
   if (!n) return [128, 128, 128];
   return [r / n, g / n, b / n];
 }
@@ -640,57 +656,153 @@ function firstImageFile(list) {
   return null;
 }
 
+function imageDataVersCanvas(imgData) {
+  const cv = document.createElement('canvas');
+  cv.width = imgData.width; cv.height = imgData.height;
+  cv.getContext('2d').putImageData(imgData, 0, 0);
+  return cv;
+}
+
+/* ==================================================== SÉLECTION D'UNE PIÈCE */
+
+function SelecteurPiece({ imgData, darkMode, onSelection, onFermer, nbFaits }) {
+  const cvRef = useRef(null);
+  const [rect, setRect] = useState(null);
+  const debut = useRef(null);
+  const fond = useRef(null);
+
+  useEffect(() => { fond.current = imageDataVersCanvas(imgData); redraw(null); }, [imgData]);
+
+  const redraw = r => {
+    const cv = cvRef.current;
+    if (!cv || !fond.current) return;
+    cv.width = imgData.width; cv.height = imgData.height;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(fond.current, 0, 0);
+    if (r) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.clearRect(r.x0, r.y0, r.w, r.h);
+      ctx.drawImage(fond.current, r.x0, r.y0, r.w, r.h, r.x0, r.y0, r.w, r.h);
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = Math.max(2, cv.width / 300);
+      ctx.strokeRect(r.x0, r.y0, r.w, r.h);
+    }
+  };
+
+  const pos = e => {
+    const cv = cvRef.current;
+    const b = cv.getBoundingClientRect();
+    const p = e.touches && e.touches[0] ? e.touches[0] : e;
+    return [
+      Math.max(0, Math.min(imgData.width - 1, (p.clientX - b.left) * (imgData.width / b.width))),
+      Math.max(0, Math.min(imgData.height - 1, (p.clientY - b.top) * (imgData.height / b.height)))
+    ];
+  };
+
+  const down = e => { e.preventDefault(); debut.current = pos(e); setRect(null); };
+  const move = e => {
+    if (!debut.current) return;
+    e.preventDefault();
+    const [x, y] = pos(e), [sx, sy] = debut.current;
+    const r = { x0: Math.min(sx, x), y0: Math.min(sy, y), w: Math.abs(x - sx), h: Math.abs(y - sy) };
+    setRect(r); redraw(r);
+  };
+  const up = e => {
+    if (!debut.current) return;
+    e.preventDefault();
+    const [sx, sy] = debut.current;
+    debut.current = null;
+    let r = rect;
+    if (!r || r.w < 12 || r.h < 12) {
+      const c = Math.round(Math.min(imgData.width, imgData.height) * 0.28);
+      r = { x0: sx - c / 2, y0: sy - c / 2, w: c, h: c };
+    }
+    r = {
+      x0: Math.max(0, Math.round(r.x0)),
+      y0: Math.max(0, Math.round(r.y0)),
+      w: Math.round(r.w), h: Math.round(r.h)
+    };
+    r.w = Math.min(r.w, imgData.width - r.x0);
+    r.h = Math.min(r.h, imgData.height - r.y0);
+    if (r.w > 14 && r.h > 14) onSelection(r);
+    setRect(null); redraw(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80">
+      <div className={'w-full max-w-2xl rounded-2xl shadow-2xl p-4 space-y-3 max-h-full overflow-auto ' + (darkMode ? 'bg-gray-800' : 'bg-white')}>
+        <h3 className={'font-semibold ' + (darkMode ? 'text-gray-100' : 'text-gray-800')}>Entoure une pièce</h3>
+        <p className={'text-sm ' + (darkMode ? 'text-gray-400' : 'text-gray-500')}>
+          Trace un cadre autour d'une seule pièce, en laissant un peu de fond tout autour.
+          Recommence pour chaque type de pièce de ce jeu.
+          {nbFaits > 0 && ` ${nbFaits} pièce${nbFaits > 1 ? 's' : ''} déjà prise${nbFaits > 1 ? 's' : ''}.`}
+        </p>
+        <canvas ref={cvRef}
+          onMouseDown={down} onMouseMove={move} onMouseUp={up} onMouseLeave={up}
+          onTouchStart={down} onTouchMove={move} onTouchEnd={up}
+          className="w-full rounded-xl border border-black/20"
+          style={{ touchAction: 'none', cursor: 'crosshair' }} />
+        <button onClick={onFermer}
+          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">
+          J'ai fini
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ========================================================= ÉDITEUR DE MASQUE */
 
-function EditeurMasque({ imgData, region, maskInit, darkMode, onValider, onAnnuler }) {
+function EditeurMasque({ imgData, region, maskBrut, lissageInit, darkMode, onValider, onAnnuler }) {
   const cvRef = useRef(null);
-  const maskRef = useRef(Uint8Array.from(maskInit));
+  const maskRef = useRef(null);
+  const [lissage, setLissage] = useState(lissageInit);
   const [outil, setOutil] = useState('ajouter');
   const [taille, setTaille] = useState(6);
   const [tick, setTick] = useState(0);
   const dessine = useRef(false);
-
   const { x0, y0, w: rw, h: rh } = region;
+
+  useEffect(() => {
+    maskRef.current = lisser(maskBrut, rw, rh, lissage);
+    setTick(t => t + 1);
+  }, [lissage, maskBrut, rw, rh]);
 
   const redraw = useCallback(() => {
     const cv = cvRef.current;
-    if (!cv) return;
+    const m = maskRef.current;
+    if (!cv || !m) return;
     cv.width = rw; cv.height = rh;
     const ctx = cv.getContext('2d');
     const out = ctx.createImageData(rw, rh);
-    const m = maskRef.current;
     for (let y = 0; y < rh; y++) {
       for (let x = 0; x < rw; x++) {
         const si = ((y0 + y) * imgData.width + (x0 + x)) * 4;
         const di = (y * rw + x) * 4;
-        const dedans = m[y * rw + x];
-        const damier = ((x >> 3) + (y >> 3)) & 1;
-        if (dedans) {
+        if (m[y * rw + x]) {
           out.data[di] = imgData.data[si];
           out.data[di + 1] = imgData.data[si + 1];
           out.data[di + 2] = imgData.data[si + 2];
         } else {
-          const base = damier ? 0.30 : 0.22;
-          out.data[di] = imgData.data[si] * base + 60;
-          out.data[di + 1] = imgData.data[si + 1] * base + 20;
-          out.data[di + 2] = imgData.data[si + 2] * base + 70;
+          const damier = ((x >> 3) + (y >> 3)) & 1 ? 0.30 : 0.22;
+          out.data[di] = imgData.data[si] * damier + 60;
+          out.data[di + 1] = imgData.data[si + 1] * damier + 20;
+          out.data[di + 2] = imgData.data[si + 2] * damier + 70;
         }
         out.data[di + 3] = 255;
       }
     }
-    ctx.putImageData(out, 0, 0);
-    // liseré du contour retenu
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.lineWidth = 1;
     for (let y = 1; y < rh - 1; y++) {
       for (let x = 1; x < rw - 1; x++) {
         const i = y * rw + x;
         if (m[i] && (!m[i - 1] || !m[i + 1] || !m[i - rw] || !m[i + rw])) {
-          ctx.fillStyle = 'rgba(255,255,255,0.9)';
-          ctx.fillRect(x, y, 1, 1);
+          const di = i * 4;
+          out.data[di] = 255; out.data[di + 1] = 255; out.data[di + 2] = 255;
         }
       }
     }
+    ctx.putImageData(out, 0, 0);
   }, [imgData, x0, y0, rw, rh]);
 
   useEffect(() => { redraw(); }, [redraw, tick]);
@@ -708,14 +820,13 @@ function EditeurMasque({ imgData, region, maskInit, darkMode, onValider, onAnnul
 
   const pos = e => {
     const cv = cvRef.current;
-    const r = cv.getBoundingClientRect();
+    const b = cv.getBoundingClientRect();
     const p = e.touches && e.touches[0] ? e.touches[0] : e;
     return [
-      Math.round((p.clientX - r.left) * (rw / r.width)),
-      Math.round((p.clientY - r.top) * (rh / r.height))
+      Math.round((p.clientX - b.left) * (rw / b.width)),
+      Math.round((p.clientY - b.top) * (rh / b.height))
     ];
   };
-
   const down = e => { e.preventDefault(); dessine.current = true; const [x, y] = pos(e); peindre(x, y); };
   const move = e => { if (!dessine.current) return; e.preventDefault(); const [x, y] = pos(e); peindre(x, y); };
   const up = () => { dessine.current = false; };
@@ -725,11 +836,11 @@ function EditeurMasque({ imgData, region, maskInit, darkMode, onValider, onAnnul
     : darkMode ? 'border-gray-700 text-gray-300' : 'border-gray-200 text-gray-600');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/70">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80">
       <div className={'w-full max-w-lg rounded-2xl shadow-2xl p-4 space-y-3 max-h-full overflow-auto ' + (darkMode ? 'bg-gray-800' : 'bg-white')}>
-        <h3 className={'font-semibold ' + (darkMode ? 'text-gray-100' : 'text-gray-800')}>Corriger le détourage</h3>
+        <h3 className={'font-semibold ' + (darkMode ? 'text-gray-100' : 'text-gray-800')}>Ajuster le détourage</h3>
         <p className={'text-sm ' + (darkMode ? 'text-gray-400' : 'text-gray-500')}>
-          Ce qui est en clair sera retenu comme la pièce. Peins pour ajouter, gomme pour retirer.
+          Ce qui est en clair sera retenu comme la pièce.
         </p>
 
         <canvas ref={cvRef}
@@ -738,13 +849,28 @@ function EditeurMasque({ imgData, region, maskInit, darkMode, onValider, onAnnul
           className="w-full rounded-xl border border-black/20"
           style={{ imageRendering: 'pixelated', touchAction: 'none', cursor: 'crosshair' }} />
 
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className={'text-sm font-medium ' + (darkMode ? 'text-gray-200' : 'text-gray-700')}>
+              Finesse du détourage
+            </label>
+            <span className={'text-sm ' + (darkMode ? 'text-gray-400' : 'text-gray-500')}>
+              {lissage === 0 ? 'exact' : lissage >= 7 ? 'très large' : lissage}
+            </span>
+          </div>
+          <input type="range" min="0" max="10" value={lissage}
+            onChange={e => setLissage(parseInt(e.target.value, 10))} className="w-full accent-blue-600" />
+          <p className={'text-xs mt-0.5 ' + (darkMode ? 'text-gray-500' : 'text-gray-400')}>
+            Vers la droite, la silhouette s'arrondit et ignore les creux. Attention, bouger ce curseur
+            efface les retouches au pinceau.
+          </p>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setOutil('ajouter')} className={btn(outil === 'ajouter')}>Pinceau</button>
           <button onClick={() => setOutil('retirer')} className={btn(outil === 'retirer')}>Gomme</button>
           <button onClick={() => { maskRef.current = remplirTrous(maskRef.current, rw, rh); setTick(t => t + 1); }}
             className={btn(false)}>Boucher les trous</button>
-          <button onClick={() => { maskRef.current = Uint8Array.from(maskInit); setTick(t => t + 1); }}
-            className={btn(false)}>Repartir de zéro</button>
         </div>
 
         <div>
@@ -757,9 +883,9 @@ function EditeurMasque({ imgData, region, maskInit, darkMode, onValider, onAnnul
         </div>
 
         <div className="flex gap-2 pt-1">
-          <button onClick={() => onValider(maskRef.current)}
+          <button onClick={() => onValider(maskRef.current, lissage)}
             className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium">
-            Valider ce détourage
+            Valider
           </button>
           <button onClick={onAnnuler}
             className={'px-4 py-2.5 rounded-xl text-sm font-medium border ' + (darkMode ? 'border-gray-700 text-gray-300' : 'border-gray-200 text-gray-600')}>
@@ -794,20 +920,22 @@ export default function ComptagePhoto() {
   const [dragTpl, setDragTpl] = useState(false);
 
   const [tplDraft, setTplDraft] = useState(null);
+  const [selection, setSelection] = useState(false);
   const [tplBusy, setTplBusy] = useState(false);
   const [edition, setEdition] = useState(null);
 
   const [opts, setOpts] = useState({
-    seuilFond: 20,
-    fermeture: 1,
+    seuilFond: 18,
+    fermeture: 3,
     separation: 1,
-    tailleMin: 0.45,
+    tailleMin: 0.5,
     tolerance: 18,
     tolGabarit: 26,
     poidsForme: 1,
     seuilForme: 1.9,
     resolution: 900,
-    parCouleur: true,
+    parCouleur: false,
+    ignorerOmbres: true,
     ignorerBords: false,
     fondManuel: null
   });
@@ -881,50 +1009,41 @@ export default function ComptagePhoto() {
     setTplBusy(true);
     try {
       const bmp = await fileToBitmap(file);
-      const data = drawToImageData(bmp, 900);
-      const res = detectPieces(data, { ...opts, tailleMin: 0.25 }, null);
-      if (!res.blobs.length) {
-        flash('Aucune pièce détectée sur cette photo');
-        setTplBusy(false);
-        return;
-      }
-      const session = 's' + Date.now();
-      const grosses = res.blobs.slice().sort((a, b) => b.area - a.area).slice(0, 10);
-      const seuil = grosses[0].area * 0.18;
-      const items = grosses.filter(b => b.area >= seuil).map((b, i) => {
-        const marge = Math.round(Math.max(b.bw, b.bh) * 0.3) + 6;
-        const x0 = Math.max(0, b.minX - marge), y0 = Math.max(0, b.minY - marge);
-        const x1 = Math.min(data.width, b.maxX + marge + 1), y1 = Math.min(data.height, b.maxY + marge + 1);
-        const rw = x1 - x0, rh = y1 - y0;
-        const m = new Uint8Array(rw * rh);
-        for (let y = 0; y < rh; y++) {
-          for (let x = 0; x < rw; x++) {
-            if (res.labels[(y0 + y) * data.width + (x0 + x)] === b.label) m[y * rw + x] = 1;
-          }
-        }
-        const d = descripteurs(m, rw, rh);
-        return {
-          key: 'k' + i,
-          region: { x0, y0, w: rw, h: rh },
-          mask: m,
-          desc: d,
-          rgb: couleurMoyenne(data, x0, y0, m, rw, rh),
-          thumb: vignetteDepuisMasque(data, x0, y0, m, rw, rh),
-          name: '', expected: '', keep: true
-        };
-      }).filter(it => it.desc);
-      setTplDraft({ imgData: data, session, items });
+      const data = drawToImageData(bmp, 1100);
+      setTplDraft({ imgData: data, session: 's' + Date.now(), items: [] });
+      setSelection(true);
     } catch (e) {
       console.error(e); flash('Image illisible');
     }
     setTplBusy(false);
   };
 
+  const ajouterSelection = rect => {
+    try {
+      const lissage = 2;
+      const mask = extraireDansRect(tplDraft.imgData, rect, opts, lissage);
+      const region = { x0: rect.x0, y0: rect.y0, w: rect.w, h: rect.h };
+      const d = descripteurs(mask, rect.w, rect.h);
+      if (!d) { flash('Rien de détecté dans ce cadre'); return; }
+      const item = {
+        key: 'k' + Date.now() + Math.random().toString(36).slice(2, 6),
+        region, rect, maskBrut: extraireDansRect(tplDraft.imgData, rect, opts, 0),
+        mask, lissage, desc: d,
+        rgb: couleurMoyenne(tplDraft.imgData, region.x0, region.y0, mask, rect.w, rect.h),
+        thumb: vignetteDepuisMasque(tplDraft.imgData, region.x0, region.y0, mask, rect.w, rect.h),
+        name: '', expected: '', keep: true
+      };
+      setTplDraft(d0 => ({ ...d0, items: [...d0.items, item] }));
+    } catch (e) {
+      console.error(e); flash('Extraction impossible');
+    }
+  };
+
   const majItem = (idx, patch) => {
     setTplDraft(d => ({ ...d, items: d.items.map((x, i) => i === idx ? { ...x, ...patch } : x) }));
   };
 
-  const validerEdition = maskEdite => {
+  const validerEdition = (maskEdite, lissage) => {
     const { idx } = edition;
     const it = tplDraft.items[idx];
     const { x0, y0, w: rw, h: rh } = it.region;
@@ -932,6 +1051,7 @@ export default function ComptagePhoto() {
     if (!d) { flash('Le détourage est vide'); return; }
     majItem(idx, {
       mask: Uint8Array.from(maskEdite),
+      lissage,
       desc: d,
       rgb: couleurMoyenne(tplDraft.imgData, x0, y0, maskEdite, rw, rh),
       thumb: vignetteDepuisMasque(tplDraft.imgData, x0, y0, maskEdite, rw, rh)
@@ -941,7 +1061,7 @@ export default function ComptagePhoto() {
 
   const saveTemplates = () => {
     const items = tplDraft.items.filter(i => i.keep);
-    if (!items.length) { flash('Sélectionne au moins une pièce'); return; }
+    if (!items.length) { flash('Aucune pièce sélectionnée'); return; }
     if (items.some(i => !i.name.trim())) { flash('Donne un nom à chaque pièce'); return; }
     const existants = (profiles[currentGame] && profiles[currentGame].gabarits) || [];
     const nouveaux = items.map((i, k) => ({
@@ -994,8 +1114,6 @@ export default function ComptagePhoto() {
     if (currentGame === name) setCurrentGame('');
   };
 
-  /* ------------------------------------------------------ coller une image */
-
   useEffect(() => {
     const onPaste = e => {
       const f = firstImageFile(e.clipboardData && e.clipboardData.items);
@@ -1021,7 +1139,7 @@ export default function ComptagePhoto() {
       for (let i = 0; i < w * h; i++) {
         if (result.mask[i]) {
           ov.data[i * 4] = 0; ov.data[i * 4 + 1] = 255; ov.data[i * 4 + 2] = 120;
-          ov.data[i * 4 + 3] = 120;
+          ov.data[i * 4 + 3] = 110;
         }
       }
       const tmp = document.createElement('canvas');
@@ -1030,40 +1148,37 @@ export default function ComptagePhoto() {
       ctx.drawImage(tmp, 0, 0);
     }
 
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(0, 0, w, h);
-
     const colorOf = {};
     groups.forEach(g => { colorOf[g.key] = cssRgb(g.rgb); });
-    const aires = result.blobs.filter(b => !b.excluded).map(b => b.area);
-    const unit = aires.length ? median(aires) : 900;
-    const r = Math.max(8, Math.sqrt(unit) * 0.30);
-    ctx.font = 'bold ' + Math.round(r * 1.05) + 'px system-ui, sans-serif';
+    const actifs = result.blobs.filter(b => !b.excluded);
+    const trait = Math.max(2, w / 400);
+    const afficherTous = actifs.length <= 40;
+    const rBadge = Math.max(10, w / 55);
+    ctx.font = 'bold ' + Math.round(rBadge * 1.15) + 'px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     result.blobs.forEach(b => {
-      ctx.beginPath();
-      ctx.arc(b.cx, b.cy, r, 0, Math.PI * 2);
+      const bw = Math.max(6, b.maxX - b.minX + 1), bh = Math.max(6, b.maxY - b.minY + 1);
       if (b.excluded) {
-        ctx.fillStyle = 'rgba(20,20,20,0.7)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,90,90,0.95)';
-        ctx.lineWidth = Math.max(2, r * 0.18);
-        ctx.stroke();
+        ctx.strokeStyle = 'rgba(239,68,68,0.95)';
+        ctx.lineWidth = trait;
+        ctx.strokeRect(b.minX, b.minY, bw, bh);
         ctx.beginPath();
-        ctx.moveTo(b.cx - r * 0.45, b.cy - r * 0.45);
-        ctx.lineTo(b.cx + r * 0.45, b.cy + r * 0.45);
+        ctx.moveTo(b.minX, b.minY); ctx.lineTo(b.minX + bw, b.minY + bh);
+        ctx.moveTo(b.minX + bw, b.minY); ctx.lineTo(b.minX, b.minY + bh);
         ctx.stroke();
         return;
       }
-      ctx.fillStyle = colorOf[b.groupKey] || '#999';
-      ctx.fill();
-      ctx.strokeStyle = b.manual ? 'rgba(255,220,0,1)' : 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = Math.max(1.5, r * (b.manual ? 0.22 : 0.12));
-      ctx.stroke();
-      if (b.count > 1) {
-        ctx.fillStyle = isLight(b.rgb) ? '#111' : '#fff';
+      ctx.strokeStyle = b.manual ? 'rgba(250,204,21,1)' : 'rgba(34,197,94,1)';
+      ctx.lineWidth = trait;
+      ctx.strokeRect(b.minX, b.minY, bw, bh);
+      if (b.count > 1 || afficherTous) {
+        ctx.beginPath();
+        ctx.arc(b.cx, b.cy, rBadge, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(17,24,39,0.82)';
+        ctx.fill();
+        ctx.fillStyle = '#fff';
         ctx.fillText(String(b.count), b.cx, b.cy + 1);
       }
     });
@@ -1078,8 +1193,8 @@ export default function ComptagePhoto() {
 
     if (pickBg) {
       const i = (Math.round(y) * result.w + Math.round(x)) * 4;
-      const lab = rgbToLab(imgData.data[i], imgData.data[i + 1], imgData.data[i + 2]);
-      const next = { ...opts, fondManuel: lab };
+      const rgb = [imgData.data[i], imgData.data[i + 1], imgData.data[i + 2]];
+      const next = { ...opts, fondManuel: { rgb, lab: rgbToLab(rgb[0], rgb[1], rgb[2]) } };
       setOpts(next);
       setPickBg(false);
       analyse(imgData, next);
@@ -1087,18 +1202,29 @@ export default function ComptagePhoto() {
       return;
     }
 
-    let best = null, bestD = Infinity;
-    result.blobs.forEach(b => {
-      const d = (b.cx - x) * (b.cx - x) + (b.cy - y) * (b.cy - y);
-      if (d < bestD) { bestD = d; best = b; }
-    });
-    const aires = result.blobs.map(b => b.area);
-    const unit = aires.length ? median(aires) : 900;
-    if (best && bestD <= unit * 1.6) {
-      regroup(result.blobs.map(b => b.id === best.id ? { ...b, excluded: !b.excluded } : b));
+    const dedans = result.blobs.filter(b =>
+      x >= b.minX - 4 && x <= b.maxX + 4 && y >= b.minY - 4 && y <= b.maxY + 4);
+    let cible = null;
+    if (dedans.length) {
+      cible = dedans.reduce((a, b) => (a.area < b.area ? a : b));
+    } else {
+      let bestD = Infinity;
+      result.blobs.forEach(b => {
+        const d = (b.cx - x) * (b.cx - x) + (b.cy - y) * (b.cy - y);
+        if (d < bestD) { bestD = d; cible = b; }
+      });
+      const aires = result.blobs.map(b => b.area);
+      if (bestD > (aires.length ? median(aires) : 900) * 0.9) cible = null;
+    }
+
+    if (cible) {
+      regroup(result.blobs.map(b => b.id === cible.id ? { ...b, excluded: !b.excluded } : b));
       return;
     }
 
+    const aires = result.blobs.map(b => b.area);
+    const unit = aires.length ? median(aires) : 900;
+    const demi = Math.round(Math.sqrt(unit) / 2);
     const i = (Math.round(y) * result.w + Math.round(x)) * 4;
     const rgb = [imgData.data[i], imgData.data[i + 1], imgData.data[i + 2]];
     const lab = rgbToLab(rgb[0], rgb[1], rgb[2]);
@@ -1107,9 +1233,10 @@ export default function ComptagePhoto() {
     const ajout = {
       id: result.blobs.length ? Math.max(...result.blobs.map(b => b.id)) + 1 : 0,
       label: -1, area: unit, cx: x, cy: y,
-      minX: x, maxX: x, minY: y, maxY: y, bw: 1, bh: 1,
+      minX: x - demi, maxX: x + demi, minY: y - demi, maxY: y + demi,
+      bw: demi * 2, bh: demi * 2,
       elong: 1, etalement: 0.166, solidite: 1, rayonRel: 1.2,
-      famille: -1, gab, score: 0, rgb, lab,
+      gab, score: 0, rgb, lab,
       count: 1, excluded: false, manual: true
     };
     regroup([...result.blobs, ajout]);
@@ -1159,21 +1286,27 @@ export default function ComptagePhoto() {
         </div>
       )}
 
-      {edition && tplDraft && (
+      {selection && tplDraft && (
+        <SelecteurPiece imgData={tplDraft.imgData} darkMode={darkMode}
+          nbFaits={tplDraft.items.length}
+          onSelection={ajouterSelection}
+          onFermer={() => setSelection(false)} />
+      )}
+
+      {edition && tplDraft && tplDraft.items[edition.idx] && (
         <EditeurMasque
           imgData={tplDraft.imgData}
           region={tplDraft.items[edition.idx].region}
-          maskInit={tplDraft.items[edition.idx].mask}
+          maskBrut={tplDraft.items[edition.idx].maskBrut}
+          lissageInit={tplDraft.items[edition.idx].lissage}
           darkMode={darkMode}
           onValider={validerEdition}
-          onAnnuler={() => setEdition(null)}
-        />
+          onAnnuler={() => setEdition(null)} />
       )}
 
       <div className="py-6 px-4">
         <div className="max-w-3xl mx-auto space-y-5">
 
-          {/* En-tête */}
           <div className={card + ' border rounded-2xl shadow-xl p-5'}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -1185,7 +1318,7 @@ export default function ComptagePhoto() {
                 </button>
                 <div>
                   <h1 className={'text-2xl font-bold ' + txt}>Comptage photo</h1>
-                  <p className={'text-sm ' + sub}>Enregistre tes pièces, puis compte-les toutes</p>
+                  <p className={'text-sm ' + sub}>Entoure tes pièces, puis compte-les toutes</p>
                 </div>
               </div>
               <button
@@ -1225,7 +1358,7 @@ export default function ComptagePhoto() {
             <div className="flex gap-2">
               <input value={newGameName} onChange={e => setNewGameName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && createGame()}
-                placeholder="Nom d'un nouveau jeu (ex : Catan)"
+                placeholder="Nom d'un nouveau jeu (ex : Azul)"
                 className={'flex-1 px-3 py-2 rounded-xl border text-sm ' + field} />
               <button onClick={createGame} className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">
                 Ajouter
@@ -1238,11 +1371,10 @@ export default function ComptagePhoto() {
             <div {...dropProps(setDragTpl, loadTemplate)}
               className={card + ' border rounded-2xl shadow-xl p-5 space-y-4 transition-colors ' + (dragTpl ? 'ring-2 ring-emerald-500 border-emerald-500' : '')}>
               <h2 className={'font-semibold ' + txt}>2. Gabarits de {currentGame}</h2>
-
               <p className={'text-sm leading-relaxed ' + sub}>
-                Pose une pièce de chaque type sur une feuille blanche, bien séparées, et photographie-les
-                d'aplomb. Mets-les toutes sur la même photo : c'est ce qui permet à l'outil de connaître
-                leur taille les unes par rapport aux autres, et donc de distinguer une colonie d'une ville.
+                Photographie une pièce de chaque type, puis entoure-les une par une sur l'image.
+                Mets-les toutes sur la même photo : c'est ce qui permet de connaître leur taille
+                les unes par rapport aux autres.
               </p>
 
               <input ref={tplCamRef} type="file" accept="image/*" capture="environment" className="hidden"
@@ -1253,12 +1385,18 @@ export default function ComptagePhoto() {
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => tplCamRef.current && tplCamRef.current.click()} disabled={tplBusy}
                   className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium disabled:opacity-50">
-                  {tplBusy ? 'Détourage…' : 'Photographier les pièces'}
+                  Photographier les pièces
                 </button>
                 <button onClick={() => tplGalRef.current && tplGalRef.current.click()} disabled={tplBusy}
                   className={'px-4 py-2.5 rounded-xl text-sm font-medium border ' + ghost + ' disabled:opacity-50'}>
                   Choisir dans la galerie
                 </button>
+                {tplDraft && (
+                  <button onClick={() => setSelection(true)}
+                    className={'px-4 py-2.5 rounded-xl text-sm font-medium border ' + ghost}>
+                    Entourer une autre pièce
+                  </button>
+                )}
                 <span className={'hidden sm:flex items-center text-xs ' + sub}>ou dépose une image ici</span>
               </div>
 
@@ -1288,29 +1426,31 @@ export default function ComptagePhoto() {
                 </div>
               )}
 
-              {tplDraft && (
+              {tplDraft && tplDraft.items.length > 0 && (
                 <div className={'rounded-xl p-4 space-y-3 border-2 border-dashed ' + (darkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-300 bg-gray-50')}>
-                  <p className={'text-sm font-medium ' + txt}>
-                    Pièces détourées — décoche ce qui n'en est pas, et corrige un détourage s'il est mauvais
-                  </p>
+                  <p className={'text-sm font-medium ' + txt}>Pièces prises sur cette photo</p>
                   <div className="space-y-2">
                     {tplDraft.items.map((it, idx) => (
                       <div key={it.key} className={'flex items-center gap-2 p-2 rounded-lg ' + (darkMode ? 'bg-gray-800' : 'bg-white')}>
-                        <input type="checkbox" checked={it.keep} className="w-4 h-4 accent-blue-600 shrink-0"
-                          onChange={e => majItem(idx, { keep: e.target.checked })} />
                         <button onClick={() => setEdition({ idx })}
-                          className="w-12 h-12 shrink-0 flex items-center justify-center rounded-lg border border-dashed border-blue-500/50 hover:border-blue-500"
+                          className="w-14 h-14 shrink-0 flex items-center justify-center rounded-lg border border-dashed border-blue-500/50 hover:border-blue-500"
                           style={{ background: darkMode ? '#111827' : '#f3f4f6' }}
-                          title="Corriger le détourage">
+                          title="Ajuster le détourage">
                           <img src={it.thumb} alt="" className="max-w-full max-h-full object-contain" />
                         </button>
                         <div className="flex-1 min-w-0 space-y-1">
-                          <input value={it.name} placeholder="Nom (ex : route rouge)"
+                          <input value={it.name} placeholder="Nom (ex : tuile bleue)"
                             onChange={e => majItem(idx, { name: e.target.value })}
                             className={'w-full px-2.5 py-1.5 rounded-lg border text-sm ' + field} />
-                          <button onClick={() => setEdition({ idx })} className="text-xs text-blue-500 hover:underline">
-                            Corriger le détourage
-                          </button>
+                          <div className="flex gap-3">
+                            <button onClick={() => setEdition({ idx })} className="text-xs text-blue-500 hover:underline">
+                              Ajuster le détourage
+                            </button>
+                            <button onClick={() => setTplDraft(d => ({ ...d, items: d.items.filter((_, i) => i !== idx) }))}
+                              className="text-xs text-red-500 hover:underline">
+                              Retirer
+                            </button>
+                          </div>
                         </div>
                         <input type="number" inputMode="numeric" placeholder="qté" value={it.expected}
                           onChange={e => majItem(idx, { expected: e.target.value })}
@@ -1384,12 +1524,18 @@ export default function ComptagePhoto() {
 
             {!gabs && currentGame && (
               <p className="text-sm text-amber-600">
-                Aucun gabarit pour {currentGame} : le comptage se fera à l'aveugle et risque de compter les ombres.
+                Aucun gabarit pour {currentGame} : le comptage se fera à l'aveugle.
               </p>
             )}
 
             {showSettings && (
               <div className={'rounded-xl p-4 space-y-4 ' + (darkMode ? 'bg-gray-900' : 'bg-gray-50')}>
+                <Slider label="Bouchage des motifs" hint="Recolle une pièce que son motif imprimé fait éclater en morceaux. C'est le réglage à monter si une seule pièce en vaut plusieurs"
+                  value={opts.fermeture} min={0} max={8} step={1} darkMode={darkMode}
+                  onChange={v => setOpts(o => ({ ...o, fermeture: v }))} />
+                <Slider label="Sensibilité au fond" hint="Monte-le si la table ou le tissu sont pris pour des pièces"
+                  value={opts.seuilFond} min={6} max={45} step={1} darkMode={darkMode}
+                  onChange={v => setOpts(o => ({ ...o, seuilFond: v }))} />
                 <Slider label="Tolérance des gabarits" hint="Plus bas = n'accepte que les couleurs très proches des pièces enregistrées"
                   value={opts.tolGabarit} min={8} max={50} step={1} darkMode={darkMode}
                   onChange={v => setOpts(o => ({ ...o, tolGabarit: v }))} />
@@ -1399,29 +1545,24 @@ export default function ComptagePhoto() {
                 <Slider label="Poids de la forme" hint="À 0, seule la couleur compte. Monte-le quand plusieurs pièces ont la même couleur"
                   value={opts.poidsForme} min={0} max={3} step={0.1} darkMode={darkMode}
                   onChange={v => setOpts(o => ({ ...o, poidsForme: v }))} />
-                <Slider label="Sensibilité au fond" hint="Monte-le si des ombres ou le grain de la table sont comptés"
-                  value={opts.seuilFond} min={6} max={45} step={1} darkMode={darkMode}
-                  onChange={v => setOpts(o => ({ ...o, seuilFond: v }))} />
                 <Slider label="Taille minimale" hint="Part d'une pièce en dessous de laquelle une tache est ignorée"
                   value={opts.tailleMin} min={0.1} max={0.9} step={0.05} darkMode={darkMode}
                   onChange={v => setOpts(o => ({ ...o, tailleMin: v }))} />
-                <Slider label="Bouchage des motifs" hint="Recolle une pièce illustrée que le dessin fait éclater en morceaux"
-                  value={opts.fermeture} min={0} max={4} step={1} darkMode={darkMode}
-                  onChange={v => setOpts(o => ({ ...o, fermeture: v }))} />
                 <Slider label="Séparation" hint="Augmente si des pièces collées sont comptées comme une seule"
                   value={opts.separation} min={1} max={5} step={1} darkMode={darkMode}
                   onChange={v => setOpts(o => ({ ...o, separation: v }))} />
                 <Slider label="Résolution d'analyse" hint="Plus haut = plus précis mais plus lent sur mobile"
                   value={opts.resolution} min={500} max={1600} step={100} darkMode={darkMode}
                   onChange={v => setOpts(o => ({ ...o, resolution: v }))} />
+                <Check label="Ignorer les ombres" darkMode={darkMode}
+                  hint="Une ombre assombrit les trois couleurs de la même façon, ce qui permet de la reconnaître"
+                  checked={opts.ignorerOmbres} onChange={v => setOpts(o => ({ ...o, ignorerOmbres: v }))} />
+                <Check label="Séparer les pièces collées par la couleur" darkMode={darkMode}
+                  hint="À n'activer que pour des pièces unies. Sur des pièces à motifs, ce découpage les casse en morceaux"
+                  checked={opts.parCouleur} onChange={v => setOpts(o => ({ ...o, parCouleur: v }))} />
                 <Check label="Ignorer ce qui touche le bord" darkMode={darkMode}
                   hint="Écarte les pièces coupées par le cadre et le bord de la table"
                   checked={opts.ignorerBords} onChange={v => setOpts(o => ({ ...o, ignorerBords: v }))} />
-                {!gabs && (
-                  <Check label="Séparer par couleur" darkMode={darkMode}
-                    hint="Deux pièces de couleurs différentes qui se touchent restent deux pièces"
-                    checked={opts.parCouleur} onChange={v => setOpts(o => ({ ...o, parCouleur: v }))} />
-                )}
                 {opts.fondManuel && (
                   <button onClick={() => { const o = { ...opts, fondManuel: null }; setOpts(o); analyse(imgData, o); }}
                     className={'text-sm underline ' + sub}>
@@ -1448,9 +1589,9 @@ export default function ComptagePhoto() {
                   className="w-full rounded-xl cursor-pointer" style={{ touchAction: 'manipulation' }} />
                 {result && (
                   <p className={'text-xs mt-2 leading-relaxed ' + sub}>
-                    Touche une pastille pour la retirer du comptage. Touche une pièce oubliée pour l'ajouter
-                    (cerclée de jaune). Un chiffre signifie que plusieurs pièces se touchent à cet endroit.
-                    {result.rejets > 0 && ' ' + result.rejets + ' tache' + (result.rejets > 1 ? 's écartées' : ' écartée') + ' (trop petite ou hors gabarit).'}
+                    Touche un cadre pour retirer la pièce du comptage. Touche une pièce oubliée pour
+                    l'ajouter (cadre jaune). Un chiffre supérieur à 1 signale des pièces collées.
+                    {result.rejets > 0 && ' ' + result.rejets + ' tache' + (result.rejets > 1 ? 's écartées' : ' écartée') + '.'}
                   </p>
                 )}
               </div>
@@ -1463,7 +1604,6 @@ export default function ComptagePhoto() {
             )}
           </div>
 
-          {/* Résultat */}
           {result && groups.length > 0 && (
             <div className={card + ' border rounded-2xl shadow-xl p-5 space-y-4'}>
               <div className="flex items-baseline justify-between">
@@ -1519,9 +1659,8 @@ export default function ComptagePhoto() {
           {result && groups.length === 0 && !busy && (
             <div className={card + ' border rounded-2xl shadow-xl p-5'}>
               <p className={'text-sm leading-relaxed ' + sub}>
-                Aucune pièce reconnue. Active « Voir le masque » pour savoir ce que l'outil isole :
-                si rien n'est vert, monte la tolérance des gabarits ou baisse la sensibilité au fond.
-                Si les pièces sont vertes mais rien n'est compté, monte « Exigence sur la forme ».
+                Aucune pièce reconnue. Active « Voir le masque » : si rien n'est vert, baisse la
+                sensibilité au fond ou touche le fond avec « Indiquer le fond ».
               </p>
             </div>
           )}
@@ -1531,8 +1670,6 @@ export default function ComptagePhoto() {
     </div>
   );
 }
-
-/* --------------------------------------------------------- Sous-composants */
 
 function Slider({ label, hint, value, min, max, step, onChange, darkMode }) {
   return (
