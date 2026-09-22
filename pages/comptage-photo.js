@@ -105,7 +105,7 @@ function carteDistance(data, w, h, lab, opts) {
   let mask = new Uint8Array(n);
   let gL = new Float32Array(GX * GY), gA = new Float32Array(GX * GY), gB = new Float32Array(GX * GY);
   const gR = new Float32Array(GX * GY), gG = new Float32Array(GX * GY), gBl = new Float32Array(GX * GY);
-  let seuil = 0, maxV = 1;
+  let seuil = 0, maxV = 1, fraction = 0, fondEstime = null, plafonne = false;
 
   for (let iter = 0; iter < 3; iter++) {
     // 1. mediane locale du fond par cellule, en n'utilisant que les pixels fond
@@ -113,30 +113,66 @@ function carteDistance(data, w, h, lab, opts) {
     const bR = [], bG = [], bB2 = [];
     for (let c = 0; c < GX * GY; c++) { bucketsL.push([]); bucketsA.push([]); bucketsB.push([]); bR.push([]); bG.push([]); bB2.push([]); }
     if (iter === 0) {
-      // premiere passe : le fond est estime sur la bordure de l'image uniquement.
-      // Une grille locale des le depart absorberait les pieces et les rendrait
-      // invisibles a elles-memes.
-      const bande = Math.max(4, Math.round(Math.min(w, h) * 0.05));
-      const L = [], A = [], B = [];
-      for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-        if (x > bande && x < w - bande && y > bande && y < h - bande) continue;
-        const i = y * w + x;
-        L.push(lab[i * 3]); A.push(lab[i * 3 + 1]); B.push(lab[i * 3 + 2]);
-      }
+      /* Amorçage. Deux hypothèses sont mises en concurrence pour la couleur du
+         fond : la médiane de la bordure, et la couleur dominante de l'image.
+         On garde celle qui laisse le moins de pixels en premier plan — c'est
+         ce qui évite qu'une photo entière soit prise pour une pièce quand la
+         bordure tombe sur un pli sombre ou sur une pièce. */
+      const md = a => { a.sort((p, q) => p - q); return a[a.length >> 1] || 0; };
+      const bande = Math.max(4, Math.round(Math.min(w, h) * 0.06));
       const R = [], G = [], B2 = [];
       for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
         if (x > bande && x < w - bande && y > bande && y < h - bande) continue;
-        const p = (y * w + x) * 4;
-        R.push(data[p]); G.push(data[p + 1]); B2.push(data[p + 2]);
+        const q = (y * w + x) * 4;
+        R.push(data[q]); G.push(data[q + 1]); B2.push(data[q + 2]);
       }
-      const md = a => { a.sort((p, q) => p - q); return a[a.length >> 1] || 0; };
-      const gl = md(L), ga = md(A), gb = md(B), gr = md(R), gg = md(G), gbl = md(B2);
-      for (let c = 0; c < GX * GY; c++) {
-        for (let k = 0; k < 12; k++) {
-          bucketsL[c].push(gl); bucketsA[c].push(ga); bucketsB[c].push(gb);
-          bR[c].push(gr); bG[c].push(gg); bB2[c].push(gbl);
+      const bord = [md(R), md(G), md(B2)];
+
+      // couleur dominante : pic d'un histogramme grossier 16x16x16
+      const BINS = 16, hist = new Int32Array(BINS * BINS * BINS);
+      for (let i = 0; i < n; i += 3) {
+        const q = i * 4;
+        const b = ((data[q] >> 4) * BINS + (data[q + 1] >> 4)) * BINS + (data[q + 2] >> 4);
+        hist[b]++;
+      }
+      let pic = 0, picN = -1;
+      for (let b = 0; b < hist.length; b++) if (hist[b] > picN) { picN = hist[b]; pic = b; }
+      const pb = pic % BINS, pg = ((pic / BINS) | 0) % BINS, pr = (pic / (BINS * BINS)) | 0;
+      let sr = 0, sg = 0, sb = 0, sn = 0;
+      for (let i = 0; i < n; i += 3) {
+        const q = i * 4;
+        if ((data[q] >> 4) === pr && (data[q + 1] >> 4) === pg && (data[q + 2] >> 4) === pb) {
+          sr += data[q]; sg += data[q + 1]; sb += data[q + 2]; sn++;
         }
       }
+      const dominant = sn ? [sr / sn, sg / sn, sb / sn] : bord;
+
+      let choix;
+      if (opts.fondRef) {
+        choix = opts.fondRef;
+      } else {
+        // on compte, pour chaque hypothèse, la part de pixels qui s'en écartent
+        const part = ref => {
+          const rl = rgbToLab(ref[0], ref[1], ref[2]);
+          let loin = 0, vus = 0;
+          for (let i = 0; i < n; i += 5) {
+            const dl = (lab[i * 3] - rl[0]) * 0.8;
+            const da = lab[i * 3 + 1] - rl[1], db2 = lab[i * 3 + 2] - rl[2];
+            if (Math.sqrt(dl * dl + da * da + db2 * db2) > 22) loin++;
+            vus++;
+          }
+          return loin / Math.max(1, vus);
+        };
+        choix = part(dominant) < part(bord) ? dominant : bord;
+      }
+      const cl = rgbToLab(choix[0], choix[1], choix[2]);
+      for (let c = 0; c < GX * GY; c++) {
+        for (let k = 0; k < 12; k++) {
+          bucketsL[c].push(cl[0]); bucketsA[c].push(cl[1]); bucketsB[c].push(cl[2]);
+          bR[c].push(choix[0]); bG[c].push(choix[1]); bB2[c].push(choix[2]);
+        }
+      }
+      fondEstime = choix;
     } else {
       for (let y = 0; y < h; y += 2) {
         const gy = Math.min(GY - 1, (y / ch) | 0);
@@ -219,10 +255,26 @@ function carteDistance(data, w, h, lab, opts) {
     ech.sort((a, b) => a - b);
     const p92 = ech[Math.floor(ech.length * 0.92)] || maxV;
     seuil = Math.max(otsu(dist, n, Math.max(1, p92)), 9) * opts.sensibilite;
+
+    /* Garde-fou : des pièces ne peuvent pas occuper presque toute la photo.
+       Si le seuil retenu masque plus de la moitié de l'image, c'est que le
+       fond a été mal identifié — on relève le seuil au lieu de rendre un
+       masque inexploitable, et on le signale. */
+    const PLAFOND = 0.80;
+    let part = 0;
+    for (let i = 0; i < ech.length; i++) if (ech[i] > seuil) part++;
+    part /= Math.max(1, ech.length);
+    if (part > PLAFOND) {
+      seuil = ech[Math.floor(ech.length * (1 - PLAFOND))] || seuil;
+      plafonne = true;
+      part = PLAFOND;
+    }
+    fraction = part;
+
     mask = new Uint8Array(n);
     for (let i = 0; i < n; i++) if (dist[i] > seuil) mask[i] = 1;
   }
-  return { mask, dist, seuil };
+  return { mask, dist, seuil, fraction, fondEstime, plafonne };
 }
 
 /* ------------------------------------------------ composantes et decoupage */
@@ -334,7 +386,8 @@ function analyser(imageData, opts) {
     lab[i * 3] = l[0]; lab[i * 3 + 1] = l[1]; lab[i * 3 + 2] = l[2];
   }
 
-  const { mask: m0, seuil } = carteDistance(data, w, h, lab, opts);
+  const diag = carteDistance(data, w, h, lab, opts);
+  const { mask: m0, seuil } = diag;
 
   // nettoyage initial
   let mask = morph(m0, w, h, 1, true);
@@ -342,8 +395,28 @@ function analyser(imageData, opts) {
   mask = remplirTrous(mask, w, h);
 
   let { labels, comps } = composantes(mask, w, h);
+
+  /* Une composante énorme qui touche le bord n'est pas une pièce : c'est la
+     table, la nappe ou une zone d'ombre que le modèle de fond n'a pas su
+     absorber. On la retire du masque avant toute estimation de taille. */
+  let fondFuite = false;
+  comps.forEach(c => {
+    const touche = c.minX <= 1 || c.minY <= 1 || c.maxX >= w - 2 || c.maxY >= h - 2;
+    if (!touche || c.area < n * 0.18) return;
+    fondFuite = true;
+    for (let y = c.minY; y <= c.maxY; y++) {
+      for (let x = c.minX; x <= c.maxX; x++) {
+        const i = y * w + x;
+        if (labels[i] === c.label) { mask[i] = 0; labels[i] = 0; }
+      }
+    }
+  });
+  if (fondFuite) ({ labels, comps } = composantes(mask, w, h));
+
   let M = opts.aireRef || taillePonderee(comps.filter(c => c.area >= 20));
-  if (!M) return { pieces: [], total: 0, mask, labels, w, h, M: 0, seuil, rejets: 0, avertissement: null, amasMax: 1 };
+  if (!M) return { pieces: [], total: 0, mask, labels, w, h, M: 0, seuil, rejets: 0,
+    avertissement: (diag.plafonne || fondFuite) ? 'fondDouteux' : null,
+    amasMax: 1, fraction: diag.fraction, fondEstime: diag.fondEstime, fondDouteux: diag.plafonne || fondFuite };
 
   // Les motifs imprimes sont des trous a l'interieur du contour : les reboucher
   // suffit. Une fermeture large recollerait les pieces voisines entre elles.
@@ -411,13 +484,16 @@ function analyser(imageData, opts) {
   const surfaceTotale = comps.reduce((t, c) => t + c.area, 0);
   const plusGros = comps.reduce((t, c) => Math.max(t, c.area), 0);
   let avertissement = null;
-  if (pieces.length && plusGros > surfaceTotale * 0.55 && pieces.length <= 2 && total <= 2) {
+  if (diag.plafonne || fondFuite) {
+    avertissement = "fondDouteux";
+  } else if (pieces.length && plusGros > surfaceTotale * 0.55 && pieces.length <= 2 && total <= 2) {
     avertissement = "tailleInconnue";
   } else if (amasMax >= 4) {
     avertissement = "amas";
   }
 
-  return { pieces, total, mask, labels, w, h, M, seuil, rejets, avertissement, amasMax };
+  return { pieces, total, mask, labels, w, h, M, seuil, rejets, avertissement, amasMax,
+    fraction: diag.fraction, fondEstime: diag.fondEstime, fondDouteux: diag.plafonne || fondFuite };
 }
 /* ==================================================== DESCRIPTION D'UNE PIÈCE */
 
@@ -755,6 +831,7 @@ export default function ComptagePhoto() {
   const [voirMasque, setVoirMasque] = useState(false);
   const [reglagesOuverts, setReglagesOuverts] = useState(false);
   const [selecteur, setSelecteur] = useState(false);
+  const [pointeFond, setPointeFond] = useState(false);
   const [glisse, setGlisse] = useState(false);
 
   const [opts, setOpts] = useState({
@@ -764,7 +841,8 @@ export default function ComptagePhoto() {
     finesse: 0.9,
     poidsForme: 1,
     resolution: 800,
-    aireRef: 0
+    aireRef: 0,
+    fondRef: null
   });
 
   const cvRef = useRef(null);
@@ -849,7 +927,7 @@ export default function ComptagePhoto() {
       const bmp = await fileToBitmap(f);
       const d = drawToImageData(bmp, opts.resolution);
       setBitmap(bmp); setImgData(d);
-      const o = { ...opts, aireRef: 0 };
+      const o = { ...opts, aireRef: 0, fondRef: null };
       setOpts(o);
       await lancer(d, o);
     } catch (e) { console.error(e); flash('Image illisible'); setBusy(false); }
@@ -941,6 +1019,22 @@ export default function ComptagePhoto() {
     const cv = cvRef.current, b = cv.getBoundingClientRect();
     const x = (e.clientX - b.left) * (cv.width / b.width);
     const y = (e.clientY - b.top) * (cv.height / b.height);
+
+    if (pointeFond && imgData) {
+      // moyenne d'un petit carré autour du doigt, pour ne pas tomber sur un grain
+      const r = 6;
+      let sr = 0, sg = 0, sb = 0, sn = 0;
+      for (let yy = Math.max(0, Math.round(y) - r); yy <= Math.min(res.h - 1, Math.round(y) + r); yy++) {
+        for (let xx = Math.max(0, Math.round(x) - r); xx <= Math.min(res.w - 1, Math.round(x) + r); xx++) {
+          const q = (yy * res.w + xx) * 4;
+          sr += imgData.data[q]; sg += imgData.data[q + 1]; sb += imgData.data[q + 2]; sn++;
+        }
+      }
+      setPointeFond(false);
+      appliquer({ fondRef: [sr / sn, sg / sn, sb / sn] });
+      flash('Couleur du fond prise en compte');
+      return;
+    }
 
     for (let k = ajouts.length - 1; k >= 0; k--) {
       const c = Math.sqrt(res.M || 900) / 2;
@@ -1079,6 +1173,10 @@ export default function ComptagePhoto() {
               </button>
               {res && (
                 <>
+                  <button onClick={() => { setPointeFond(v => !v); }}
+                    className={'px-4 py-3 rounded-xl font-medium border ' + (pointeFond ? 'bg-amber-500 border-amber-500 text-black' : (opts.fondRef ? 'bg-emerald-600 border-emerald-600 text-white' : neutre))}>
+                    {pointeFond ? 'Touche le fond sur la photo…' : 'Montre-moi le fond'}
+                  </button>
                   <button onClick={() => setSelecteur(true)}
                     className={'px-4 py-3 rounded-xl font-medium border ' + (opts.aireRef ? 'bg-emerald-600 border-emerald-600 text-white' : neutre)}>
                     Montre-moi une pièce
@@ -1118,6 +1216,11 @@ export default function ComptagePhoto() {
                 <Case label="Ignorer les ombres" darkMode={darkMode}
                   aide="Reconnaît une ombre au fait qu'elle assombrit les trois couleurs à l'identique"
                   checked={opts.ignorerOmbres} onChange={v => appliquer({ ignorerOmbres: v })} />
+                {opts.fondRef && (
+                  <button onClick={() => appliquer({ fondRef: null })} className={'text-sm underline block ' + S}>
+                    Oublier la couleur de fond indiquée
+                  </button>
+                )}
                 {opts.aireRef > 0 && (
                   <button onClick={() => appliquer({ aireRef: 0 })} className={'text-sm underline ' + S}>
                     Oublier la pièce de référence
@@ -1138,14 +1241,35 @@ export default function ComptagePhoto() {
                 <canvas ref={cvRef} onClick={clic} className="w-full rounded-xl cursor-pointer"
                   style={{ touchAction: 'manipulation' }} />
                 {res && (
-                  <p className={'text-xs mt-2 leading-relaxed ' + S}>
-                    Touche un cadre vert pour retirer la pièce, touche une pièce oubliée pour l'ajouter.
-                    Un cadre orange chiffré signale des pièces collées.
-                  </p>
+                  <div className={'text-xs mt-2 leading-relaxed ' + S}>
+                    <p>
+                      Touche un cadre vert pour retirer la pièce, touche une pièce oubliée pour l'ajouter.
+                      Un cadre orange chiffré signale des pièces collées.
+                    </p>
+                    <p className="mt-1 flex items-center gap-2 flex-wrap">
+                      <span>{Math.round(res.fraction * 100)} % de l'image vue comme des pièces.</span>
+                      {res.fondEstime && (
+                        <span className="inline-flex items-center gap-1">
+                          Fond retenu
+                          <span className="inline-block w-4 h-4 rounded border border-black/20 align-middle"
+                            style={{ background: cssRgb(res.fondEstime) }} />
+                        </span>
+                      )}
+                    </p>
+                  </div>
                 )}
               </div>
             )}
 
+            {res && res.avertissement === 'fondDouteux' && (
+              <div className="rounded-xl px-4 py-3 text-sm bg-red-500/15 text-red-700 border border-red-500/30">
+                Je n'arrive pas à distinguer le fond des pièces sur cette photo
+                ({Math.round(res.fraction * 100)} % de l'image ressemble à une pièce).
+                Appuie sur « Montre-moi le fond » puis touche la table à un endroit vide.
+                Si ça ne suffit pas, refais la photo en laissant un peu de marge tout autour
+                des pièces, sur un support uni.
+              </div>
+            )}
             {res && res.avertissement === 'tailleInconnue' && (
               <div className="rounded-xl px-4 py-3 text-sm bg-amber-500/15 text-amber-700 border border-amber-500/30">
                 Je ne vois qu'une seule forme. Si c'est en réalité plusieurs pièces collées,
