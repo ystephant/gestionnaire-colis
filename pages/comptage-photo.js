@@ -304,6 +304,21 @@ function composantes(mask, w, h) {
 
 /* Taille typique d'une piece : mediane ponderee par la surface. Mille taches
    de bruit pesent moins qu'une seule vraie piece. */
+/* Taille qui revient le plus souvent parmi les composantes : c'est celle d'une
+   pièce isolée. Sert à repérer qu'une composante vaut en fait plusieurs pièces. */
+function modeArea(areas) {
+  if (!areas.length) return 0;
+  const s = [...areas].sort((a, b) => a - b);
+  let best = s[0], bestN = 0;
+  for (let i = 0; i < s.length; i++) {
+    const hi = s[i] * 1.45;
+    let j = i;
+    while (j < s.length && s[j] <= hi) j++;
+    if (j - i > bestN) { bestN = j - i; best = s[(i + j - 1) >> 1]; }
+  }
+  return best;
+}
+
 function taillePonderee(comps) {
   if (!comps.length) return 0;
   const s = comps.slice().sort((a, b) => a.area - b.area);
@@ -415,7 +430,7 @@ function analyser(imageData, opts) {
 
   let M = opts.aireRef || taillePonderee(comps.filter(c => c.area >= 20));
   if (!M) return { pieces: [], total: 0, mask, labels, w, h, M: 0, seuil, rejets: 0,
-    avertissement: (diag.plafonne || fondFuite) ? 'fondDouteux' : null,
+    avertissement: diag.plafonne ? 'fondDouteux' : null,
     amasMax: 1, fraction: diag.fraction, fondEstime: diag.fondEstime, fondDouteux: diag.plafonne || fondFuite };
 
   // Les motifs imprimes sont des trous a l'interieur du contour : les reboucher
@@ -483,9 +498,22 @@ function analyser(imageData, opts) {
   const total = pieces.reduce((t, p) => t + p.count, 0);
   const surfaceTotale = comps.reduce((t, c) => t + c.area, 0);
   const plusGros = comps.reduce((t, c) => Math.max(t, c.area), 0);
+  /* Détection d'un tas. La taille qui se répète le plus souvent parmi les
+     composantes est celle d'une pièce isolée ; si la plus grosse composante
+     vaut plusieurs fois cette taille, c'est que des pièces sont empilées ou
+     collées. Aucun comptage fiable n'est possible dans ce cas : une pièce
+     cachée sous une autre n'est pas dans la photo. */
+  const tailles = comps.filter(c => c.area >= Math.max(20, n * 0.0004)).map(c => c.area);
+  const courante = modeArea(tailles);
+  const entassement = courante > n * 0.0008
+    && tailles.filter(a => a < courante * 1.6).length >= 3
+    && plusGros > courante * 5;
+
   let avertissement = null;
-  if (diag.plafonne || fondFuite) {
+  if (diag.plafonne) {
     avertissement = "fondDouteux";
+  } else if (entassement) {
+    avertissement = "entassement";
   } else if (pieces.length && plusGros > surfaceTotale * 0.55 && pieces.length <= 2 && total <= 2) {
     avertissement = "tailleInconnue";
   } else if (amasMax >= 4) {
@@ -661,6 +689,77 @@ function regrouper(sigs, finesse, poidsForme) {
   return grappes;
 }
 
+/* ============================================ RÉPARTITION AUTOUR DE POINTS
+
+   Principe de l'édition manuelle : un point posé sur la photo vaut une pièce,
+   qu'il vienne de la détection ou d'un clic. Chaque forme du masque est
+   partagée entre les points qu'elle contient, si bien que retirer un contour
+   qui englobait trois pièces puis cliquer trois fois découpe la forme en
+   trois. Un point posé hors du masque reçoit un carré de la taille courante
+   des autres pièces. */
+
+function repartir(labels, w, h, graines, cote) {
+  const n = w * h;
+  const carte = new Int32Array(n);
+  const file = new Int32Array(n);
+  const compDe = [];
+  let tete = 0, queue = 0;
+
+  graines.forEach((g, k) => {
+    const x = Math.round(g.x), y = Math.round(g.y);
+    const dedans = x >= 0 && y >= 0 && x < w && y < h;
+    const L = dedans ? labels[y * w + x] : 0;
+    compDe[k] = L;
+    if (L > 0) {
+      const i = y * w + x;
+      if (!carte[i]) { carte[i] = k + 1; file[queue++] = i; }
+    }
+  });
+
+  while (tete < queue) {
+    const p = file[tete++];
+    const k = carte[p] - 1, L = compDe[k];
+    const x = p % w, y = (p / w) | 0;
+    const v = q => { if (labels[q] === L && !carte[q]) { carte[q] = k + 1; file[queue++] = q; } };
+    if (x > 0) v(p - 1);
+    if (x < w - 1) v(p + 1);
+    if (y > 0) v(p - w);
+    if (y < h - 1) v(p + w);
+  }
+
+  const demi = Math.max(4, Math.round(cote / 2));
+  graines.forEach((g, k) => {
+    if (compDe[k] > 0) return;
+    const cx = Math.round(g.x), cy = Math.round(g.y);
+    for (let y = cy - demi; y <= cy + demi; y++) {
+      if (y < 0 || y >= h) continue;
+      for (let x = cx - demi; x <= cx + demi; x++) {
+        if (x < 0 || x >= w) continue;
+        const i = y * w + x;
+        if (!carte[i]) carte[i] = k + 1;
+      }
+    }
+  });
+
+  const regions = graines.map((g, k) => ({
+    label: k + 1, area: 0, sx: 0, sy: 0,
+    minX: w, maxX: 0, minY: h, maxY: 0,
+    cx: g.x, cy: g.y, libre: compDe[k] === 0
+  }));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const k = carte[y * w + x];
+      if (!k) continue;
+      const r = regions[k - 1];
+      r.area++; r.sx += x; r.sy += y;
+      if (x < r.minX) r.minX = x; if (x > r.maxX) r.maxX = x;
+      if (y < r.minY) r.minY = y; if (y > r.maxY) r.maxY = y;
+    }
+  }
+  regions.forEach(r => { if (r.area) { r.cx = r.sx / r.area; r.cy = r.sy / r.area; } });
+  return { carte, regions };
+}
+
 /* ====================================================== CHARGEMENT D'IMAGE */
 
 async function fileToBitmap(file) {
@@ -825,8 +924,9 @@ export default function ComptagePhoto() {
   const [imgData, setImgData] = useState(null);
   const [res, setRes] = useState(null);
   const [groupes, setGroupes] = useState([]);
-  const [exclus, setExclus] = useState({});
-  const [ajouts, setAjouts] = useState([]);
+  const [graines, setGraines] = useState([]);
+  const [zonage, setZonage] = useState(null);
+  const [regions, setRegions] = useState([]);
   const [busy, setBusy] = useState(false);
   const [voirMasque, setVoirMasque] = useState(false);
   const [reglagesOuverts, setReglagesOuverts] = useState(false);
@@ -866,18 +966,24 @@ export default function ComptagePhoto() {
 
   /* ----------------------------------------------------------- analyse */
 
-  const lancer = useCallback(async (data, o) => {
-    if (!data) return;
-    setBusy(true);
-    await new Promise(r => setTimeout(r, 40));
-    try {
-      const r = analyser(data, o);
-      const sigs = r.pieces.map(p => signature(data, r.labels, p));
+  /* Reconstruit contours et groupes à partir d'un jeu de points. Appelé à
+     l'analyse, puis à chaque clic d'ajout ou de retrait. */
+  const construire = useCallback((data, r, gr, o) => {
+    const cote = Math.sqrt(r.M || 900);
+    const { carte: cc, regions: rg } = repartir(r.labels, r.w, r.h, gr, cote);
+    const idx = [], sigs = [];
+    rg.forEach((reg, k) => {
+      if (reg.area < 12) return;
+      idx.push(k);
+      sigs.push(signature(data, cc, reg));
+    });
+    let gs = [];
+    if (sigs.length) {
       const grappes = regrouper(sigs, o.finesse, o.poidsForme);
-      const gs = grappes.map((g, k) => {
+      gs = grappes.map((g, k) => {
         const rep = g.membres.reduce((a, b) =>
           distancePieces(sigs[a], g.centre, o.poidsForme) <= distancePieces(sigs[b], g.centre, o.poidsForme) ? a : b);
-        const s = sigs[rep];
+        const sg = sigs[rep];
         return {
           cle: 'g' + k,
           nom: '',
@@ -888,13 +994,12 @@ export default function ComptagePhoto() {
             elong: g.centre.elong, etalement: g.centre.etalement,
             solidite: g.centre.solidite, rayonRel: g.centre.rayonRel, area: g.centre.area
           },
-          vignette: vignette(data, r.pieces[rep], s.masque, s.bw, s.bh),
-          membres: g.membres,
+          vignette: vignette(data, rg[idx[rep]], sg.masque, sg.bw, sg.bh),
+          membres: g.membres.map(m => idx[m]),
           attendu: null
         };
       });
       gs.sort((a, b) => b.membres.length - a.membres.length);
-      // rapprochement avec les gabarits enregistrés pour ce jeu
       if (gabarits) {
         gs.forEach(g => {
           let best = null, bestD = Infinity;
@@ -905,20 +1010,34 @@ export default function ComptagePhoto() {
           if (best && bestD <= 1.6) { g.nom = best.nom; g.attendu = best.attendu; g.vignette = best.vignette || g.vignette; }
         });
       }
-      r.pieces.forEach((p, i) => {
-        const g = gs.find(x => x.membres.includes(i));
-        p.groupe = g ? g.cle : null;
-      });
+    }
+    rg.forEach((reg, k) => {
+      const g = gs.find(x => x.membres.includes(k));
+      reg.groupe = g ? g.cle : null;
+      reg.rgb = g ? g.rgb : [160, 160, 160];
+    });
+    return { carte: cc, regions: rg, groupes: gs };
+  }, [gabarits]);
+
+  const lancer = useCallback(async (data, o) => {
+    if (!data) return;
+    setBusy(true);
+    await new Promise(r => setTimeout(r, 40));
+    try {
+      const r = analyser(data, o);
+      const gr = r.pieces.map(p => ({ x: p.cx, y: p.cy }));
+      const out = construire(data, r, gr, o);
       setRes(r);
-      setGroupes(gs);
-      setExclus({});
-      setAjouts([]);
+      setGraines(gr);
+      setZonage(out.carte);
+      setRegions(out.regions);
+      setGroupes(out.groupes);
     } catch (e) {
       console.error(e);
       flash("L'analyse a échoué");
     }
     setBusy(false);
-  }, [gabarits]);
+  }, [construire]);
 
   const charger = async f => {
     if (!f) return;
@@ -944,75 +1063,76 @@ export default function ComptagePhoto() {
 
   /* ----------------------------------------------------------- totaux */
 
-  const nbGroupe = g => {
-    let n = 0;
-    g.membres.forEach(i => { if (!exclus[i] && res.pieces[i]) n += res.pieces[i].count; });
-    ajouts.forEach(a => { if (a.groupe === g.cle) n++; });
-    return n;
-  };
-  const total = res ? groupes.reduce((s, g) => s + nbGroupe(g), 0) : 0;
+  const nbGroupe = g => g.membres.length;
+  const total = groupes.reduce((s, g) => s + g.membres.length, 0);
 
   /* ----------------------------------------------------------- dessin */
 
   useEffect(() => {
     const cv = cvRef.current;
-    if (!cv || !bitmap || !res) return;
-    cv.width = res.w; cv.height = res.h;
+    if (!cv || !bitmap || !res || !zonage) return;
+    const w = res.w, h = res.h;
+    cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d');
-    ctx.drawImage(bitmap, 0, 0, res.w, res.h);
+    ctx.drawImage(bitmap, 0, 0, w, h);
 
     if (voirMasque && res.mask) {
-      const ov = ctx.createImageData(res.w, res.h);
-      for (let i = 0; i < res.w * res.h; i++) {
-        if (res.mask[i]) {
-          ov.data[i * 4 + 1] = 255; ov.data[i * 4 + 2] = 130; ov.data[i * 4 + 3] = 115;
-        }
+      const ov = ctx.createImageData(w, h);
+      for (let i = 0; i < w * h; i++) {
+        if (res.mask[i]) { ov.data[i * 4 + 1] = 255; ov.data[i * 4 + 2] = 130; ov.data[i * 4 + 3] = 110; }
       }
       const t = document.createElement('canvas');
-      t.width = res.w; t.height = res.h;
+      t.width = w; t.height = h;
       t.getContext('2d').putImageData(ov, 0, 0);
       ctx.drawImage(t, 0, 0);
     }
 
-    const trait = Math.max(2, res.w / 350);
-    const rb = Math.max(11, res.w / 42);
-    ctx.font = 'bold ' + Math.round(rb * 1.1) + 'px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const peu = res.pieces.length <= 45;
-
-    res.pieces.forEach((p, i) => {
-      const bw = p.maxX - p.minX + 1, bh = p.maxY - p.minY + 1;
-      if (exclus[i]) {
-        ctx.strokeStyle = 'rgba(239,68,68,0.95)';
-        ctx.lineWidth = trait;
-        ctx.strokeRect(p.minX, p.minY, bw, bh);
-        ctx.beginPath();
-        ctx.moveTo(p.minX, p.minY); ctx.lineTo(p.maxX, p.maxY);
-        ctx.moveTo(p.maxX, p.minY); ctx.lineTo(p.minX, p.maxY);
-        ctx.stroke();
-        return;
-      }
-      ctx.strokeStyle = 'rgba(34,197,94,0.95)';
-      ctx.lineWidth = trait;
-      ctx.strokeRect(p.minX, p.minY, bw, bh);
-      if (p.count > 1 || peu) {
-        ctx.beginPath();
-        ctx.arc(p.cx, p.cy, rb, 0, Math.PI * 2);
-        ctx.fillStyle = p.count > 1 ? 'rgba(217,119,6,0.92)' : 'rgba(17,24,39,0.80)';
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.fillText(String(p.count), p.cx, p.cy + 1);
-      }
+    /* Liseré : on ne garde que les pixels de bordure de chaque région. La
+       couleur du trait s'adapte à la pièce pour rester lisible dessus. */
+    const base = ctx.getImageData(0, 0, w, h);
+    const d = base.data;
+    const trait = [];
+    regions.forEach(r => {
+      const c = r.rgb || [160, 160, 160];
+      const clair = (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000 > 140;
+      trait.push(clair ? [15, 15, 20] : [255, 255, 255]);
     });
+    const epais = res.w > 1100 ? 2 : 1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const k = zonage[i];
+        if (!k) continue;
+        const bord =
+          (x === 0 || zonage[i - 1] !== k) || (x === w - 1 || zonage[i + 1] !== k) ||
+          (y === 0 || zonage[i - w] !== k) || (y === h - 1 || zonage[i + w] !== k);
+        if (!bord) continue;
+        const t = trait[k - 1];
+        for (let dy = 0; dy < epais; dy++) {
+          for (let dx = 0; dx < epais; dx++) {
+            const xx = x + dx, yy = y + dy;
+            if (xx >= w || yy >= h) continue;
+            const q = (yy * w + xx) * 4;
+            d[q] = t[0]; d[q + 1] = t[1]; d[q + 2] = t[2];
+          }
+        }
+      }
+    }
+    ctx.putImageData(base, 0, 0);
 
-    ajouts.forEach(a => {
-      ctx.strokeStyle = 'rgba(250,204,21,1)';
-      ctx.lineWidth = trait;
-      const c = Math.round(Math.sqrt(res.M || 900) / 2);
-      ctx.strokeRect(a.x - c, a.y - c, c * 2, c * 2);
+    // petit point au centre de chaque pièce, pour savoir où toucher
+    const rp = Math.max(2, w / 260);
+    regions.forEach((r, k) => {
+      if (!r.area) return;
+      ctx.beginPath();
+      ctx.arc(r.cx, r.cy, rp, 0, Math.PI * 2);
+      ctx.fillStyle = r.libre ? 'rgba(250,204,21,0.95)' : 'rgba(255,255,255,0.75)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
     });
-  }, [bitmap, res, groupes, voirMasque, exclus, ajouts]);
+  }, [bitmap, res, zonage, regions, voirMasque]);
 
   const clic = e => {
     if (!res) return;
@@ -1036,24 +1156,26 @@ export default function ComptagePhoto() {
       return;
     }
 
-    for (let k = ajouts.length - 1; k >= 0; k--) {
-      const c = Math.sqrt(res.M || 900) / 2;
-      if (Math.abs(ajouts[k].x - x) < c && Math.abs(ajouts[k].y - y) < c) {
-        setAjouts(a => a.filter((_, i) => i !== k));
-        return;
-      }
-    }
-    const dedans = [];
-    res.pieces.forEach((p, i) => {
-      if (x >= p.minX - 3 && x <= p.maxX + 3 && y >= p.minY - 3 && y <= p.maxY + 3) dedans.push(i);
-    });
-    if (dedans.length) {
-      const i = dedans.reduce((a, b) => (res.pieces[a].area <= res.pieces[b].area ? a : b));
-      setExclus(e2 => ({ ...e2, [i]: !e2[i] }));
-      return;
-    }
-    const g = groupes[0];
-    if (g) setAjouts(a => [...a, { x, y, groupe: g.cle }]);
+    if (!zonage) return;
+    const xi = Math.max(0, Math.min(res.w - 1, Math.round(x)));
+    const yi = Math.max(0, Math.min(res.h - 1, Math.round(y)));
+    const k = zonage[yi * res.w + xi];
+
+    /* Toucher un contour retire la pièce ; toucher ailleurs en pose une.
+       Après avoir retiré un contour qui en englobait plusieurs, chaque clic
+       à l'intérieur de la forme y découpe une pièce de plus. */
+    const gr = k > 0
+      ? graines.filter((_, i) => i !== k - 1)
+      : [...graines, { x, y }];
+
+    const out = construire(imgData, res, gr, opts);
+    setGraines(gr);
+    setZonage(out.carte);
+    setRegions(out.regions);
+    setGroupes(gs => out.groupes.map(g => {
+      const ancien = gs.find(a => a.nom && a.cle === g.cle);
+      return ancien ? { ...g, nom: ancien.nom } : g;
+    }));
   };
 
   /* ----------------------------------------------------------- gabarits */
@@ -1243,8 +1365,9 @@ export default function ComptagePhoto() {
                 {res && (
                   <div className={'text-xs mt-2 leading-relaxed ' + S}>
                     <p>
-                      Touche un cadre vert pour retirer la pièce, touche une pièce oubliée pour l'ajouter.
-                      Un cadre orange chiffré signale des pièces collées.
+                      Touche une pièce entourée pour la retirer, touche une pièce oubliée pour
+                      l'ajouter. Si un contour en englobe plusieurs d'un coup, retire-le puis
+                      touche chaque pièce : le contour se redécoupe autour de chaque point.
                     </p>
                     <p className="mt-1 flex items-center gap-2 flex-wrap">
                       <span>{Math.round(res.fraction * 100)} % de l'image vue comme des pièces.</span>
@@ -1270,10 +1393,21 @@ export default function ComptagePhoto() {
                 des pièces, sur un support uni.
               </div>
             )}
+            {res && res.avertissement === 'entassement' && (
+              <div className="rounded-xl px-4 py-3 text-sm bg-red-500/15 text-red-700 border border-red-500/30">
+                Les pièces se touchent bord à bord et forment une seule masse. Je peux encore
+                donner un ordre de grandeur si tu utilises « Montre-moi une pièce », mais le
+                détail par couleur ne sera pas fiable. Pour un compte exact, écarte-les d'un
+                demi-centimètre les unes des autres : c'est le seul geste qui change tout.
+                Le fond, lui, peut être n'importe quoi.
+              </div>
+            )}
             {res && res.avertissement === 'tailleInconnue' && (
               <div className="rounded-xl px-4 py-3 text-sm bg-amber-500/15 text-amber-700 border border-amber-500/30">
-                Je ne vois qu'une seule forme. Si c'est en réalité plusieurs pièces collées,
-                utilise « Montre-moi une pièce » pour m'indiquer la taille d'une seule.
+                Je ne vois qu'une seule forme. Si c'est bien une pièce unique, le compte est bon.
+                Si ce sont plusieurs pièces posées bord à bord, écarte-les légèrement les unes
+                des autres et reprends la photo : c'est ce qui permet de les compter une par une.
+                Le fond, lui, peut être n'importe quoi.
               </div>
             )}
             {res && res.avertissement === 'amas' && (
