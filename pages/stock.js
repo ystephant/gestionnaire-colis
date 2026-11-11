@@ -98,6 +98,10 @@ export default function StockManager() {
   // ── Popin confirmation suppression incomplet ─────────────────
   const [confirmDeleteInc, setConfirmDeleteInc] = useState(null); // { id, gameName }
 
+  // ── [17] Correction du stock négatif ─────────────────────────
+  const [confirmFixAllNeg, setConfirmFixAllNeg] = useState(false);
+  const [fixNegLoading,    setFixNegLoading]    = useState(false);
+
   // ── Autocomplétion modal incomplet (entrée libre) ────────────
   const [showIncSugg, setShowIncSugg] = useState(false);
   const incFreeWrapRef = useRef(null);
@@ -397,6 +401,41 @@ export default function StockManager() {
         },
       });
     } catch (err) { showToast("Erreur lors de l'éviction", 'error'); }
+  };
+
+  // [17] Corriger le stock négatif : ajoute les entrées manquantes (stock_add, prix 0)
+  // pour ramener le solde à 0 — ex: jeu acheté en braderie / possédé avant, non saisi à l'achat.
+  // Les ventes ne sont pas touchées, et l'onglet Transactions (qui ne lit que buy/sell) n'est pas impacté.
+  const fixNegativeStock = async (items) => {
+    const rows = [];
+    (items || []).forEach(g => {
+      const missing = Math.abs(g.netRaw);
+      for (let i = 0; i < missing; i++) {
+        rows.push({ user_id: username, type: 'stock_add', game_name: g.name, price: 0 });
+      }
+    });
+    if (rows.length === 0) return;
+    setFixNegLoading(true);
+    try {
+      const { data, error } = await supabase.from('transactions').insert(rows).select('id');
+      if (error) throw error;
+      const ids = (data || []).map(r => r.id);
+      await loadData();
+      const label = items.length === 1 ? `"${items[0].name}"` : `${items.length} jeux`;
+      showToast(`Stock négatif corrigé : ${label}`, 'success', {
+        label: 'Annuler',
+        fn: async () => {
+          await supabase.from('transactions').delete().in('id', ids);
+          await loadData();
+          showToast('Action annulée ✓');
+        },
+      });
+    } catch (err) {
+      showToast('Erreur lors de la correction du stock négatif', 'error');
+    } finally {
+      setFixNegLoading(false);
+      setConfirmFixAllNeg(false);
+    }
   };
 
   const handleUnhideGame = async (id, gameName) => {
@@ -765,6 +804,16 @@ export default function StockManager() {
                   className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
                 >Effacer les filtres</button>
               )}
+              {/* [17] Corriger tous les stocks négatifs d'un coup */}
+              {kpis.negative > 0 && (
+                <button
+                  onClick={() => setConfirmFixAllNeg(true)}
+                  title="Ajouter les exemplaires manquants pour ramener tous les stocks négatifs à 0"
+                  className={`ml-auto flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold border transition ${
+                    dm ? 'border-red-500/50 text-red-300 hover:bg-red-900/30' : 'border-red-300 text-red-600 hover:bg-red-50'
+                  }`}
+                >🔻 Corriger les {kpis.negative} stock{kpis.negative > 1 ? 's' : ''} négatif{kpis.negative > 1 ? 's' : ''}</button>
+              )}
             </div>
           )}
 
@@ -826,9 +875,18 @@ export default function StockManager() {
                     {g.isNegativeStock && (
                       <div className={`px-4 py-2 flex items-center gap-2 border-b-2 border-red-400 ${dm ? 'bg-red-900/25 text-red-300' : 'bg-red-50 text-red-700'}`}>
                         <span className="text-sm flex-shrink-0">🔻</span>
-                        <span className="text-xs font-semibold truncate">
+                        <span className="text-xs font-semibold truncate flex-1 min-w-0">
                           Stock négatif ({g.netRaw}) — {Math.abs(g.netRaw)} vente(s) sans achat correspondant enregistré
                         </span>
+                        {/* [17] Corriger : ajoute les entrées manquantes pour revenir à 0 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); fixNegativeStock([g]); }}
+                          disabled={fixNegLoading}
+                          title="Corriger : ajouter les exemplaires manquants pour ramener le stock à 0"
+                          className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold border transition disabled:opacity-50 ${
+                            dm ? 'border-red-500/50 text-red-200 hover:bg-red-800/40' : 'border-red-300 text-red-700 hover:bg-red-100'
+                          }`}
+                        >✓ Corriger</button>
                       </div>
                     )}
 
@@ -1295,6 +1353,36 @@ export default function StockManager() {
                 onClick={confirmAndDeleteIncomplete}
                 className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 active:bg-green-700 text-white text-sm font-bold transition shadow-lg shadow-green-500/20"
               >✅ Oui, remettre en stock</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── [17] Popin confirmation correction de tous les stocks négatifs ── */}
+      {confirmFixAllNeg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4" onClick={() => setConfirmFixAllNeg(false)}>
+          <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm rounded-2xl shadow-2xl border p-6 ${dm ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}>
+            <div className="text-center mb-5">
+              <div className="text-4xl mb-3">🔻</div>
+              <h2 className={`text-base font-bold mb-2 ${dm ? 'text-white' : 'text-gray-900'}`}>
+                Corriger les stocks négatifs ?
+              </h2>
+              <p className={`text-sm leading-relaxed ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
+                {stockItems.filter(g => g.isNegativeStock).reduce((s, g) => s + Math.abs(g.netRaw), 0)} exemplaire(s) manquant(s) seront ajoutés au stock
+                (sans prix) pour {kpis.negative} jeu{kpis.negative > 1 ? 'x' : ''}, afin de les ramener à 0.
+                Aucune vente ni transaction n'est modifiée.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmFixAllNeg(false)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${dm ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+              >Annuler</button>
+              <button
+                onClick={() => fixNegativeStock(stockItems.filter(g => g.isNegativeStock))}
+                disabled={fixNegLoading}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 active:bg-red-700 text-white text-sm font-bold transition shadow-lg shadow-red-500/20 disabled:opacity-50"
+              >{fixNegLoading ? '…' : '✓ Corriger'}</button>
             </div>
           </div>
         </div>
