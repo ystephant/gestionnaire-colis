@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { detecterIA, normaliserLabel, versJpeg, SEUIL_TUILES } from '../lib/comptageIA';
 
 /* ============================================================================
    COMPTAGE PHOTO — détection et comptage automatiques de pièces de jeu
-   Page autonome : aucune dépendance npm, aucun appel réseau, aucune table.
+   Deux modes :
+   - IA (par défaut) : la photo est envoyée à /api/compter-pieces (Gemini vision)
+     qui renvoie une boîte par pièce. Voir lib/comptageIA.js.
+   - Local (hors-ligne) : détection par traitement d'image, décrite ci-dessous.
+   Si l'IA est indisponible, le mode local prend le relais automatiquement.
    Profils enregistrés dans localStorage (clé : meeple_comptage).
 
    Le fond n'est pas supposé uni : il est modélisé localement, cellule par
@@ -828,7 +833,7 @@ const cssRgb = rgb => `rgb(${rgb[0] | 0}, ${rgb[1] | 0}, ${rgb[2] | 0})`;
 
 /* ============================================== SÉLECTEUR « MONTRE-MOI UNE PIÈCE » */
 
-function SelecteurTaille({ bitmap, largeur, hauteur, darkMode, onValider, onAnnuler }) {
+function SelecteurTaille({ bitmap, largeur, hauteur, darkMode, ia, onValider, onAnnuler }) {
   const cvRef = useRef(null);
   const [rect, setRect] = useState(null);
   const depart = useRef(null);
@@ -886,8 +891,10 @@ function SelecteurTaille({ bitmap, largeur, hauteur, darkMode, onValider, onAnnu
         <h3 className={'font-semibold ' + (darkMode ? 'text-gray-100' : 'text-gray-800')}>Montre-moi une pièce</h3>
         <p className={'text-sm ' + (darkMode ? 'text-gray-400' : 'text-gray-500')}>
           Trace un cadre autour d'<strong>une seule</strong> pièce. Le cadre reste affiché tant que
-          tu n'as pas validé. Cela sert à connaître la taille d'une pièce, ce qui permet de compter
-          correctement les pièces collées les unes aux autres.
+          tu n'as pas validé.{' '}
+          {ia
+            ? "L'IA ne comptera alors que les pièces du même type que celle-ci."
+            : "Cela sert à connaître la taille d'une pièce, ce qui permet de compter correctement les pièces collées les unes aux autres."}
         </p>
         <canvas ref={cvRef}
           onMouseDown={down} onMouseMove={move} onMouseUp={up} onMouseLeave={up}
@@ -909,6 +916,103 @@ function SelecteurTaille({ bitmap, largeur, hauteur, darkMode, onValider, onAnnu
       </div>
     </div>
   );
+}
+
+/* ============================================= MODE IA : BOÎTES → RÉGIONS
+
+   L'IA renvoie une boîte par pièce. Chaque boîte (réduite de 6 %) devient une
+   région de la carte, dans l'ordre des surfaces décroissantes pour que les
+   petites pièces restent visibles par-dessus les grandes. Le numéro de la
+   région est celui de la graine + 1, comme dans le mode local : toucher un
+   contour retire la graine correspondante.
+
+   Les groupes viennent des étiquettes de l'IA (« wagon rouge », …), pas d'un
+   regroupement par couleur. `alias` permet de fusionner deux étiquettes :
+   renommer un groupe du nom d'un autre les rassemble. */
+
+function construireIA(data, r, gr, alias, gabarits) {
+  const w = r.w, h = r.h;
+  const carte = new Int32Array(w * h);
+  const bx = gr.map(g => {
+    const b = g.box, mx = (b.x1 - b.x0) * 0.06, my = (b.y1 - b.y0) * 0.06;
+    return {
+      x0: Math.max(0, Math.round(b.x0 + mx)), x1: Math.min(w - 1, Math.round(b.x1 - mx)),
+      y0: Math.max(0, Math.round(b.y0 + my)), y1: Math.min(h - 1, Math.round(b.y1 - my))
+    };
+  });
+  const surf = b => Math.max(0, b.x1 - b.x0) * Math.max(0, b.y1 - b.y0);
+  gr.map((_, k) => k).sort((a, b) => surf(bx[b]) - surf(bx[a])).forEach(k => {
+    const b = bx[k];
+    for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) carte[y * w + x] = k + 1;
+  });
+
+  const regions = gr.map((g, k) => ({
+    label: k + 1, area: 0, sx: 0, sy: 0, minX: w, maxX: 0, minY: h, maxY: 0,
+    cx: g.x, cy: g.y, libre: false, groupe: null, rgb: [160, 160, 160]
+  }));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const k = carte[y * w + x];
+      if (!k) continue;
+      const q = regions[k - 1];
+      q.area++; q.sx += x; q.sy += y;
+      if (x < q.minX) q.minX = x; if (x > q.maxX) q.maxX = x;
+      if (y < q.minY) q.minY = y; if (y > q.maxY) q.maxY = y;
+    }
+  }
+  regions.forEach(q => { if (q.area) { q.cx = q.sx / q.area; q.cy = q.sy / q.area; } });
+
+  const effectif = g => alias[normaliserLabel(g.etiquette)] || g.etiquette || 'pièce';
+  const table = new Map();
+  gr.forEach((g, k) => {
+    const nom = effectif(g), cle = 'e:' + normaliserLabel(nom);
+    if (!table.has(cle)) table.set(cle, { cle, nom, membres: [], brut: new Set() });
+    const e = table.get(cle);
+    e.membres.push(k);
+    e.brut.add(normaliserLabel(g.etiquette));
+  });
+
+  const gs = [...table.values()].map(e => {
+    const utiles = e.membres.filter(k => regions[k].area >= 12);
+    const rep = utiles.length ? utiles.reduce((a, b) => (regions[a].area >= regions[b].area ? a : b)) : null;
+    const sg = rep !== null ? signature(data, carte, regions[rep]) : null;
+    const rgb = sg ? sg.rgb : [160, 160, 160];
+    const gb = (gabarits || []).find(x => normaliserLabel(x.nom) === normaliserLabel(e.nom));
+    return {
+      cle: e.cle, nom: e.nom, nomAuto: e.nom, brut: [...e.brut],
+      rgb,
+      signature: sg ? {
+        rgb: sg.rgb.map(v => Math.round(v)), lab: sg.lab,
+        accent: sg.accent.map(v => Math.round(v)), labAccent: sg.labAccent,
+        elong: sg.elong, etalement: sg.etalement, solidite: sg.solidite, rayonRel: sg.rayonRel, area: sg.area
+      } : null,
+      vignette: sg ? vignette(data, regions[rep], sg.masque, sg.bw, sg.bh) : null,
+      membres: e.membres,
+      attendu: gb ? gb.attendu : null
+    };
+  });
+  gs.sort((a, b) => b.membres.length - a.membres.length);
+  gs.forEach(g => g.membres.forEach(k => { regions[k].groupe = g.cle; regions[k].rgb = g.rgb; }));
+  return { carte, regions, groupes: gs };
+}
+
+/* Appelle l'IA et fabrique le même objet `res` que le mode local. */
+async function analyserIA(data, bmp, p) {
+  const { boites, zones } = await detecterIA(bmp, p);
+  const w = data.width, h = data.height;
+  const gr = boites.map(b => ({
+    x: (b.x0 + b.x1) / 2 * w, y: (b.y0 + b.y1) / 2 * h,
+    box: { x0: b.x0 * w, y0: b.y0 * h, x1: b.x1 * w, y1: b.y1 * h },
+    etiquette: b.etiquette
+  }));
+  const cotes = gr.map(g => Math.sqrt((g.box.x1 - g.box.x0) * (g.box.y1 - g.box.y0))).sort((a, b) => a - b);
+  const cote = cotes.length ? cotes[cotes.length >> 1] : Math.min(w, h) / 15;
+  const r = {
+    ia: true, zones, w, h, cote, M: cote * cote, total: gr.length,
+    mask: null, labels: null, seuil: 0, rejets: 0, avertissement: null, amasMax: 1,
+    fraction: 0, fondEstime: null, fondDouteux: false
+  };
+  return { r, gr };
 }
 
 /* =========================================================== COMPOSANT PAGE */
@@ -933,8 +1037,15 @@ export default function ComptagePhoto() {
   const [selecteur, setSelecteur] = useState(false);
   const [pointeFond, setPointeFond] = useState(false);
   const [glisse, setGlisse] = useState(false);
+  // mode IA
+  const [consigne, setConsigne] = useState('');
+  const [exemple, setExemple] = useState(null);   // JPEG base64 d'une pièce montrée à l'IA
+  const [alias, setAlias] = useState({});         // fusion d'étiquettes (voir construireIA)
+  const [progression, setProgression] = useState('');
+  const bmpRef = useRef(null);
 
   const [opts, setOpts] = useState({
+    mode: 'ia',
     sensibilite: 1,
     ignorerOmbres: true,
     separer: true,
@@ -955,6 +1066,8 @@ export default function ComptagePhoto() {
     setDarkMode(localStorage.getItem('darkMode') === 'true');
     try { const s = localStorage.getItem(STORAGE_KEY); if (s) setJeux(JSON.parse(s)); }
     catch (e) { console.error(e); }
+    const m = localStorage.getItem('meeple_comptage_mode');
+    if (m === 'local' || m === 'ia') setOpts(o => ({ ...o, mode: m }));
   }, []);
 
   const flash = m => { setToast(m); setTimeout(() => setToast(''), 3200); };
@@ -968,7 +1081,8 @@ export default function ComptagePhoto() {
 
   /* Reconstruit contours et groupes à partir d'un jeu de points. Appelé à
      l'analyse, puis à chaque clic d'ajout ou de retrait. */
-  const construire = useCallback((data, r, gr, o) => {
+  const construire = useCallback((data, r, gr, o, al) => {
+    if (r.ia) return construireIA(data, r, gr, al || {}, gabarits);
     const cote = Math.sqrt(r.M || 900);
     const { carte: cc, regions: rg } = repartir(r.labels, r.w, r.h, gr, cote);
     const idx = [], sigs = [];
@@ -1019,14 +1133,33 @@ export default function ComptagePhoto() {
     return { carte: cc, regions: rg, groupes: gs };
   }, [gabarits]);
 
-  const lancer = useCallback(async (data, o) => {
+  /* ctx : { bmp, jeu, consigne, exemple, etiquettes, detail } — utilisé en mode IA.
+     En cas d'échec de l'IA (réseau, quota, clé absente), on retombe sur le
+     mode local plutôt que de laisser l'utilisateur sans résultat. */
+  const lancer = useCallback(async (data, o, ctx) => {
     if (!data) return;
     setBusy(true);
+    setProgression('');
     await new Promise(r => setTimeout(r, 40));
     try {
-      const r = analyser(data, o);
-      const gr = r.pieces.map(p => ({ x: p.cx, y: p.cy }));
-      const out = construire(data, r, gr, o);
+      let r = null, gr = null;
+      if (o.mode === 'ia' && ctx && ctx.bmp) {
+        try {
+          ({ r, gr } = await analyserIA(data, ctx.bmp, {
+            jeu: ctx.jeu, consigne: ctx.consigne, etiquettes: ctx.etiquettes,
+            exemple: ctx.exemple, detail: ctx.detail, progression: setProgression
+          }));
+        } catch (e) {
+          console.error(e);
+          flash('IA indisponible (' + e.message + ') — analyse locale utilisée');
+          r = null;
+        }
+      }
+      if (!r) {
+        r = analyser(data, o);
+        gr = r.pieces.map(p => ({ x: p.cx, y: p.cy }));
+      }
+      const out = construire(data, r, gr, o, ctx && ctx.alias);
       setRes(r);
       setGraines(gr);
       setZonage(out.carte);
@@ -1036,19 +1169,30 @@ export default function ComptagePhoto() {
       console.error(e);
       flash("L'analyse a échoué");
     }
+    setProgression('');
     setBusy(false);
   }, [construire]);
+
+  /* Contexte envoyé à l'IA : état courant + éventuelles surcharges. */
+  const contexteIA = (extra = {}) => ({
+    bmp: bmpRef.current || bitmap,
+    jeu, consigne, exemple, alias: {},
+    etiquettes: gabarits ? gabarits.map(g => g.nom) : [],
+    ...extra
+  });
 
   const charger = async f => {
     if (!f) return;
     setBusy(true); setRes(null); setGroupes([]);
     try {
       const bmp = await fileToBitmap(f);
-      const d = drawToImageData(bmp, opts.resolution);
+      bmpRef.current = bmp;
+      const d = drawToImageData(bmp, opts.mode === 'ia' ? Math.max(opts.resolution, 1200) : opts.resolution);
       setBitmap(bmp); setImgData(d);
+      setExemple(null); setAlias({});
       const o = { ...opts, aireRef: 0, fondRef: null };
       setOpts(o);
-      await lancer(d, o);
+      await lancer(d, o, contexteIA({ bmp, exemple: null }));
     } catch (e) { console.error(e); flash('Image illisible'); setBusy(false); }
   };
 
@@ -1164,11 +1308,23 @@ export default function ComptagePhoto() {
     /* Toucher un contour retire la pièce ; toucher ailleurs en pose une.
        Après avoir retiré un contour qui en englobait plusieurs, chaque clic
        à l'intérieur de la forme y découpe une pièce de plus. */
+    /* En mode IA, une pièce ajoutée à la main reçoit une boîte de la taille
+       courante des autres et l'étiquette de la pièce la plus proche. */
+    const nouvelle = () => {
+      if (!res.ia) return { x, y };
+      const c = res.cote;
+      let proche = null, dMin = Infinity;
+      graines.forEach(g => {
+        const d = (g.x - x) * (g.x - x) + (g.y - y) * (g.y - y);
+        if (d < dMin) { dMin = d; proche = g; }
+      });
+      return { x, y, box: { x0: x - c / 2, y0: y - c / 2, x1: x + c / 2, y1: y + c / 2 }, etiquette: proche ? proche.etiquette : 'pièce' };
+    };
     const gr = k > 0
       ? graines.filter((_, i) => i !== k - 1)
-      : [...graines, { x, y }];
+      : [...graines, nouvelle()];
 
-    const out = construire(imgData, res, gr, opts);
+    const out = construire(imgData, res, gr, opts, alias);
     setGraines(gr);
     setZonage(out.carte);
     setRegions(out.regions);
@@ -1223,10 +1379,30 @@ export default function ComptagePhoto() {
   const neutre = darkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700'
     : 'border-gray-200 text-gray-600 hover:bg-gray-50';
 
-  const appliquer = patch => {
+  const appliquer = (patch, extra) => {
     const o = { ...opts, ...patch };
     setOpts(o);
-    if (imgData) lancer(imgData, o);
+    if (imgData) lancer(imgData, o, contexteIA(extra));
+  };
+
+  const changerMode = m => {
+    try { localStorage.setItem('meeple_comptage_mode', m); } catch (e) { /* sans effet */ }
+    setAlias({});
+    appliquer({ mode: m });
+  };
+
+  /* Renommer un groupe du nom d'un autre les fusionne (mode IA). */
+  const renommerIA = g => {
+    if (!res || !res.ia) return;
+    const nom = (g.nom || '').trim();
+    if (!nom || nom === g.nomAuto) return;
+    const a = { ...alias };
+    (g.brut || []).forEach(b => { a[b] = nom; });
+    setAlias(a);
+    const out = construire(imgData, res, graines, opts, a);
+    setZonage(out.carte);
+    setRegions(out.regions);
+    setGroupes(out.groupes);
   };
 
   return (
@@ -1239,9 +1415,19 @@ export default function ComptagePhoto() {
 
       {selecteur && bitmap && res && (
         <SelecteurTaille bitmap={bitmap} largeur={res.w} hauteur={res.h} darkMode={darkMode}
+          ia={opts.mode === 'ia'}
           onAnnuler={() => setSelecteur(false)}
           onValider={r => {
             setSelecteur(false);
+            if (opts.mode === 'ia') {
+              const ex = versJpeg(bmpRef.current || bitmap, {
+                x0: r.x / res.w, y0: r.y / res.h, x1: (r.x + r.w) / res.w, y1: (r.y + r.h) / res.h
+              }, 512);
+              setExemple(ex); setAlias({});
+              appliquer({}, { exemple: ex });
+              flash('Pièce montrée à l\u2019IA');
+              return;
+            }
             const aire = Math.round(r.w * r.h * 0.72);
             appliquer({ aireRef: aire });
             flash('Taille de référence prise en compte');
@@ -1261,7 +1447,7 @@ export default function ComptagePhoto() {
               </button>
               <div>
                 <h1 className={'text-2xl font-bold ' + T}>Comptage photo</h1>
-                <p className={'text-sm ' + S}>Une photo, les pièces sont trouvées et comptées</p>
+                <p className={'text-sm ' + S}>{opts.mode === 'ia' ? 'Une photo, l\u2019IA trouve et compte les pièces' : 'Une photo, les pièces sont trouvées et comptées'}</p>
               </div>
             </div>
             <button onClick={() => { const v = !darkMode; setDarkMode(v); localStorage.setItem('darkMode', String(v)); }}
@@ -1284,6 +1470,15 @@ export default function ComptagePhoto() {
             <input ref={galRef} type="file" accept="image/*" className="hidden"
               onChange={e => { charger(e.target.files && e.target.files[0]); e.target.value = ''; }} />
 
+            <div className={'inline-flex rounded-xl p-1 text-sm font-medium ' + (darkMode ? 'bg-gray-900' : 'bg-gray-100')}>
+              {[['ia', 'IA (recommandé)'], ['local', 'Local (hors-ligne)']].map(([m, lib]) => (
+                <button key={m} onClick={() => opts.mode !== m && changerMode(m)}
+                  className={'px-3 py-1.5 rounded-lg transition ' + (opts.mode === m ? 'bg-blue-600 text-white' : S)}>
+                  {lib}
+                </button>
+              ))}
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <button onClick={() => camRef.current && camRef.current.click()}
                 className="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium">
@@ -1293,7 +1488,20 @@ export default function ComptagePhoto() {
                 className={'px-4 py-3 rounded-xl font-medium border ' + neutre}>
                 Choisir une image
               </button>
-              {res && (
+              {res && res.ia && (
+                <>
+                  <button onClick={() => setSelecteur(true)}
+                    className={'px-4 py-3 rounded-xl font-medium border ' + (exemple ? 'bg-emerald-600 border-emerald-600 text-white' : neutre)}>
+                    Montre-moi une pièce
+                  </button>
+                  <button onClick={() => appliquer({}, { detail: true })} disabled={busy}
+                    title="Découpe la photo en zones et analyse chacune : plus lent, plus précis quand il y a beaucoup de pièces"
+                    className={'px-4 py-3 rounded-xl font-medium border disabled:opacity-50 ' + neutre}>
+                    Analyse détaillée
+                  </button>
+                </>
+              )}
+              {res && !res.ia && (
                 <>
                   <button onClick={() => { setPointeFond(v => !v); }}
                     className={'px-4 py-3 rounded-xl font-medium border ' + (pointeFond ? 'bg-amber-500 border-amber-500 text-black' : (opts.fondRef ? 'bg-emerald-600 border-emerald-600 text-white' : neutre))}>
@@ -1314,11 +1522,47 @@ export default function ComptagePhoto() {
               </button>
             </div>
 
+            {opts.mode === 'ia' && (
+              <div className="space-y-1.5">
+                <div className="flex gap-2">
+                  <input value={consigne} onChange={e => setConsigne(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && imgData && !busy) appliquer({}); }}
+                    placeholder="Que compter ? (facultatif) ex : les wagons rouges"
+                    className={'flex-1 min-w-0 px-3 py-2 rounded-xl border text-sm ' + champ} />
+                  {imgData && (
+                    <button onClick={() => appliquer({})} disabled={busy}
+                      className={'px-3 py-2 rounded-xl text-sm font-medium border disabled:opacity-50 ' + neutre}>
+                      Relancer
+                    </button>
+                  )}
+                </div>
+                {exemple && (
+                  <button onClick={() => { setExemple(null); appliquer({}, { exemple: null }); }}
+                    className={'text-xs underline ' + S}>
+                    Oublier la pièce montrée
+                  </button>
+                )}
+              </div>
+            )}
+
             <p className={'text-xs ' + S}>
               Sur ordinateur, tu peux glisser une image ici ou la coller avec Ctrl+V.
+              {opts.mode === 'ia' && ' Photo de dessus, pièces séparées, fond uni : c\u2019est ce qui donne les meilleurs résultats.'}
             </p>
 
-            {reglagesOuverts && (
+            {reglagesOuverts && opts.mode === 'ia' && (
+              <div className={'rounded-xl p-4 space-y-2 text-sm ' + (darkMode ? 'bg-gray-900 text-gray-300' : 'bg-gray-50 text-gray-600')}>
+                <p>
+                  En mode IA, la photo est envoyée au serveur pour être analysée ; rien n'est conservé.
+                  Au-delà de {SEUIL_TUILES} pièces, elle est automatiquement découpée en zones pour ne rien oublier.
+                </p>
+                <p>
+                  Pour fusionner deux groupes que l'IA a séparés par erreur, renomme l'un du nom de l'autre.
+                  Les groupes mémorisés pour un jeu sont réutilisés d'une photo à l'autre.
+                </p>
+              </div>
+            )}
+            {reglagesOuverts && opts.mode !== 'ia' && (
               <div className={'rounded-xl p-4 space-y-4 ' + (darkMode ? 'bg-gray-900' : 'bg-gray-50')}>
                 <Curseur label="Sensibilité" darkMode={darkMode}
                   aide="Vers la gauche, attrape les pièces peu contrastées (blanc sur clair). Vers la droite, ignore ce qui ressemble au fond."
@@ -1354,7 +1598,7 @@ export default function ComptagePhoto() {
             {busy && (
               <div className={'flex items-center gap-3 text-sm ' + S}>
                 <span className="inline-block w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                Analyse en cours…
+                {progression || 'Analyse en cours…'}
               </div>
             )}
 
@@ -1369,7 +1613,13 @@ export default function ComptagePhoto() {
                       l'ajouter. Si un contour en englobe plusieurs d'un coup, retire-le puis
                       touche chaque pièce : le contour se redécoupe autour de chaque point.
                     </p>
-                    <p className="mt-1 flex items-center gap-2 flex-wrap">
+                    {res.ia && (
+                      <p className="mt-1">
+                        {res.total} pièce{res.total > 1 ? 's' : ''} repérée{res.total > 1 ? 's' : ''} par l'IA
+                        {res.zones ? ' (analyse détaillée par zones)' : ''}. L'IA peut se tromper : vérifie les contours.
+                      </p>
+                    )}
+                    {!res.ia && <p className="mt-1 flex items-center gap-2 flex-wrap">
                       <span>{Math.round(res.fraction * 100)} % de l'image vue comme des pièces.</span>
                       {res.fondEstime && (
                         <span className="inline-flex items-center gap-1">
@@ -1378,7 +1628,7 @@ export default function ComptagePhoto() {
                             style={{ background: cssRgb(res.fondEstime) }} />
                         </span>
                       )}
-                    </p>
+                    </p>}
                   </div>
                 )}
               </div>
@@ -1444,6 +1694,7 @@ export default function ComptagePhoto() {
                           const v = e.target.value;
                           setGroupes(gs => gs.map(x => x.cle === g.cle ? { ...x, nom: v } : x));
                         }}
+                        onBlur={() => renommerIA(g)}
                         className={'flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border text-sm ' + champ} />
                       {ecart != null && (
                         <span className={'text-xs font-medium shrink-0 ' + (ecart === 0 ? 'text-emerald-500' : 'text-red-500')}>
@@ -1508,8 +1759,9 @@ export default function ComptagePhoto() {
           {res && groupes.length === 0 && !busy && (
             <div className={carte + ' border rounded-2xl shadow-xl p-5'}>
               <p className={'text-sm leading-relaxed ' + S}>
-                Aucune pièce trouvée. Baisse la sensibilité dans les réglages, ou vérifie avec
-                « Voir le masque » ce que l'outil isole.
+                {res.ia
+                  ? "Aucune pièce trouvée. Reprends la photo de plus près et de dessus, ou précise ce qu'il faut compter dans le champ « Que compter ? ». Tu peux aussi toucher la photo pour ajouter les pièces à la main."
+                  : "Aucune pièce trouvée. Baisse la sensibilité dans les réglages, ou vérifie avec « Voir le masque » ce que l'outil isole."}
               </p>
             </div>
           )}

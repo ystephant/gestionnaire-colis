@@ -29,7 +29,116 @@ const baseName = (name) => {
   const plusIdx = name.indexOf(' +');
   return (plusIdx !== -1 ? name.slice(0, plusIdx) : name).trim();
 };
-const baseNameLow = (name) => baseName(name).toLowerCase();
+/* Clé de comparaison : « Akropolis », « akropolis » et « Akropólis  » sont le même jeu. */
+const baseNameLow = (name) =>
+  baseName(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// ── [18] Calcul du stock (fonction pure) ─────────────────────────
+/* Les jeux sont regroupés par `baseNameLow` : un achat saisi « Akropolis » et
+   une vente saisie « akropolis » comptent pour le même jeu (avant, ils
+   fabriquaient un faux stock négatif). Le nom affiché est celui de la
+   transaction la plus récente.
+
+   Trois nombres à ne pas confondre :
+   - netRaw : le solde réel (achats − ventes − retraits − incomplets), qui peut être < 0
+   - net    : le nombre affiché = max(exemplaires en vente, netRaw)
+   - un jeu en vente est forcément en stock, d'où le max. */
+function calculerStock({ transactions, salePhotos, incompleteGames, hiddenGames }) {
+  const now   = Date.now();
+  const LIMIT = INCOMING_DAYS * 24 * 60 * 60 * 1000;
+  const map   = {};
+  const nouveau = (name) => ({
+    name, buys: 0, sells: 0, manualRemovals: 0,
+    incomingBuys: [], lastBuyDate: null, lastSellDate: null,
+  });
+
+  (transactions || []).forEach(t => {
+    if (!t.game_name || isLot(t.game_name)) return;
+    const k = baseNameLow(t.game_name);
+    if (!k) return;
+    if (!map[k]) map[k] = nouveau(baseName(t.game_name));
+    const g = map[k];
+    const d = new Date(t.created_at);
+
+    if (t.type === 'buy') {
+      g.buys++;
+      // [14] Un achat "sorti du transit" (t.in_transit === false) n'est plus compté comme en transit
+      if (t.in_transit !== false && now - d.getTime() < LIMIT) g.incomingBuys.push(d);
+      if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
+    } else if (t.type === 'stock_add') {
+      g.buys++;
+      if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
+    } else if (t.type === 'sell') {
+      g.sells++;
+      if (!g.lastSellDate || d > new Date(g.lastSellDate)) g.lastSellDate = t.created_at;
+    } else if (t.type === 'stock_remove') {
+      g.manualRemovals++;
+    }
+  });
+
+  const allTxNamesLow = (transactions || [])
+    .filter(t => t.game_name && !isLot(t.game_name))
+    .map(t => baseNameLow(t.game_name));
+
+  const incompleteMap = {};
+  (incompleteGames || []).forEach(i => {
+    const k = baseNameLow(i.game_name);
+    incompleteMap[k] = (incompleteMap[k] || 0) + 1;
+  });
+
+  // [16] Jeux évincés manuellement — exclus quel que soit le solde calculé
+  const hiddenSetLow = new Set((hiddenGames || []).map(h => baseNameLow(h.game_name)));
+
+  const enVenteTagsPerName = {};
+  (salePhotos || [])
+    .filter(p => p.status === 'en_vente' && p.game_tag)
+    .forEach(p => {
+      const key = baseNameLow(p.game_tag.split(' • ')[0].trim());
+      if (!enVenteTagsPerName[key]) enVenteTagsPerName[key] = new Set();
+      enVenteTagsPerName[key].add(p.game_tag);
+    });
+  const enVenteCount = {};
+  Object.entries(enVenteTagsPerName).forEach(([key, tags]) => {
+    enVenteCount[key] = tags.size;
+  });
+
+  (salePhotos || [])
+    .filter(p => p.status === 'en_vente' && p.game_tag)
+    .forEach(p => {
+      const name = baseName(p.game_tag.split(' • ')[0].trim());
+      const k = baseNameLow(name);
+      if (k && !map[k]) map[k] = nouveau(name);
+    });
+
+  return Object.values(map)
+    .map(g => {
+      const incomingCount  = g.incomingBuys.length;
+      const sortedIncoming = [...g.incomingBuys].sort((a, b) => a - b);
+      const oldestIncoming = sortedIncoming[0] || null;
+      const daysLeft = oldestIncoming
+        ? Math.max(0, INCOMING_DAYS - Math.floor((now - oldestIncoming.getTime()) / 86400000))
+        : null;
+
+      const nameLow        = baseNameLow(g.name);
+      const incompletCount = incompleteMap[nameLow] || 0;
+      const netRaw         = g.buys - g.sells - g.manualRemovals - incompletCount;
+      const enVenteCopies  = enVenteCount[nameLow] || 0;
+      const isEnVente      = enVenteCopies > 0;
+      const net            = Math.max(enVenteCopies, netRaw);
+      const confirmedStock = Math.max(0, net - incomingCount);
+      const canList        = confirmedStock > 0 && !isEnVente;
+
+      const hasTxLooseMatch = allTxNamesLow.some(n =>
+        n.includes(nameLow) || nameLow.includes(n)
+      );
+
+      // [15] Stock négatif = plus de sorties (ventes/retraits) que d'entrées (achats), signe d'un écart d'historique
+      const isNegativeStock = netRaw < 0;
+
+      return { ...g, incomingCount, daysLeft, incompletCount, net, netRaw, isNegativeStock, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
+    })
+    .filter(g => (g.net > 0 || g.isNegativeStock) && !hiddenSetLow.has(baseNameLow(g.name)));
+}
 
 // ── [8] Skeleton Card ──────────────────────────────────────────
 const SkeletonCard = ({ dm }) => (
@@ -118,6 +227,13 @@ export default function StockManager() {
   const addWrapRef    = useRef(null);
   const toastTimerRef = useRef(null);
 
+  // Données les plus récentes (état local + insertions en cours), lisibles hors rendu.
+  const donneesRef  = useRef({ transactions: [], salePhotos: [], incompleteGames: [], hiddenGames: [] });
+  // Numéro du dernier chargement lancé : une réponse plus ancienne est ignorée.
+  const loadSeqRef  = useRef(0);
+  // File d'attente des modifications : un clic rapide sur « + » attend la fin du précédent.
+  const fileRef     = useRef(Promise.resolve());
+
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
     const u = localStorage.getItem('username');
@@ -146,16 +262,43 @@ export default function StockManager() {
   }, [username]);
 
   // ── Chargement ───────────────────────────────────────────────
+  /* Supabase renvoie 1000 lignes maximum par requête : au-delà, les achats les plus
+     anciens étaient coupés et le jeu apparaissait en stock négatif. On pagine donc. */
+  const chargerToutesLesTransactions = async () => {
+    const PAGE = 1000;
+    const vues = new Set();
+    const toutes = [];
+    for (let from = 0; from < 100 * PAGE; from += PAGE) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('id, type, game_name, price, created_at, in_transit')
+        .eq('user_id', username)
+        .in('type', ['buy', 'sell', 'stock_add', 'game_ref', 'stock_remove'])
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      (data || []).forEach(t => { if (!vues.has(t.id)) { vues.add(t.id); toutes.push(t); } });
+      if (!data || data.length < PAGE) break;
+    }
+    return toutes;
+  };
+
+  // Met à jour l'état ET la référence lisible immédiatement
+  const appliquerDonnees = (partiel) => {
+    donneesRef.current = { ...donneesRef.current, ...partiel };
+    if (partiel.transactions    !== undefined) setTransactions(partiel.transactions);
+    if (partiel.salePhotos      !== undefined) setSalePhotos(partiel.salePhotos);
+    if (partiel.incompleteGames !== undefined) setIncompleteGames(partiel.incompleteGames);
+    if (partiel.hiddenGames     !== undefined) setHiddenGames(partiel.hiddenGames);
+  };
+
   const loadData = async () => {
     if (!username) return;
+    const monNumero = ++loadSeqRef.current;
     try {
-      const [txRes, photoRes, incRes, hiddenRes] = await Promise.all([
-        supabase
-          .from('transactions')
-          .select('id, type, game_name, price, created_at, in_transit')
-          .eq('user_id', username)
-          .in('type', ['buy', 'sell', 'stock_add', 'game_ref', 'stock_remove'])
-          .order('created_at', { ascending: false }),
+      const [txData, photoRes, incRes, hiddenRes] = await Promise.all([
+        chargerToutesLesTransactions(),
         supabase
           .from('sale_photos')
           .select('id, game_tag, status')
@@ -172,18 +315,22 @@ export default function StockManager() {
           .order('created_at', { ascending: false }),
       ]);
 
-      if (txRes.error)    throw txRes.error;
       if (photoRes.error) throw photoRes.error;
       if (incRes.error)   throw incRes.error;
       if (hiddenRes.error) throw hiddenRes.error;
 
-      setTransactions(txRes.data    || []);
-      setSalePhotos(photoRes.data   || []);
-      setIncompleteGames(incRes.data || []);
-      setHiddenGames(hiddenRes.data || []);
+      // Un chargement plus récent a été lancé entre-temps : cette réponse est périmée
+      if (monNumero !== loadSeqRef.current) return;
+
+      appliquerDonnees({
+        transactions:    txData,
+        salePhotos:      photoRes.data  || [],
+        incompleteGames: incRes.data    || [],
+        hiddenGames:     hiddenRes.data || [],
+      });
 
       const names = [...new Set(
-        (txRes.data || []).map(t => t.game_name).filter(n => n && !isLot(n)).map(n => baseName(n))
+        txData.map(t => t.game_name).filter(n => n && !isLot(n)).map(n => baseName(n))
       )].sort((a, b) => a.localeCompare(b, 'fr'));
       setAllGameNames(names);
     } catch (err) {
@@ -217,109 +364,7 @@ export default function StockManager() {
   }, []);
 
   // ── Calcul du stock ──────────────────────────────────────────
-  const computeStock = () => {
-    const now   = Date.now();
-    const LIMIT = INCOMING_DAYS * 24 * 60 * 60 * 1000;
-    const map   = {};
-
-    (transactions || []).forEach(t => {
-      if (!t.game_name || isLot(t.game_name)) return;
-      const n = baseName(t.game_name);
-      if (!map[n]) {
-        map[n] = {
-          name: n, buys: 0, sells: 0,
-          manualRemovals: 0,
-          incomingBuys: [],
-          lastBuyDate: null, lastSellDate: null,
-        };
-      }
-      const g = map[n];
-      const d = new Date(t.created_at);
-
-      if (t.type === 'buy') {
-        g.buys++;
-        // [14] Un achat "sorti du transit" (t.in_transit === false) n'est plus compté comme en transit
-        if (t.in_transit !== false && now - d.getTime() < LIMIT) g.incomingBuys.push(d);
-        if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
-      } else if (t.type === 'stock_add') {
-        g.buys++;
-        if (!g.lastBuyDate || d > new Date(g.lastBuyDate)) g.lastBuyDate = t.created_at;
-      } else if (t.type === 'sell') {
-        g.sells++;
-        if (!g.lastSellDate || d > new Date(g.lastSellDate)) g.lastSellDate = t.created_at;
-      } else if (t.type === 'stock_remove') {
-        g.manualRemovals++;
-      }
-    });
-
-    const allTxNamesLow = (transactions || [])
-      .filter(t => t.game_name && !isLot(t.game_name))
-      .map(t => baseNameLow(t.game_name));
-
-    const incompleteMap = {};
-    (incompleteGames || []).forEach(i => {
-      incompleteMap[i.game_name] = (incompleteMap[i.game_name] || 0) + 1;
-    });
-
-    // [16] Jeux évincés manuellement — exclus quel que soit le solde calculé
-    const hiddenSetLow = new Set((hiddenGames || []).map(h => baseNameLow(h.game_name)));
-
-    const enVenteTagsPerName = {};
-    (salePhotos || [])
-      .filter(p => p.status === 'en_vente' && p.game_tag)
-      .forEach(p => {
-        const key = baseNameLow(p.game_tag.split(' \u2022 ')[0].trim());
-        if (!enVenteTagsPerName[key]) enVenteTagsPerName[key] = new Set();
-        enVenteTagsPerName[key].add(p.game_tag);
-      });
-    const enVenteCount = {};
-    Object.entries(enVenteTagsPerName).forEach(([key, tags]) => {
-      enVenteCount[key] = tags.size;
-    });
-
-    (salePhotos || [])
-      .filter(p => p.status === 'en_vente' && p.game_tag)
-      .forEach(p => {
-        const name = baseName(p.game_tag.split(' \u2022 ')[0].trim());
-        if (!map[name]) {
-          map[name] = {
-            name, buys: 0, sells: 0,
-            manualRemovals: 0,
-            incomingBuys: [],
-            lastBuyDate: null, lastSellDate: null,
-          };
-        }
-      });
-
-    return Object.values(map)
-      .map(g => {
-        const incomingCount  = g.incomingBuys.length;
-        const sortedIncoming = [...g.incomingBuys].sort((a, b) => a - b);
-        const oldestIncoming = sortedIncoming[0] || null;
-        const daysLeft = oldestIncoming
-          ? Math.max(0, INCOMING_DAYS - Math.floor((now - oldestIncoming.getTime()) / 86400000))
-          : null;
-
-        const incompletCount = incompleteMap[g.name] || 0;
-        const netRaw         = g.buys - g.sells - g.manualRemovals - incompletCount;
-        const enVenteCopies  = enVenteCount[baseNameLow(g.name)] || 0;
-        const isEnVente      = enVenteCopies > 0;
-        const net            = Math.max(enVenteCopies, netRaw);
-        const confirmedStock = Math.max(0, net - incomingCount);
-        const canList        = confirmedStock > 0 && !isEnVente;
-
-        const nameLow         = baseNameLow(g.name);
-        const hasTxLooseMatch = allTxNamesLow.some(n =>
-          n.includes(nameLow) || nameLow.includes(n)
-        );
-
-        // [15] Stock négatif = plus de sorties (ventes/retraits) que d'entrées (achats), signe d'un écart d'historique
-        const isNegativeStock = netRaw < 0;
-
-        return { ...g, incomingCount, daysLeft, incompletCount, net, netRaw, isNegativeStock, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
-      })
-      .filter(g => (g.net > 0 || g.isNegativeStock) && !hiddenSetLow.has(baseNameLow(g.name)));
-  };
+  const computeStock = () => calculerStock({ transactions, salePhotos, incompleteGames, hiddenGames });
 
   // ── [2] Toast avec action (undo) ─────────────────────────────
   const showToast = (msg, type = 'success', action = null) => {
@@ -329,58 +374,98 @@ export default function StockManager() {
   };
 
   // ── Actions ──────────────────────────────────────────────────
-  const handleAddManual = async () => {
+  const enfiler = (fn) => {
+    const p = fileRef.current.then(() => fn(), () => fn());
+    fileRef.current = p.catch(() => {});
+    return p;
+  };
+
+  // Insère des lignes de transaction et les rend visibles tout de suite dans l'écran
+  const insererTransactions = async (rows) => {
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert(rows)
+      .select('id, type, game_name, price, created_at, in_transit');
+    if (error) throw error;
+    const ajoutees = data || [];
+    appliquerDonnees({ transactions: [...ajoutees, ...donneesRef.current.transactions] });
+    return ajoutees;
+  };
+
+  // État actuel d'un jeu (calculé sur les données les plus fraîches)
+  const etatJeu = (gameName) => {
+    const k = baseNameLow(gameName);
+    return calculerStock(donneesRef.current).find(x => baseNameLow(x.name) === k)
+      || { name: baseName(gameName), net: 0, netRaw: 0, enVenteCopies: 0 };
+  };
+
+  const handleAddManual = () => {
     const name = addName.trim();
     const qty  = parseInt(addQty, 10);
     if (!name || isNaN(qty) || qty < 1) return;
     setAddLoading(true);
-    try {
-      const rows = Array.from({ length: qty }, () => ({
-        user_id: username, type: 'stock_add', game_name: name, price: 0,
-      }));
-      const { error } = await supabase.from('transactions').insert(rows);
-      if (error) throw error;
-      showToast(`${qty} × "${name}" ajouté${qty > 1 ? 's' : ''} au stock`);
-      setShowAddModal(false); setAddName(''); setAddQty('1');
-      await loadData();
-    } catch (err) {
-      showToast("Erreur lors de l'ajout", 'error');
-    } finally {
-      setAddLoading(false);
-    }
+    return enfiler(async () => {
+      try {
+        const rows = Array.from({ length: qty }, () => ({
+          user_id: username, type: 'stock_add', game_name: name, price: 0,
+        }));
+        await insererTransactions(rows);
+        showToast(`${qty} × "${name}" ajouté${qty > 1 ? 's' : ''} au stock`);
+        setShowAddModal(false); setAddName(''); setAddQty('1');
+        await loadData();
+      } catch (err) {
+        showToast("Erreur lors de l'ajout", 'error');
+      } finally {
+        setAddLoading(false);
+      }
+    });
   };
 
   // [2] Retrait avec undo via .select() pour récupérer l'id
-  const handleRemoveOne = async (gameName) => {
+  const handleRemoveOne = (gameName) => enfiler(async () => {
+    const cur = etatJeu(gameName);
+    // Le « − » ne doit jamais enregistrer un retrait invisible à l'écran
+    if (cur.net <= cur.enVenteCopies) {
+      showToast(
+        cur.enVenteCopies > 0
+          ? `"${cur.name}" : ${cur.enVenteCopies} exemplaire${cur.enVenteCopies > 1 ? 's' : ''} en vente — retirez d'abord l'annonce`
+          : `"${cur.name}" n'a plus d'exemplaire à retirer`,
+        'error'
+      );
+      return;
+    }
     try {
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert({ user_id: username, type: 'stock_remove', game_name: gameName, price: 0 })
-        .select('id')
-        .single();
-      if (error) throw error;
+      const [ligne] = await insererTransactions([
+        { user_id: username, type: 'stock_remove', game_name: cur.name, price: 0 },
+      ]);
       await loadData();
-      showToast(`1 "${gameName}" retiré du stock`, 'success', {
+      showToast(`1 "${cur.name}" retiré du stock`, 'success', {
         label: 'Annuler',
-        fn: async () => {
-          await supabase.from('transactions').delete().eq('id', data.id);
+        fn: () => enfiler(async () => {
+          await supabase.from('transactions').delete().eq('id', ligne.id);
           await loadData();
           showToast('Action annulée ✓');
-        },
+        }),
       });
     } catch (err) { showToast('Erreur lors du retrait', 'error'); }
-  };
+  });
 
-  const handleAddOne = async (gameName) => {
+  /* « + » doit TOUJOURS faire monter le nombre affiché de 1.
+     Le nombre affiché est max(exemplaires en vente, solde réel) : si le solde réel est
+     en dessous (stock négatif, ou jeu en vente non saisi à l'achat), il faut d'abord
+     combler l'écart, sinon le clic « disparaît » dans le calcul. */
+  const handleAddOne = (gameName) => enfiler(async () => {
+    const cur  = etatJeu(gameName);
+    const nb   = Math.max(1, cur.net + 1 - cur.netRaw);
     try {
-      const { error } = await supabase.from('transactions').insert({
-        user_id: username, type: 'stock_add', game_name: gameName, price: 0,
-      });
-      if (error) throw error;
-      showToast(`1 "${gameName}" ajouté au stock`);
+      const rows = Array.from({ length: nb }, () => ({
+        user_id: username, type: 'stock_add', game_name: cur.name, price: 0,
+      }));
+      await insererTransactions(rows);
+      showToast(`1 "${cur.name}" ajouté au stock`);
       await loadData();
     } catch (err) { showToast("Erreur lors de l'ajout", 'error'); }
-  };
+  });
 
   // [16] Évincer un jeu du stock (masquage manuel, ex: écart d'historique non fondé)
   const handleHideGame = async (gameName) => {
@@ -406,36 +491,62 @@ export default function StockManager() {
   // [17] Corriger le stock négatif : ajoute les entrées manquantes (stock_add, prix 0)
   // pour ramener le solde à 0 — ex: jeu acheté en braderie / possédé avant, non saisi à l'achat.
   // Les ventes ne sont pas touchées, et l'onglet Transactions (qui ne lit que buy/sell) n'est pas impacté.
-  const fixNegativeStock = async (items) => {
-    const rows = [];
-    (items || []).forEach(g => {
-      const missing = Math.abs(g.netRaw);
-      for (let i = 0; i < missing; i++) {
-        rows.push({ user_id: username, type: 'stock_add', game_name: g.name, price: 0 });
+  // Le résultat est vérifié en base : si le serveur n'a rien conservé, l'erreur est affichée.
+  const fixNegativeStock = (items) => {
+    const noms = (items || []).map(g => g.name);
+    if (noms.length === 0) return;
+    setFixNegLoading(true);
+    return enfiler(async () => {
+      try {
+        const rows = [];
+        noms.forEach(nom => {
+          const cur = etatJeu(nom);
+          for (let i = 0; i < Math.max(0, -cur.netRaw); i++) {
+            rows.push({ user_id: username, type: 'stock_add', game_name: cur.name, price: 0 });
+          }
+        });
+        if (rows.length === 0) { await loadData(); return; }
+
+        const ajoutees = await insererTransactions(rows);
+        const ids = ajoutees.map(r => r.id);
+
+        // Vérification : les lignes sont-elles réellement conservées par la base ?
+        const { data: relues, error: errRelue } = await supabase
+          .from('transactions').select('id').in('id', ids);
+        if (errRelue) throw errRelue;
+        if ((relues || []).length < ids.length) {
+          console.error('Correction stock : lignes non conservées', { attendues: ids.length, relues: (relues || []).length });
+          throw new Error('lignes non conservées par la base');
+        }
+
+        await loadData();
+
+        const encoreNegatifs = calculerStock(donneesRef.current)
+          .filter(g => g.isNegativeStock && noms.some(n => baseNameLow(n) === baseNameLow(g.name)));
+        if (encoreNegatifs.length > 0) {
+          console.error('Correction stock : encore négatifs après correction', encoreNegatifs.map(g => ({ nom: g.name, solde: g.netRaw })));
+          showToast(`Correction incomplète : ${encoreNegatifs.length} jeu(x) restent négatifs`, 'error');
+          return;
+        }
+
+        const label = noms.length === 1 ? `"${noms[0]}"` : `${noms.length} jeux`;
+        showToast(`Stock négatif corrigé : ${label}`, 'success', {
+          label: 'Annuler',
+          fn: () => enfiler(async () => {
+            await supabase.from('transactions').delete().in('id', ids);
+            await loadData();
+            showToast('Action annulée ✓');
+          }),
+        });
+      } catch (err) {
+        console.error('Erreur correction stock négatif:', err);
+        await loadData();
+        showToast('Erreur lors de la correction du stock négatif', 'error');
+      } finally {
+        setFixNegLoading(false);
+        setConfirmFixAllNeg(false);
       }
     });
-    if (rows.length === 0) return;
-    setFixNegLoading(true);
-    try {
-      const { data, error } = await supabase.from('transactions').insert(rows).select('id');
-      if (error) throw error;
-      const ids = (data || []).map(r => r.id);
-      await loadData();
-      const label = items.length === 1 ? `"${items[0].name}"` : `${items.length} jeux`;
-      showToast(`Stock négatif corrigé : ${label}`, 'success', {
-        label: 'Annuler',
-        fn: async () => {
-          await supabase.from('transactions').delete().in('id', ids);
-          await loadData();
-          showToast('Action annulée ✓');
-        },
-      });
-    } catch (err) {
-      showToast('Erreur lors de la correction du stock négatif', 'error');
-    } finally {
-      setFixNegLoading(false);
-      setConfirmFixAllNeg(false);
-    }
   };
 
   const handleUnhideGame = async (id, gameName) => {
@@ -455,7 +566,7 @@ export default function StockManager() {
       const candidate = (transactions || [])
         .filter(t =>
           t.type === 'buy' &&
-          baseName(t.game_name) === gameName &&
+          baseNameLow(t.game_name) === baseNameLow(gameName) &&
           t.in_transit !== false &&
           (now - new Date(t.created_at).getTime()) < LIMIT
         )

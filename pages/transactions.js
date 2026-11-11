@@ -1739,133 +1739,133 @@ const loadUserPreferences = async () => {
               >
                 {darkMode ? '☀️' : '🌙'}
               </button>
-
-              {/* Barre de recherche de jeu (loupe) — à droite du soleil sur desktop, dessous sur mobile */}
-              {!statsView && showGameSearch && (
-                <div className="relative w-full md:w-auto md:flex-1 md:min-w-[18rem]">
-                  <div className="flex items-center gap-3">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
-                      <circle cx="11" cy="11" r="8"></circle>
-                      <path d="m21 21-4.35-4.35"></path>
-                    </svg>
-                
-                    <div className="flex-1 relative">
-                      <input
-                        type="text"
-                        value={gameSearch}
-                        onChange={(e) => {
-                          setGameSearch(e.target.value);
-                          setShowSearchSuggestions(e.target.value.length > 0);
-                        }}
-                        onFocus={() => setShowSearchSuggestions(gameSearch.length > 0)}
-                        onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
-                        placeholder="Rechercher un jeu... (ex: Catan, Monopoly)"
-                        className={`w-full px-4 py-2 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
-                          darkMode 
-                            ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-500'
-                        }`}
-                      />
-                  
-                      {/* Suggestions d'autocomplétion */}
-                      {showSearchSuggestions && gameSearch.length > 0 && (
-                        (() => {
-                          const searchSuggestions = gameNameSuggestions.filter(name => 
-                            name.toLowerCase().includes(gameSearch.toLowerCase())
-                          );
-                      
-                          return searchSuggestions.length > 0 && (
-                            <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
-                              darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
-                            }`}>
-                              {searchSuggestions.map((suggestion, index) => (
-                                <button
-                                  key={index}
-                                  onClick={() => {
-                                    setGameSearch(suggestion);
-                                    setShowSearchSuggestions(false);
-                                  }}
-                                  className={`w-full text-left px-4 py-2 hover:bg-indigo-500 hover:text-white transition ${
-                                    darkMode ? 'text-gray-200' : 'text-gray-800'
-                                  }`}
-                                >
-                                  {suggestion}
-                                </button>
-                              ))}
-                            </div>
-                          );
-                        })()
-                      )}
-                    </div>
-                
-                    {gameSearch && (
-                      <button
-                        onClick={() => setGameSearch('')}
-                        className={`p-2 rounded-lg transition ${
-                          darkMode 
-                            ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300' 
-                            : 'hover:bg-gray-100 text-gray-600 hover:text-gray-800'
-                        }`}
-                        title="Effacer"
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18"></line>
-                          <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-              
-                  {gameSearch && filteredBySearch.buys.length === 0 && filteredBySearch.sells.length === 0 && (
-                    <div className={`mt-3 text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-600'}`}>
-                      Aucun résultat pour "{gameSearch}"
-                    </div>
-                  )}
-              
-                  {gameSearch && (filteredBySearch.buys.length > 0 || filteredBySearch.sells.length > 0) && (
-                    <div className={`mt-3 space-y-2`}>
-                      {/* Ligne 1: Nombre de transactions */}
-                      <div className={`flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        <span>
-                          <span className="font-bold text-red-500">{filteredBySearch.buys.length}</span> achat{filteredBySearch.buys.length > 1 ? 's' : ''}
-                        </span>
-                        <span>•</span>
-                        <span>
-                          <span className="font-bold text-green-500">{filteredBySearch.sells.length}</span> vente{filteredBySearch.sells.length > 1 ? 's' : ''}
-                        </span>
-                        <span>•</span>
-                        <span>
-                          Total: <span className="font-bold">{filteredBySearch.buys.length + filteredBySearch.sells.length}</span> transaction{(filteredBySearch.buys.length + filteredBySearch.sells.length) > 1 ? 's' : ''}
-                        </span>
-                      </div>
-                  
-                      {/* Ligne 2: Prix moyens */}
-                      <div className={`flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        {filteredBySearch.buys.length > 0 && (
-                          <>
-                            <span>
-                              Prix achat moyen: <span className="font-bold text-orange-500">
-                                {(filteredBySearch.buys.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.buys.length).toFixed(2)}€
-                              </span>
-                            </span>
-                            {filteredBySearch.sells.length > 0 && <span>•</span>}
-                          </>
-                        )}
-                        {filteredBySearch.sells.length > 0 && (
-                          <span>
-                            Prix vente moyen: <span className="font-bold text-teal-500">
-                              {(filteredBySearch.sells.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.sells.length).toFixed(2)}€
-                            </span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </div>
+
+        {/* Barre de recherche de jeu (loupe) — bloc à part sous l'en-tête */}
+        {!statsView && showGameSearch && (
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-4 mb-6 relative`}>
+            <div className="flex items-center gap-3">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+          
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={gameSearch}
+                  onChange={(e) => {
+                    setGameSearch(e.target.value);
+                    setShowSearchSuggestions(e.target.value.length > 0);
+                  }}
+                  onFocus={() => setShowSearchSuggestions(gameSearch.length > 0)}
+                  onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
+                  placeholder="Rechercher un jeu... (ex: Catan, Monopoly)"
+                  className={`w-full px-4 py-2 rounded-lg border-2 focus:border-indigo-500 focus:outline-none transition ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-500'
+                  }`}
+                />
+            
+                {/* Suggestions d'autocomplétion */}
+                {showSearchSuggestions && gameSearch.length > 0 && (
+                  (() => {
+                    const searchSuggestions = gameNameSuggestions.filter(name => 
+                      name.toLowerCase().includes(gameSearch.toLowerCase())
+                    );
+                
+                    return searchSuggestions.length > 0 && (
+                      <div className={`absolute z-10 w-full mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto ${
+                        darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                      }`}>
+                        {searchSuggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setGameSearch(suggestion);
+                              setShowSearchSuggestions(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 hover:bg-indigo-500 hover:text-white transition ${
+                              darkMode ? 'text-gray-200' : 'text-gray-800'
+                            }`}
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+          
+              {gameSearch && (
+                <button
+                  onClick={() => setGameSearch('')}
+                  className={`p-2 rounded-lg transition ${
+                    darkMode 
+                      ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300' 
+                      : 'hover:bg-gray-100 text-gray-600 hover:text-gray-800'
+                  }`}
+                  title="Effacer"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              )}
+            </div>
+        
+            {gameSearch && filteredBySearch.buys.length === 0 && filteredBySearch.sells.length === 0 && (
+              <div className={`mt-3 text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-600'}`}>
+                Aucun résultat pour "{gameSearch}"
+              </div>
+            )}
+        
+            {gameSearch && (filteredBySearch.buys.length > 0 || filteredBySearch.sells.length > 0) && (
+              <div className={`mt-3 space-y-2`}>
+                {/* Ligne 1: Nombre de transactions */}
+                <div className={`flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <span>
+                    <span className="font-bold text-red-500">{filteredBySearch.buys.length}</span> achat{filteredBySearch.buys.length > 1 ? 's' : ''}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    <span className="font-bold text-green-500">{filteredBySearch.sells.length}</span> vente{filteredBySearch.sells.length > 1 ? 's' : ''}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Total: <span className="font-bold">{filteredBySearch.buys.length + filteredBySearch.sells.length}</span> transaction{(filteredBySearch.buys.length + filteredBySearch.sells.length) > 1 ? 's' : ''}
+                  </span>
+                </div>
+            
+                {/* Ligne 2: Prix moyens */}
+                <div className={`flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {filteredBySearch.buys.length > 0 && (
+                    <>
+                      <span>
+                        Prix achat moyen: <span className="font-bold text-orange-500">
+                          {(filteredBySearch.buys.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.buys.length).toFixed(2)}€
+                        </span>
+                      </span>
+                      {filteredBySearch.sells.length > 0 && <span>•</span>}
+                    </>
+                  )}
+                  {filteredBySearch.sells.length > 0 && (
+                    <span>
+                      Prix vente moyen: <span className="font-bold text-teal-500">
+                        {(filteredBySearch.sells.reduce((sum, t) => sum + t.price, 0) / filteredBySearch.sells.length).toFixed(2)}€
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Panneau stock dormant */}
         {showDormantStock && (() => {
