@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
@@ -95,6 +95,33 @@ const COLORS = {
 // Normalise un texte pour la recherche (minuscules, sans accents)
 const normalize = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+// Détermine où tomberait une réponse lâchée aux coordonnées (x, y) :
+// { categoryId, beforeId } — beforeId = id de la réponse devant laquelle insérer (null = à la fin)
+const computeDropTarget = (x, y, draggedId) => {
+  const el = document.elementFromPoint(x, y);
+  const zone = el && el.closest ? el.closest('[data-category-zone]') : null;
+  if (!zone) return null;
+
+  const categoryId = zone.getAttribute('data-category-zone');
+  let beforeId = null;
+
+  const row = el.closest('[data-responses-row]');
+  if (row) {
+    const cards = row.querySelectorAll('[data-response-id]');
+    for (const card of cards) {
+      const id = card.getAttribute('data-response-id');
+      if (id === String(draggedId)) continue;
+      const rect = card.getBoundingClientRect();
+      if (x < rect.left + rect.width / 2) {
+        beforeId = id;
+        break;
+      }
+    }
+  }
+
+  return { categoryId, beforeId };
+};
+
 export default function ReponsesPrefaites() {
   const router = useRouter();
   const { darkMode, toggleDarkMode } = useTheme(); // Utilisation du contexte
@@ -109,7 +136,12 @@ export default function ReponsesPrefaites() {
   const [newResponseText, setNewResponseText] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
   const [draggedCategory, setDraggedCategory] = useState(null);
-  const [draggedResponse, setDraggedResponse] = useState(null);
+  const [dragState, setDragState] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const reponsesRef = useRef([]);
+  const dragRef = useRef(null);
+  const ghostRef = useRef(null);
+  const justDraggedRef = useRef(false);
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [editCategoryLabel, setEditCategoryLabel] = useState('');
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -121,6 +153,8 @@ export default function ReponsesPrefaites() {
   const [deletingCategory, setDeletingCategory] = useState(null);
   const [deleteMode, setDeleteMode] = useState('move');
   const [moveTarget, setMoveTarget] = useState('');
+
+  reponsesRef.current = reponses;
 
   useEffect(() => {
     checkAuth();
@@ -512,6 +546,10 @@ export default function ReponsesPrefaites() {
   };
 
   const handleCategoryDragStart = (e, category) => {
+    if (dragRef.current) {
+      e.preventDefault();
+      return;
+    }
     setDraggedCategory(category);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -541,64 +579,180 @@ export default function ReponsesPrefaites() {
     setDraggedCategory(null);
   };
 
-  const handleResponseDragStart = (e, response) => {
-    e.stopPropagation();
-    setDraggedResponse(response);
-    e.dataTransfer.effectAllowed = 'move';
-  };
+  // Déplace une réponse (même catégorie ou autre catégorie) à la position voulue
+  const deplacerReponse = async (dragged, targetCategoryId, beforeId) => {
+    const byPos = (x, y) => (x.position || 0) - (y.position || 0);
+    const current = reponsesRef.current;
 
-  const handleResponseDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-  };
+    const sourceList = current.filter(r => r.category === dragged.category).sort(byPos);
+    const targetList = current
+      .filter(r => r.category === targetCategoryId && r.id !== dragged.id)
+      .sort(byPos);
 
-  const handleResponseDrop = async (e, targetResponse) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!draggedResponse || draggedResponse.id === targetResponse.id) {
-      setDraggedResponse(null);
-      return;
+    let idx = beforeId !== null ? targetList.findIndex(r => String(r.id) === beforeId) : targetList.length;
+    if (idx === -1) idx = targetList.length;
+
+    const newTarget = [...targetList];
+    newTarget.splice(idx, 0, dragged);
+
+    // Rien à faire si la réponse reste exactement à la même place
+    if (dragged.category === targetCategoryId) {
+      const identique = sourceList.length === newTarget.length && sourceList.every((r, i) => r.id === newTarget[i].id);
+      if (identique) return;
     }
 
-    if (draggedResponse.category !== targetResponse.category) {
-      setDraggedResponse(null);
-      return;
-    }
+    const positions = new Map(newTarget.map((r, i) => [r.id, i]));
+    setReponses(prev => prev.map(r =>
+      positions.has(r.id) ? { ...r, category: targetCategoryId, position: positions.get(r.id) } : r
+    ));
 
     try {
-      const categoryReponses = reponses.filter(r => r.category === draggedResponse.category);
-      const draggedIndex = categoryReponses.findIndex(r => r.id === draggedResponse.id);
-      const targetIndex = categoryReponses.findIndex(r => r.id === targetResponse.id);
-
-      const newOrder = [...categoryReponses];
-      newOrder.splice(draggedIndex, 1);
-      newOrder.splice(targetIndex, 0, draggedResponse);
-
-      const updates = newOrder.map((r, index) => 
-        supabase
-          .from('reponses')
-          .update({ position: index })
-          .eq('id', r.id)
+      const results = await Promise.all(
+        newTarget.map((r, i) => {
+          const update = r.id === dragged.id ? { category: targetCategoryId, position: i } : { position: i };
+          return supabase.from('reponses').update(update).eq('id', r.id);
+        })
       );
-
-      await Promise.all(updates);
-
-      const updatedReponses = reponses.map(r => {
-        const newPos = newOrder.findIndex(nr => nr.id === r.id);
-        if (newPos !== -1) {
-          return { ...r, position: newPos };
-        }
-        return r;
-      });
-
-      setReponses(updatedReponses);
+      const failed = results.find(res => res.error);
+      if (failed) throw failed.error;
     } catch (error) {
-      console.error('Erreur de réorganisation:', error);
+      console.error('Erreur de déplacement:', error);
+      loadReponses();
+    }
+  };
+
+  // Démarre un glisser-déposer : souris (n'importe où sur la carte) ou doigt (via la poignée)
+  const handleResponsePointerDown = (e, reponse, colors) => {
+    if (editingId === reponse.id) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (dragRef.current) return;
+
+    const onHandle = !!(e.target.closest && e.target.closest('[data-drag-handle]'));
+    if (!onHandle) {
+      if (e.pointerType !== 'mouse') return;
+      if (e.target.closest && e.target.closest('button, textarea, input')) return;
     }
 
-    setDraggedResponse(null);
+    e.preventDefault();
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const drag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      x: e.clientX,
+      y: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      width: rect.width,
+      started: false,
+      target: null,
+      scrollTimer: null
+    };
+    dragRef.current = drag;
+
+    const moveGhost = () => {
+      if (ghostRef.current) {
+        ghostRef.current.style.transform = `translate(${drag.x - drag.offsetX}px, ${drag.y - drag.offsetY}px)`;
+      }
+    };
+
+    const updateTarget = () => {
+      const t = computeDropTarget(drag.x, drag.y, reponse.id);
+      drag.target = t;
+      setDropTarget(prev => {
+        if (!prev && !t) return prev;
+        if (prev && t && prev.categoryId === t.categoryId && prev.beforeId === t.beforeId) return prev;
+        return t;
+      });
+    };
+
+    // Défilement automatique près des bords (page et ligne de réponses)
+    const autoScroll = () => {
+      const edge = 80;
+      let scrolled = false;
+
+      if (drag.y < edge) {
+        window.scrollBy(0, -Math.round(4 + ((edge - drag.y) / edge) * 14));
+        scrolled = true;
+      } else if (drag.y > window.innerHeight - edge) {
+        window.scrollBy(0, Math.round(4 + ((drag.y - (window.innerHeight - edge)) / edge) * 14));
+        scrolled = true;
+      }
+
+      const el = document.elementFromPoint(drag.x, drag.y);
+      const row = el && el.closest ? el.closest('[data-responses-row]') : null;
+      if (row) {
+        const r = row.getBoundingClientRect();
+        if (drag.x < r.left + 50) {
+          row.scrollLeft -= 12;
+          scrolled = true;
+        } else if (drag.x > r.right - 50) {
+          row.scrollLeft += 12;
+          scrolled = true;
+        }
+      }
+
+      if (scrolled) updateTarget();
+    };
+
+    const onMove = (ev) => {
+      if (ev.pointerId !== drag.pointerId) return;
+      drag.x = ev.clientX;
+      drag.y = ev.clientY;
+
+      if (!drag.started) {
+        if (Math.hypot(ev.clientX - drag.startX, ev.clientY - drag.startY) < 6) return;
+        drag.started = true;
+        justDraggedRef.current = true;
+        document.body.style.userSelect = 'none';
+        document.body.style.webkitUserSelect = 'none';
+        document.body.style.cursor = 'grabbing';
+        setDragState({ id: reponse.id, text: reponse.text, width: drag.width, colors });
+        drag.scrollTimer = setInterval(autoScroll, 16);
+      }
+
+      if (ev.cancelable) ev.preventDefault();
+      moveGhost();
+      updateTarget();
+    };
+
+    const finish = (cancelled) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      if (drag.scrollTimer) clearInterval(drag.scrollTimer);
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+      document.body.style.cursor = '';
+
+      const wasStarted = drag.started;
+      const target = drag.target;
+      dragRef.current = null;
+      setDragState(null);
+      setDropTarget(null);
+
+      if (wasStarted) {
+        // Empêche le clic "copier" juste après un glisser
+        setTimeout(() => { justDraggedRef.current = false; }, 150);
+        if (!cancelled && target) {
+          deplacerReponse(reponse, target.categoryId, target.beforeId);
+        }
+      }
+    };
+
+    const onUp = (ev) => {
+      if (ev.pointerId !== drag.pointerId) return;
+      finish(false);
+    };
+    const onCancel = (ev) => {
+      if (ev.pointerId !== drag.pointerId) return;
+      finish(true);
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
   };
 
   const theme = darkMode ? 'dark' : 'light';
@@ -657,6 +811,23 @@ export default function ReponsesPrefaites() {
         {copyMessage && (
           <div className="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-2xl font-bold text-base z-50 animate-bounce">
             {copyMessage}
+          </div>
+        )}
+
+        {/* Carte qui suit le curseur pendant un glisser-déposer */}
+        {dragState && (
+          <div
+            ref={ghostRef}
+            className={`fixed top-0 left-0 pointer-events-none ${dragState.colors.bg} border-2 ${dragState.colors.border} rounded-lg p-3 shadow-2xl opacity-90 max-h-32 overflow-hidden`}
+            style={{
+              zIndex: 60,
+              width: dragState.width,
+              transform: `translate(${dragRef.current ? dragRef.current.x - dragRef.current.offsetX : 0}px, ${dragRef.current ? dragRef.current.y - dragRef.current.offsetY : 0}px)`
+            }}
+          >
+            <p className={`${dragState.colors.text} text-sm whitespace-pre-wrap break-words`}>
+              {dragState.text}
+            </p>
           </div>
         )}
 
@@ -766,13 +937,14 @@ export default function ReponsesPrefaites() {
             return (
               <div 
                 key={category.id}
+                data-category-zone={category.id}
                 draggable={editingCategoryId !== category.id}
                 onDragStart={(e) => handleCategoryDragStart(e, category)}
                 onDragOver={handleCategoryDragOver}
                 onDrop={(e) => handleCategoryDrop(e, category)}
                 className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-3 sm:p-4 cursor-move hover:shadow-xl transition-all duration-300 ${
                   draggedCategory?.id === category.id ? 'opacity-50' : ''
-                }`}
+                } ${dragState && dropTarget && dropTarget.categoryId === category.id ? 'ring-2 ring-indigo-400' : ''}`}
               >
                 {/* Mobile: vertical layout. Desktop: horizontal layout */}
                 <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
@@ -910,7 +1082,7 @@ export default function ReponsesPrefaites() {
 
                   {/* Colonnes de réponses */}
                   {!isCollapsed && (
-                  <div className="flex-1 overflow-x-auto">
+                  <div data-responses-row className="flex-1 overflow-x-auto">
                     <div className="flex gap-2 sm:gap-3 pb-2 min-w-min">
                       {/* Formulaire d'ajout */}
                       {addingCategory === category.id && (
@@ -955,12 +1127,13 @@ export default function ReponsesPrefaites() {
                       {categoryReponses.map(reponse => (
                         <div 
                           key={reponse.id} 
-                          className="w-56 sm:w-72 flex-shrink-0"
-                          draggable={editingId !== reponse.id}
-                          onDragStart={(e) => handleResponseDragStart(e, reponse)}
-                          onDragOver={handleResponseDragOver}
-                          onDrop={(e) => handleResponseDrop(e, reponse)}
+                          data-response-id={reponse.id}
+                          className="relative w-56 sm:w-72 flex-shrink-0"
+                          onPointerDown={(e) => handleResponsePointerDown(e, reponse, colors)}
                         >
+                          {dragState && dropTarget && dropTarget.categoryId === category.id && dropTarget.beforeId === String(reponse.id) && (
+                            <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500 rounded-full z-10" />
+                          )}
                           {editingId === reponse.id ? (
                             <div className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 h-full transition-colors duration-300`}>
                               <textarea
@@ -997,14 +1170,36 @@ export default function ReponsesPrefaites() {
                               </div>
                             </div>
                           ) : (
-                            <div className={`relative group h-full ${draggedResponse?.id === reponse.id ? 'opacity-50' : ''}`}>
+                            <div className={`relative group h-full ${dragState && dragState.id === reponse.id ? 'opacity-40' : ''}`}>
                               <div
-                                onClick={() => copierReponse(reponse.text)}
+                                onClick={() => {
+                                  if (justDraggedRef.current) return;
+                                  copierReponse(reponse.text);
+                                }}
                                 className={`${colors.bg} border-2 ${colors.border} rounded-lg p-3 pt-9 sm:pt-3 cursor-pointer ${colors.hover} transition-all duration-300 h-full min-h-[100px] sm:min-h-[120px] flex items-center`}
                               >
                                 <p className={`${colors.text} text-sm whitespace-pre-wrap break-words`}>
                                   {highlightText(reponse.text)}
                                 </p>
+                              </div>
+                              <div
+                                data-drag-handle
+                                onClick={(e) => e.stopPropagation()}
+                                onContextMenu={(e) => e.preventDefault()}
+                                style={{ touchAction: 'none' }}
+                                className={`absolute top-2 left-2 p-2 sm:p-1.5 rounded-lg shadow-lg cursor-grab select-none sm:opacity-0 sm:group-hover:opacity-100 transition ${
+                                  darkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-500'
+                                }`}
+                                title="Glisser pour déplacer"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                  <circle cx="9" cy="6" r="1.8"></circle>
+                                  <circle cx="15" cy="6" r="1.8"></circle>
+                                  <circle cx="9" cy="12" r="1.8"></circle>
+                                  <circle cx="15" cy="12" r="1.8"></circle>
+                                  <circle cx="9" cy="18" r="1.8"></circle>
+                                  <circle cx="15" cy="18" r="1.8"></circle>
+                                </svg>
                               </div>
                               <div className="absolute top-2 right-2 sm:opacity-0 sm:group-hover:opacity-100 transition flex gap-1">
                                 <button
@@ -1063,6 +1258,10 @@ export default function ReponsesPrefaites() {
                           )}
                         </div>
                       ))}
+
+                      {dragState && dropTarget && dropTarget.categoryId === category.id && dropTarget.beforeId === null && (
+                        <div className="w-24 sm:w-32 flex-shrink-0 min-h-[100px] sm:min-h-[120px] rounded-lg border-2 border-dashed border-indigo-400 bg-indigo-500/10" />
+                      )}
 
                       {categoryReponses.length === 0 && addingCategory !== category.id && (
                         <div className="w-56 sm:w-72 flex-shrink-0 flex items-center justify-center">
