@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../lib/ThemeContext';
- 
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
- 
+
 const DEFAULT_CATEGORIES = [
   { id: 'remerciement', label: 'Remerciement', color: 'blue' },
   { id: 'refus-offre', label: 'Réponse négative à une offre', color: 'red' },
@@ -16,7 +16,7 @@ const DEFAULT_CATEGORIES = [
   { id: 'info-profil', label: 'Informations déjà présentes dans mon profil', color: 'purple' },
   { id: 'refus-prix', label: 'Mot de refus', color: 'orange' }
 ];
- 
+
 const COLORS = {
   blue: { 
     light: { bg: 'bg-blue-100', hover: 'hover:bg-blue-200', text: 'text-blue-900', button: 'bg-blue-500 hover:bg-blue-600', border: 'border-blue-300' },
@@ -41,12 +41,60 @@ const COLORS = {
   orange: { 
     light: { bg: 'bg-orange-100', hover: 'hover:bg-orange-200', text: 'text-orange-900', button: 'bg-orange-500 hover:bg-orange-600', border: 'border-orange-300' },
     dark: { bg: 'bg-orange-900', hover: 'hover:bg-orange-800', text: 'text-orange-100', button: 'bg-orange-600 hover:bg-orange-700', border: 'border-orange-700' }
+  },
+  rose: { 
+    light: { bg: 'bg-rose-100', hover: 'hover:bg-rose-200', text: 'text-rose-900', button: 'bg-rose-500 hover:bg-rose-600', border: 'border-rose-300' },
+    dark: { bg: 'bg-rose-900', hover: 'hover:bg-rose-800', text: 'text-rose-100', button: 'bg-rose-600 hover:bg-rose-700', border: 'border-rose-700' }
+  },
+  pink: { 
+    light: { bg: 'bg-pink-100', hover: 'hover:bg-pink-200', text: 'text-pink-900', button: 'bg-pink-500 hover:bg-pink-600', border: 'border-pink-300' },
+    dark: { bg: 'bg-pink-900', hover: 'hover:bg-pink-800', text: 'text-pink-100', button: 'bg-pink-600 hover:bg-pink-700', border: 'border-pink-700' }
+  },
+  fuchsia: { 
+    light: { bg: 'bg-fuchsia-100', hover: 'hover:bg-fuchsia-200', text: 'text-fuchsia-900', button: 'bg-fuchsia-500 hover:bg-fuchsia-600', border: 'border-fuchsia-300' },
+    dark: { bg: 'bg-fuchsia-900', hover: 'hover:bg-fuchsia-800', text: 'text-fuchsia-100', button: 'bg-fuchsia-600 hover:bg-fuchsia-700', border: 'border-fuchsia-700' }
+  },
+  violet: { 
+    light: { bg: 'bg-violet-100', hover: 'hover:bg-violet-200', text: 'text-violet-900', button: 'bg-violet-500 hover:bg-violet-600', border: 'border-violet-300' },
+    dark: { bg: 'bg-violet-900', hover: 'hover:bg-violet-800', text: 'text-violet-100', button: 'bg-violet-600 hover:bg-violet-700', border: 'border-violet-700' }
+  },
+  indigo: { 
+    light: { bg: 'bg-indigo-100', hover: 'hover:bg-indigo-200', text: 'text-indigo-900', button: 'bg-indigo-500 hover:bg-indigo-600', border: 'border-indigo-300' },
+    dark: { bg: 'bg-indigo-900', hover: 'hover:bg-indigo-800', text: 'text-indigo-100', button: 'bg-indigo-600 hover:bg-indigo-700', border: 'border-indigo-700' }
+  },
+  sky: { 
+    light: { bg: 'bg-sky-100', hover: 'hover:bg-sky-200', text: 'text-sky-900', button: 'bg-sky-500 hover:bg-sky-600', border: 'border-sky-300' },
+    dark: { bg: 'bg-sky-900', hover: 'hover:bg-sky-800', text: 'text-sky-100', button: 'bg-sky-600 hover:bg-sky-700', border: 'border-sky-700' }
+  },
+  cyan: { 
+    light: { bg: 'bg-cyan-100', hover: 'hover:bg-cyan-200', text: 'text-cyan-900', button: 'bg-cyan-500 hover:bg-cyan-600', border: 'border-cyan-300' },
+    dark: { bg: 'bg-cyan-900', hover: 'hover:bg-cyan-800', text: 'text-cyan-100', button: 'bg-cyan-600 hover:bg-cyan-700', border: 'border-cyan-700' }
+  },
+  teal: { 
+    light: { bg: 'bg-teal-100', hover: 'hover:bg-teal-200', text: 'text-teal-900', button: 'bg-teal-500 hover:bg-teal-600', border: 'border-teal-300' },
+    dark: { bg: 'bg-teal-900', hover: 'hover:bg-teal-800', text: 'text-teal-100', button: 'bg-teal-600 hover:bg-teal-700', border: 'border-teal-700' }
+  },
+  emerald: { 
+    light: { bg: 'bg-emerald-100', hover: 'hover:bg-emerald-200', text: 'text-emerald-900', button: 'bg-emerald-500 hover:bg-emerald-600', border: 'border-emerald-300' },
+    dark: { bg: 'bg-emerald-900', hover: 'hover:bg-emerald-800', text: 'text-emerald-100', button: 'bg-emerald-600 hover:bg-emerald-700', border: 'border-emerald-700' }
+  },
+  lime: { 
+    light: { bg: 'bg-lime-100', hover: 'hover:bg-lime-200', text: 'text-lime-900', button: 'bg-lime-500 hover:bg-lime-600', border: 'border-lime-300' },
+    dark: { bg: 'bg-lime-900', hover: 'hover:bg-lime-800', text: 'text-lime-100', button: 'bg-lime-600 hover:bg-lime-700', border: 'border-lime-700' }
+  },
+  amber: { 
+    light: { bg: 'bg-amber-100', hover: 'hover:bg-amber-200', text: 'text-amber-900', button: 'bg-amber-500 hover:bg-amber-600', border: 'border-amber-300' },
+    dark: { bg: 'bg-amber-900', hover: 'hover:bg-amber-800', text: 'text-amber-100', button: 'bg-amber-600 hover:bg-amber-700', border: 'border-amber-700' }
+  },
+  slate: { 
+    light: { bg: 'bg-slate-100', hover: 'hover:bg-slate-200', text: 'text-slate-900', button: 'bg-slate-500 hover:bg-slate-600', border: 'border-slate-300' },
+    dark: { bg: 'bg-slate-900', hover: 'hover:bg-slate-800', text: 'text-slate-100', button: 'bg-slate-600 hover:bg-slate-700', border: 'border-slate-700' }
   }
 };
- 
+
 // Normalise un texte pour la recherche (minuscules, sans accents)
 const normalize = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
- 
+
 export default function ReponsesPrefaites() {
   const router = useRouter();
   const { darkMode, toggleDarkMode } = useTheme(); // Utilisation du contexte
@@ -73,18 +121,18 @@ export default function ReponsesPrefaites() {
   const [deletingCategory, setDeletingCategory] = useState(null);
   const [deleteMode, setDeleteMode] = useState('move');
   const [moveTarget, setMoveTarget] = useState('');
- 
+
   useEffect(() => {
     checkAuth();
   }, []);
- 
+
   useEffect(() => {
     if (isLoggedIn) {
       loadReponses();
       loadCategoryOrder();
     }
   }, [isLoggedIn]);
- 
+
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
     const savedPassword = localStorage.getItem('password');
@@ -97,7 +145,7 @@ export default function ReponsesPrefaites() {
     }
     setLoading(false);
   };
- 
+
   const loadCategoryOrder = async () => {
     // Catégories de base + renommages + catégories personnalisées (Supabase)
     let merged = [...DEFAULT_CATEGORIES];
@@ -107,9 +155,9 @@ export default function ReponsesPrefaites() {
         .select('*')
         .eq('user_id', username)
         .order('created_at', { ascending: true });
- 
+
       if (error) throw error;
- 
+
       const deletedIds = [];
       (data || []).forEach(row => {
         const idx = merged.findIndex(c => c.id === row.cat_id);
@@ -129,7 +177,7 @@ export default function ReponsesPrefaites() {
     } catch (e) {
       console.error('Erreur de chargement des catégories:', e);
     }
- 
+
     // Ordre enregistré (localStorage)
     const saved = localStorage.getItem(`categoryOrder_${username}`);
     if (saved) {
@@ -143,7 +191,7 @@ export default function ReponsesPrefaites() {
       }
     }
     setCategories(merged);
- 
+
     // Catégories repliées (mémorisé sur cet appareil)
     try {
       const collapsed = JSON.parse(localStorage.getItem(`categoriesCollapsed_${username}`) || '[]');
@@ -152,11 +200,11 @@ export default function ReponsesPrefaites() {
       console.error('Erreur de chargement des catégories repliées:', e);
     }
   };
- 
+
   const saveCategoryOrder = (newOrder) => {
     localStorage.setItem(`categoryOrder_${username}`, JSON.stringify(newOrder.map(c => c.id)));
   };
- 
+
   const toggleCollapse = (categoryId) => {
     const newCollapsed = collapsedCategories.includes(categoryId)
       ? collapsedCategories.filter(id => id !== categoryId)
@@ -164,13 +212,13 @@ export default function ReponsesPrefaites() {
     setCollapsedCategories(newCollapsed);
     localStorage.setItem(`categoriesCollapsed_${username}`, JSON.stringify(newCollapsed));
   };
- 
+
   const changerCouleur = async (category, colorKey) => {
     if (colorKey === category.color) {
       setColorPickerId(null);
       return;
     }
- 
+
     try {
       const { error } = await supabase
         .from('reponses_categories')
@@ -178,9 +226,9 @@ export default function ReponsesPrefaites() {
           { user_id: username, cat_id: category.id, label: category.label, color: colorKey },
           { onConflict: 'user_id,cat_id' }
         );
- 
+
       if (error) throw error;
- 
+
       setCategories(categories.map(c => c.id === category.id ? { ...c, color: colorKey } : c));
       setColorPickerId(null);
     } catch (error) {
@@ -188,29 +236,29 @@ export default function ReponsesPrefaites() {
       alert('Impossible de changer la couleur. La table reponses_categories existe-t-elle bien dans Supabase ?');
     }
   };
- 
+
   const ouvrirSuppressionCategorie = (category) => {
     const autres = categories.filter(c => c.id !== category.id);
     setDeletingCategory(category);
     setDeleteMode('move');
     setMoveTarget(autres.length > 0 ? autres[0].id : '');
   };
- 
+
   const confirmerSuppressionCategorie = async () => {
     const category = deletingCategory;
     if (!category) return;
- 
+
     const catReponses = reponses.filter(r => r.category === category.id);
     if (catReponses.length > 0 && deleteMode === 'move' && !moveTarget) return;
- 
+
     try {
       let newReponses = reponses;
- 
+
       if (catReponses.length > 0) {
         if (deleteMode === 'move') {
           const targetPositions = reponses.filter(r => r.category === moveTarget).map(r => r.position || 0);
           const startPos = targetPositions.length > 0 ? Math.max(...targetPositions) : 0;
- 
+
           const results = await Promise.all(
             catReponses.map((r, i) =>
               supabase
@@ -221,7 +269,7 @@ export default function ReponsesPrefaites() {
           );
           const failed = results.find(res => res.error);
           if (failed) throw failed.error;
- 
+
           newReponses = reponses.map(r => {
             const i = catReponses.findIndex(c => c.id === r.id);
             return i !== -1 ? { ...r, category: moveTarget, position: startPos + i + 1 } : r;
@@ -232,12 +280,12 @@ export default function ReponsesPrefaites() {
             .delete()
             .eq('user_id', username)
             .eq('category', category.id);
- 
+
           if (error) throw error;
           newReponses = reponses.filter(r => r.category !== category.id);
         }
       }
- 
+
       if (DEFAULT_CATEGORIES.some(c => c.id === category.id)) {
         const { error } = await supabase
           .from('reponses_categories')
@@ -254,7 +302,7 @@ export default function ReponsesPrefaites() {
           .eq('cat_id', category.id);
         if (error) throw error;
       }
- 
+
       const newCategories = categories.filter(c => c.id !== category.id);
       setReponses(newReponses);
       setCategories(newCategories);
@@ -266,7 +314,7 @@ export default function ReponsesPrefaites() {
       loadReponses();
     }
   };
- 
+
   const dupliquerReponse = async (reponse) => {
     try {
       const { data, error } = await supabase
@@ -278,9 +326,9 @@ export default function ReponsesPrefaites() {
           position: 0
         }])
         .select();
- 
+
       if (error) throw error;
- 
+
       const copie = data[0];
       const sorted = reponses
         .filter(r => r.category === reponse.category)
@@ -288,19 +336,19 @@ export default function ReponsesPrefaites() {
       const idx = sorted.findIndex(r => r.id === reponse.id);
       const newOrder = [...sorted];
       newOrder.splice(idx + 1, 0, copie);
- 
+
       await Promise.all(
         newOrder.map((r, i) =>
           supabase.from('reponses').update({ position: i }).eq('id', r.id)
         )
       );
- 
+
       const updated = reponses.map(r => {
         const newPos = newOrder.findIndex(nr => nr.id === r.id);
         return newPos !== -1 ? { ...r, position: newPos } : r;
       });
       setReponses([...updated, { ...copie, position: newOrder.findIndex(nr => nr.id === copie.id) }]);
- 
+
       // La copie s'ouvre directement en modification
       setEditingId(copie.id);
       setEditText(copie.text);
@@ -308,19 +356,19 @@ export default function ReponsesPrefaites() {
       console.error('Erreur de duplication:', error);
     }
   };
- 
+
   const annulerRenommage = () => {
     setEditingCategoryId(null);
     setEditCategoryLabel('');
   };
- 
+
   const renommerCategorie = async (category) => {
     const newLabel = editCategoryLabel.trim();
     if (!newLabel || newLabel === category.label) {
       annulerRenommage();
       return;
     }
- 
+
     try {
       const { error } = await supabase
         .from('reponses_categories')
@@ -328,9 +376,9 @@ export default function ReponsesPrefaites() {
           { user_id: username, cat_id: category.id, label: newLabel, color: category.color },
           { onConflict: 'user_id,cat_id' }
         );
- 
+
       if (error) throw error;
- 
+
       setCategories(categories.map(c => c.id === category.id ? { ...c, label: newLabel } : c));
       annulerRenommage();
     } catch (error) {
@@ -338,25 +386,25 @@ export default function ReponsesPrefaites() {
       alert('Impossible de renommer la catégorie. La table reponses_categories existe-t-elle bien dans Supabase ?');
     }
   };
- 
+
   const creerCategorie = async () => {
     const label = newCategoryLabel.trim();
     if (!label) return;
- 
+
     if (categories.some(c => c.label.toLowerCase() === label.toLowerCase())) {
       alert('Une catégorie porte déjà ce nom.');
       return;
     }
- 
+
     const catId = `custom-${Date.now()}`;
- 
+
     try {
       const { error } = await supabase
         .from('reponses_categories')
         .insert([{ user_id: username, cat_id: catId, label: label, color: newCategoryColor }]);
- 
+
       if (error) throw error;
- 
+
       const newCategories = [...categories, { id: catId, label: label, color: newCategoryColor }];
       setCategories(newCategories);
       saveCategoryOrder(newCategories);
@@ -368,7 +416,7 @@ export default function ReponsesPrefaites() {
       alert('Impossible de créer la catégorie. La table reponses_categories existe-t-elle bien dans Supabase ?');
     }
   };
- 
+
   const loadReponses = async () => {
     try {
       const { data, error } = await supabase
@@ -377,7 +425,7 @@ export default function ReponsesPrefaites() {
         .eq('user_id', username)
         .order('position', { ascending: true })
         .order('created_at', { ascending: true });
- 
+
       if (error) throw error;
       setReponses(data || []);
     } catch (error) {
@@ -386,16 +434,16 @@ export default function ReponsesPrefaites() {
       setLoading(false);
     }
   };
- 
+
   const ajouterReponse = async (category) => {
     if (!newResponseText.trim()) return;
- 
+
     try {
       const categoryReponses = reponses.filter(r => r.category === category);
       const maxPosition = categoryReponses.length > 0 
         ? Math.max(...categoryReponses.map(r => r.position || 0))
         : 0;
- 
+
       const { data, error } = await supabase
         .from('reponses')
         .insert([{
@@ -405,9 +453,9 @@ export default function ReponsesPrefaites() {
           position: maxPosition + 1
         }])
         .select();
- 
+
       if (error) throw error;
- 
+
       setReponses([...reponses, ...data]);
       setNewResponseText('');
       setAddingCategory(null);
@@ -415,18 +463,18 @@ export default function ReponsesPrefaites() {
       console.error('Erreur d\'ajout:', error);
     }
   };
- 
+
   const modifierReponse = async (id) => {
     if (!editText.trim()) return;
- 
+
     try {
       const { error } = await supabase
         .from('reponses')
         .update({ text: editText.trim() })
         .eq('id', id);
- 
+
       if (error) throw error;
- 
+
       setReponses(reponses.map(r => r.id === id ? { ...r, text: editText.trim() } : r));
       setEditingId(null);
       setEditText('');
@@ -434,45 +482,45 @@ export default function ReponsesPrefaites() {
       console.error('Erreur de modification:', error);
     }
   };
- 
+
   const supprimerReponse = async (id) => {
     if (!confirm('Supprimer cette réponse ?')) return;
- 
+
     try {
       const { error } = await supabase
         .from('reponses')
         .delete()
         .eq('id', id);
- 
+
       if (error) throw error;
- 
+
       setReponses(reponses.filter(r => r.id !== id));
     } catch (error) {
       console.error('Erreur de suppression:', error);
     }
   };
- 
+
   const copierReponse = (text) => {
     navigator.clipboard.writeText(text);
     setCopyMessage('✓ Copié !');
     setTimeout(() => setCopyMessage(''), 3000);
   };
- 
+
   const startEdit = (id, text) => {
     setEditingId(id);
     setEditText(text);
   };
- 
+
   const handleCategoryDragStart = (e, category) => {
     setDraggedCategory(category);
     e.dataTransfer.effectAllowed = 'move';
   };
- 
+
   const handleCategoryDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
- 
+
   const handleCategoryDrop = (e, targetCategory) => {
     e.preventDefault();
     
@@ -480,31 +528,31 @@ export default function ReponsesPrefaites() {
       setDraggedCategory(null);
       return;
     }
- 
+
     const newCategories = [...categories];
     const draggedIndex = newCategories.findIndex(c => c.id === draggedCategory.id);
     const targetIndex = newCategories.findIndex(c => c.id === targetCategory.id);
- 
+
     newCategories.splice(draggedIndex, 1);
     newCategories.splice(targetIndex, 0, draggedCategory);
- 
+
     setCategories(newCategories);
     saveCategoryOrder(newCategories);
     setDraggedCategory(null);
   };
- 
+
   const handleResponseDragStart = (e, response) => {
     e.stopPropagation();
     setDraggedResponse(response);
     e.dataTransfer.effectAllowed = 'move';
   };
- 
+
   const handleResponseDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
   };
- 
+
   const handleResponseDrop = async (e, targetResponse) => {
     e.preventDefault();
     e.stopPropagation();
@@ -513,30 +561,30 @@ export default function ReponsesPrefaites() {
       setDraggedResponse(null);
       return;
     }
- 
+
     if (draggedResponse.category !== targetResponse.category) {
       setDraggedResponse(null);
       return;
     }
- 
+
     try {
       const categoryReponses = reponses.filter(r => r.category === draggedResponse.category);
       const draggedIndex = categoryReponses.findIndex(r => r.id === draggedResponse.id);
       const targetIndex = categoryReponses.findIndex(r => r.id === targetResponse.id);
- 
+
       const newOrder = [...categoryReponses];
       newOrder.splice(draggedIndex, 1);
       newOrder.splice(targetIndex, 0, draggedResponse);
- 
+
       const updates = newOrder.map((r, index) => 
         supabase
           .from('reponses')
           .update({ position: index })
           .eq('id', r.id)
       );
- 
+
       await Promise.all(updates);
- 
+
       const updatedReponses = reponses.map(r => {
         const newPos = newOrder.findIndex(nr => nr.id === r.id);
         if (newPos !== -1) {
@@ -544,25 +592,25 @@ export default function ReponsesPrefaites() {
         }
         return r;
       });
- 
+
       setReponses(updatedReponses);
     } catch (error) {
       console.error('Erreur de réorganisation:', error);
     }
- 
+
     setDraggedResponse(null);
   };
- 
+
   const theme = darkMode ? 'dark' : 'light';
- 
+
   const searchActive = searchQuery.trim() !== '';
   const matchesSearch = (text) => normalize(text).includes(normalize(searchQuery.trim()));
   const totalMatches = searchActive ? reponses.filter(r => matchesSearch(r.text)).length : 0;
- 
+
   const highlightText = (text) => {
     const q = normalize(searchQuery.trim());
     if (!q) return text;
- 
+
     let norm = '';
     const map = [];
     for (let i = 0; i < text.length; i++) {
@@ -572,7 +620,7 @@ export default function ReponsesPrefaites() {
         map.push(i);
       }
     }
- 
+
     const parts = [];
     let last = 0;
     let key = 0;
@@ -594,7 +642,7 @@ export default function ReponsesPrefaites() {
     parts.push(text.slice(last));
     return parts;
   };
- 
+
   if (loading) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-indigo-100'} flex items-center justify-center`}>
@@ -602,7 +650,7 @@ export default function ReponsesPrefaites() {
       </div>
     );
   }
- 
+
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-gray-50 to-slate-100'} py-4 px-3 sm:py-8 sm:px-4 transition-colors duration-300`}>
       <div className="max-w-7xl mx-auto">
@@ -611,7 +659,7 @@ export default function ReponsesPrefaites() {
             {copyMessage}
           </div>
         )}
- 
+
         {/* Header */}
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-3 sm:p-6 mb-4 sm:mb-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
@@ -665,7 +713,7 @@ export default function ReponsesPrefaites() {
             </button>
           </div>
         </div>
- 
+
         {/* Recherche */}
         <div className="sticky top-2 z-40 mb-3 sm:mb-4">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 transition-colors duration-300`}>
@@ -701,7 +749,7 @@ export default function ReponsesPrefaites() {
             )}
           </div>
         </div>
- 
+
         {/* Lignes de catégories */}
         <div className="space-y-3 sm:space-y-4">
           {categories.map(category => {
@@ -714,7 +762,7 @@ export default function ReponsesPrefaites() {
             if (searchActive && categoryReponses.length === 0) return null;
             const isCollapsed = !searchActive && collapsedCategories.includes(category.id);
             const colors = COLORS[category.color][theme];
- 
+
             return (
               <div 
                 key={category.id}
@@ -859,7 +907,7 @@ export default function ReponsesPrefaites() {
                       )}
                     </div>
                   </div>
- 
+
                   {/* Colonnes de réponses */}
                   {!isCollapsed && (
                   <div className="flex-1 overflow-x-auto">
@@ -902,7 +950,7 @@ export default function ReponsesPrefaites() {
                           </div>
                         </div>
                       )}
- 
+
                       {/* Réponses existantes */}
                       {categoryReponses.map(reponse => (
                         <div 
@@ -1015,7 +1063,7 @@ export default function ReponsesPrefaites() {
                           )}
                         </div>
                       ))}
- 
+
                       {categoryReponses.length === 0 && addingCategory !== category.id && (
                         <div className="w-56 sm:w-72 flex-shrink-0 flex items-center justify-center">
                           <p className={`text-sm italic ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -1030,14 +1078,14 @@ export default function ReponsesPrefaites() {
               </div>
             );
           })}
- 
+
           {searchActive && totalMatches === 0 && (
             <div className={`${darkMode ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-500'} rounded-xl shadow-lg p-8 text-center text-sm`}>
               Aucune réponse ne contient « {searchQuery.trim()} »
             </div>
           )}
         </div>
- 
+
         {/* Nouvelle catégorie */}
         <div className={`mt-3 sm:mt-4 ${searchActive ? 'hidden' : ''}`}>
           {showNewCategory ? (
@@ -1109,7 +1157,7 @@ export default function ReponsesPrefaites() {
             </button>
           )}
         </div>
- 
+
         {/* Fenêtre de suppression de catégorie */}
         {deletingCategory && (() => {
           const count = reponses.filter(r => r.category === deletingCategory.id).length;
@@ -1121,7 +1169,7 @@ export default function ReponsesPrefaites() {
           }`;
           const textMain = darkMode ? 'text-gray-100' : 'text-gray-800';
           const textSub = darkMode ? 'text-gray-400' : 'text-gray-500';
- 
+
           return (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
@@ -1134,7 +1182,7 @@ export default function ReponsesPrefaites() {
                 <h3 className={`text-lg font-bold mb-1 ${textMain}`}>
                   Supprimer « {deletingCategory.label} » ?
                 </h3>
- 
+
                 {count === 0 ? (
                   <p className={`text-sm mb-5 ${textSub}`}>Cette catégorie est vide.</p>
                 ) : (
@@ -1189,7 +1237,7 @@ export default function ReponsesPrefaites() {
                     </div>
                   </>
                 )}
- 
+
                 <div className="flex gap-2">
                   <button
                     onClick={() => setDeletingCategory(null)}
@@ -1220,4 +1268,3 @@ export default function ReponsesPrefaites() {
     </div>
   );
 }
- 
