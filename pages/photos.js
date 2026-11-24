@@ -139,23 +139,6 @@ const buildGroups = (items, gapSec) => {
   return groups;
 };
 
-// Écart conseillé : repère le plus gros "saut" entre les écarts courts (même jeu) et longs (jeu suivant)
-const suggestGap = (items) => {
-  if (items.length < 5) return 60;
-  const gaps = [];
-  for (let i = 1; i < items.length; i++) gaps.push(Math.max(1, (items[i].time - items[i - 1].time) / 1000));
-  const sorted = [...gaps].sort((a, b) => a - b);
-  let best = null;
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const ratio = sorted[i + 1] / sorted[i];
-    if (sorted[i + 1] >= 20 && ratio >= 2.5 && (!best || ratio > best.ratio)) {
-      best = { ratio, thr: Math.sqrt(sorted[i] * sorted[i + 1]) };
-    }
-  }
-  if (!best) return 60;
-  return Math.round(Math.min(600, Math.max(15, best.thr)) / 5) * 5;
-};
-
 const formatClock = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 const runPool = async (tasks, limit, onDone) => {
@@ -356,7 +339,8 @@ export default function PhotosManager() {
   const folderTargetRef = useRef(null);    // { colId, tagLabel, photoType }
   const colisPromptInputRef = useRef(null);
   const [preparingBatch, setPreparingBatch] = useState(false);
-  const [reviewBatch, setReviewBatch]       = useState(null); // { items, gap, groups, selected }
+  const [reviewDrag, setReviewDrag]         = useState(null); // { itemId, over }
+  const [reviewBatch, setReviewBatch]       = useState(null); // { items, gap, groups }
   const [dragOverFolderTag, setDragOverFolderTag] = useState(null);
   const [colisPrompt, setColisPrompt]       = useState(null); // { tagLabel }
 
@@ -733,8 +717,8 @@ export default function PhotosManager() {
         return { id: `f${i}`, file, url: URL.createObjectURL(file), time, source };
       }));
       items.sort((x, y) => x.time - y.time || x.file.name.localeCompare(y.file.name));
-      const gap = suggestGap(items);
-      setReviewBatch({ items, gap, groups: buildGroups(items, gap), selected: [] });
+      const gap = 180; // 3 minutes par défaut
+      setReviewBatch({ items, gap, groups: buildGroups(items, gap) });
     } catch {
       showToast('Erreur de lecture des photos', 'error');
     } finally {
@@ -746,56 +730,36 @@ export default function PhotosManager() {
   const reviewCancel = () => {
     if (reviewBatch) reviewBatch.items.forEach(i => URL.revokeObjectURL(i.url));
     setReviewBatch(null);
+    setReviewDrag(null);
   };
-  const reviewSetGap = (gap) => setReviewBatch(prev => prev ? { ...prev, gap, groups: buildGroups(prev.items, gap), selected: [] } : prev);
+  const reviewSetGap = (gap) => setReviewBatch(prev => prev ? { ...prev, gap, groups: buildGroups(prev.items, gap) } : prev);
   const reviewSetName = (groupId, name) => setReviewBatch(prev => prev ? { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, name } : g) } : prev);
-  const reviewToggleSelect = (itemId) => setReviewBatch(prev => {
+  // Glisser une photo vers un groupe existant (targetId) ou vers un nouveau groupe ('new')
+  const reviewDropItem = (itemId, targetId) => {
+    setReviewDrag(null);
+    setReviewBatch(prev => {
+      if (!prev) return prev;
+      const src = prev.groups.find(g => g.itemIds.includes(itemId));
+      if (!src || src.id === targetId) return prev;
+      const times = Object.fromEntries(prev.items.map(i => [i.id, i.time]));
+      let groups = prev.groups.map(g => ({ ...g, itemIds: g.itemIds.filter(id => id !== itemId) }));
+      if (targetId === 'new') {
+        const idx = groups.findIndex(g => g.id === src.id);
+        groups.splice(idx + 1, 0, { id: nextGroupId(), name: '', itemIds: [itemId] });
+      } else {
+        groups = groups.map(g => g.id === targetId ? { ...g, itemIds: [...g.itemIds, itemId].sort((x, y) => times[x] - times[y]) } : g);
+      }
+      return { ...prev, groups: groups.filter(g => g.itemIds.length > 0) };
+    });
+  };
+  const reviewRemoveItem = (itemId) => setReviewBatch(prev => {
     if (!prev) return prev;
-    const sel = prev.selected.includes(itemId) ? prev.selected.filter(id => id !== itemId) : [...prev.selected, itemId];
-    return { ...prev, selected: sel };
-  });
-  const reviewSelectGroup = (groupId) => setReviewBatch(prev => {
-    if (!prev) return prev;
-    const g = prev.groups.find(x => x.id === groupId);
-    if (!g) return prev;
-    const all = g.itemIds.every(id => prev.selected.includes(id));
-    const sel = all ? prev.selected.filter(id => !g.itemIds.includes(id)) : [...new Set([...prev.selected, ...g.itemIds])];
-    return { ...prev, selected: sel };
-  });
-  const reviewMoveSelected = (targetId) => setReviewBatch(prev => {
-    if (!prev || prev.selected.length === 0) return prev;
-    const sel = new Set(prev.selected);
-    const times = Object.fromEntries(prev.items.map(i => [i.id, i.time]));
-    const moved = prev.items.filter(i => sel.has(i.id)).map(i => i.id);
-    const srcIdx = prev.groups.findIndex(g => g.itemIds.some(id => sel.has(id)));
-    let groups = prev.groups.map(g => ({ ...g, itemIds: g.itemIds.filter(id => !sel.has(id)) }));
-    if (targetId === 'new') {
-      groups.splice(Math.max(srcIdx, 0) + 1, 0, { id: nextGroupId(), name: '', itemIds: moved });
-    } else {
-      groups = groups.map(g => g.id === targetId ? { ...g, itemIds: [...g.itemIds, ...moved].sort((x, y) => times[x] - times[y]) } : g);
-    }
-    return { ...prev, groups: groups.filter(g => g.itemIds.length > 0), selected: [] };
-  });
-  const reviewMergePrev = (groupId) => setReviewBatch(prev => {
-    if (!prev) return prev;
-    const visible = prev.groups.filter(g => g.itemIds.length > 0);
-    const idx = visible.findIndex(g => g.id === groupId);
-    if (idx <= 0) return prev;
-    const times = Object.fromEntries(prev.items.map(i => [i.id, i.time]));
-    const before = visible[idx - 1];
-    const cur = visible[idx];
-    const merged = { ...before, name: before.name || cur.name, itemIds: [...before.itemIds, ...cur.itemIds].sort((x, y) => times[x] - times[y]) };
-    return { ...prev, groups: visible.filter(g => g.id !== groupId).map(g => g.id === before.id ? merged : g), selected: [] };
-  });
-  const reviewRemoveSelected = () => setReviewBatch(prev => {
-    if (!prev || prev.selected.length === 0) return prev;
-    const sel = new Set(prev.selected);
-    prev.items.filter(i => sel.has(i.id)).forEach(i => URL.revokeObjectURL(i.url));
+    const it = prev.items.find(i => i.id === itemId);
+    if (it) URL.revokeObjectURL(it.url);
     return {
       ...prev,
-      items: prev.items.filter(i => !sel.has(i.id)),
-      groups: prev.groups.map(g => ({ ...g, itemIds: g.itemIds.filter(id => !sel.has(id)) })).filter(g => g.itemIds.length > 0),
-      selected: [],
+      items: prev.items.filter(i => i.id !== itemId),
+      groups: prev.groups.map(g => ({ ...g, itemIds: g.itemIds.filter(id => id !== itemId) })).filter(g => g.itemIds.length > 0),
     };
   });
 
@@ -2490,7 +2454,6 @@ export default function PhotosManager() {
         const b = reviewBatch;
         const itemById = Object.fromEntries(b.items.map(i => [i.id, i]));
         const groups = b.groups.filter(g => g.itemIds.length > 0);
-        const selCount = b.selected.length;
         const approx = b.items.filter(i => i.source !== 'exif').length;
         const gapLabel = b.gap >= 60 ? `${Math.floor(b.gap / 60)} min${b.gap % 60 ? ` ${b.gap % 60} s` : ''}` : `${b.gap} s`;
         return (
@@ -2502,7 +2465,7 @@ export default function PhotosManager() {
                   <div className="min-w-0">
                     <h3 className="font-bold text-base sm:text-lg">Vérifie le classement</h3>
                     <p className={`text-xs sm:text-sm mt-0.5 ${subtext}`}>
-                      {b.items.length} photo{b.items.length > 1 ? 's' : ''} · {groups.length} groupe{groups.length > 1 ? 's' : ''} détecté{groups.length > 1 ? 's' : ''} d'après l'heure de prise de vue. Nomme chaque jeu — un groupe sans nom reste sans tag.
+                      {b.items.length} photo{b.items.length > 1 ? 's' : ''} · {groups.length} groupe{groups.length > 1 ? 's' : ''} détecté{groups.length > 1 ? 's' : ''} d'après l'heure de prise de vue. Nomme chaque jeu, et glisse les photos d'un groupe à l'autre pour corriger. Un groupe sans nom reste sans tag.
                     </p>
                   </div>
                   <button onClick={reviewCancel} className={`p-1.5 rounded-lg flex-shrink-0 ${btnGhost}`} title="Annuler"><X className="w-4 h-4" /></button>
@@ -2520,61 +2483,59 @@ export default function PhotosManager() {
                     {approx} photo{approx > 1 ? 's' : ''} sans heure de prise de vue précise (date du fichier utilisée) : le regroupement peut être moins fiable.
                   </p>
                 )}
-                {selCount > 0 && (
-                  <div className={`mt-3 flex flex-wrap items-center gap-2 p-2 rounded-xl ${darkMode ? 'bg-blue-500/10' : 'bg-blue-50'}`}>
-                    <span className="text-xs font-semibold text-blue-500">{selCount} sélectionnée{selCount > 1 ? 's' : ''}</span>
-                    <button onClick={() => reviewMoveSelected('new')} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"><Plus className="w-3.5 h-3.5" /> Nouveau groupe</button>
-                    <button onClick={reviewRemoveSelected} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"><Trash2 className="w-3.5 h-3.5" /> Ne pas envoyer</button>
-                    <button onClick={() => setReviewBatch(prev => prev ? { ...prev, selected: [] } : prev)} className={`text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}>Désélectionner</button>
-                    <span className={`text-[11px] ${subtext}`}>ou clique « Déplacer ici » sur un groupe</span>
-                  </div>
-                )}
               </div>
 
               {/* Groupes */}
               <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
                 {groups.map((g, gi) => {
                   const its = g.itemIds.map(id => itemById[id]);
-                  const allSel = its.every(i => b.selected.includes(i.id));
+                  const isOver = reviewDrag && reviewDrag.over === g.id;
                   return (
-                    <div key={g.id} className={`rounded-xl border p-2.5 sm:p-3 ${darkMode ? 'border-gray-700 bg-gray-900/40' : 'border-gray-200 bg-gray-50/70'}`}>
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <div
+                      key={g.id}
+                      onDragOver={e => { if (!reviewDrag) return; e.preventDefault(); if (reviewDrag.over !== g.id) setReviewDrag(d => d ? { ...d, over: g.id } : d); }}
+                      onDrop={e => { e.preventDefault(); if (reviewDrag) reviewDropItem(reviewDrag.itemId, g.id); }}
+                      className={`rounded-xl border p-2.5 sm:p-3 transition-colors ${isOver ? 'border-blue-500 ring-2 ring-blue-500/40 ' : ''}${darkMode ? 'border-gray-700 bg-gray-900/40' : 'border-gray-200 bg-gray-50/70'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
                         <span className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{gi + 1}</span>
                         <input
                           list="games-datalist" type="text" value={g.name} placeholder="Nom du jeu (vide = sans tag)"
                           onChange={e => reviewSetName(g.id, e.target.value)}
                           className={`flex-1 min-w-[160px] text-sm px-3 py-1.5 rounded-lg border outline-none ${inputCls}`}
                         />
-                        <span className={`text-[11px] font-mono ${subtext}`}>{its.length} photo{its.length > 1 ? 's' : ''} · {formatClock(its[0].time)}{its.length > 1 ? ` → ${formatClock(its[its.length - 1].time)}` : ''}</span>
-                        {selCount > 0 && !its.every(i => b.selected.includes(i.id)) && (
-                          <button onClick={() => reviewMoveSelected(g.id)} className="text-xs px-2.5 py-1.5 rounded-lg font-medium bg-emerald-500 hover:bg-emerald-600 text-white transition-colors">Déplacer ici</button>
-                        )}
-                        <button onClick={() => reviewSelectGroup(g.id)} className={`text-xs px-2 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}>{allSel ? 'Désélectionner' : 'Tout sélectionner'}</button>
-                        {gi > 0 && (
-                          <button onClick={() => reviewMergePrev(g.id)} className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`} title="Fusionner avec le groupe précédent">
-                            <Merge className="w-3.5 h-3.5" /><span className="hidden sm:inline">Fusionner avec le précédent</span>
-                          </button>
-                        )}
                       </div>
                       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
-                        {its.map(it => {
-                          const sel = b.selected.includes(it.id);
-                          return (
+                        {its.map(it => (
+                          <div
+                            key={it.id} draggable
+                            onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(it.id)); } catch {} setReviewDrag({ itemId: it.id, over: null }); }}
+                            onDragEnd={() => setReviewDrag(null)}
+                            className={`relative group rounded-lg overflow-hidden aspect-square cursor-grab active:cursor-grabbing transition-opacity ${reviewDrag && reviewDrag.itemId === it.id ? 'opacity-40' : ''}`}
+                            title={`${it.file.name} — ${formatClock(it.time)}`}
+                          >
+                            <img src={it.url} alt="" className="w-full h-full object-cover" loading="lazy" draggable={false} />
+                            <span className="absolute bottom-0 left-0 right-0 bg-black/55 text-white text-[9px] text-center py-px">{formatClock(it.time)}</span>
                             <button
-                              key={it.id} onClick={() => reviewToggleSelect(it.id)}
-                              className={`relative rounded-lg overflow-hidden aspect-square transition-all ${sel ? 'ring-2 ring-blue-500 scale-[0.95]' : ''}`}
-                              title={`${it.file.name} — ${formatClock(it.time)}`}
-                            >
-                              <img src={it.url} alt="" className="w-full h-full object-cover" loading="lazy" draggable={false} />
-                              {sel && <div className="absolute inset-0 bg-blue-500/30 flex items-center justify-center"><div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center"><Check className="w-3 h-3 text-white" /></div></div>}
-                              <span className="absolute bottom-0 left-0 right-0 bg-black/55 text-white text-[9px] text-center py-px">{formatClock(it.time)}</span>
-                            </button>
-                          );
-                        })}
+                              onClick={() => reviewRemoveItem(it.id)}
+                              className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Ne pas envoyer cette photo"
+                            ><X className="w-3 h-3" /></button>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
                 })}
+                {reviewDrag && (
+                  <div
+                    onDragOver={e => { e.preventDefault(); if (reviewDrag.over !== 'new') setReviewDrag(d => d ? { ...d, over: 'new' } : d); }}
+                    onDrop={e => { e.preventDefault(); reviewDropItem(reviewDrag.itemId, 'new'); }}
+                    className={`rounded-xl border-2 border-dashed py-4 text-center text-sm font-medium transition-colors ${reviewDrag.over === 'new' ? 'border-blue-500 bg-blue-500/10 text-blue-500' : (darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500')}`}
+                  >
+                    <Plus className="w-4 h-4 inline -mt-0.5 mr-1" />Glisser ici pour créer un nouveau groupe
+                  </div>
+                )}
                 {groups.length === 0 && <p className={`text-sm text-center py-8 ${subtext}`}>Plus aucune photo à envoyer.</p>}
               </div>
 

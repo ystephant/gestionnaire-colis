@@ -45,6 +45,11 @@ export default function GenerateurAnnonces() {
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [renamingTemplateId, setRenamingTemplateId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [showAllTemplates, setShowAllTemplates] = useState(false);
+
+  // Le nom du jeu saisi dans le formulaire filtre les vignettes (sauf si on a demandé "Tout afficher")
+  useEffect(() => { setShowAllTemplates(false); }, [nomJeu]);
 
   const etatOptions = [
     "Bon état", "Boîte usée un peu partout", "Comme neuf", "Correct avec marques d'usage",
@@ -303,7 +308,34 @@ export default function GenerateurAnnonces() {
     }
   };
 
-  const TEMPLATE_ACCENTS = ['bg-emerald-500', 'bg-sky-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-500', 'bg-teal-500'];
+  // Couleur = état général de l'annonce type
+  const templateLevel = (t) => {
+    const e = t.etatMateriel || 'Bon état';
+    let lvl = 1; // 0 excellent, 1 bon, 2 correct, 3 usé
+    if (t.blister === 'Oui - Neuf sous blister' || /^Neuf|Comme neuf|Joué une fois|^Très bon état/.test(e)) lvl = 0;
+    else if (e === 'Bon état') lvl = 1;
+    else if (/^Correct|^Traces d'usure$/.test(e)) lvl = 2;
+    else lvl = 3;
+    if (t.blister !== 'Oui - Neuf sous blister' && (t.complet || 'Complet') !== 'Complet') lvl = Math.min(3, lvl + 1);
+    return lvl;
+  };
+  const LEVEL_STYLES = [
+    { bar: 'bg-emerald-500', label: 'Excellent' },
+    { bar: 'bg-lime-500', label: 'Bon' },
+    { bar: 'bg-amber-500', label: 'Correct' },
+    { bar: 'bg-rose-500', label: 'Usé / incomplet' },
+  ];
+  const normText = (x) => (x || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const searchQ = normText(templateSearch);
+  const nameQ = (!searchQ && !showAllTemplates) ? normText(nomJeu) : '';
+  const visibleTemplates = [...templates]
+    .filter(tpl => {
+      const hay = normText(tpl.name + ' ' + ((tpl.settings && tpl.settings.gameName) || ''));
+      if (searchQ) return hay.includes(searchQ);
+      if (nameQ) return hay.includes(nameQ) || !(tpl.settings && tpl.settings.gameName); // les modèles généraux restent visibles
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
 
   if (loading) {
     return (
@@ -739,11 +771,44 @@ export default function GenerateurAnnonces() {
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mt-6 transition-colors duration-300`}>
           <div className="flex items-center justify-between mb-1">
             <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Annonces types</h2>
-            <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{templates.length} modèle{templates.length > 1 ? 's' : ''}</span>
+            <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{visibleTemplates.length === templates.length ? templates.length : `${visibleTemplates.length} / ${templates.length}`} modèle{templates.length > 1 ? 's' : ''}</span>
           </div>
           <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
             Clique sur une vignette pour remplir le formulaire d'un coup, puis ajuste si besoin.
           </p>
+
+          <div className="relative mb-2">
+            <input
+              type="text"
+              value={templateSearch}
+              onChange={(e) => setTemplateSearch(e.target.value)}
+              placeholder="Rechercher une annonce type (nom, jeu)..."
+              className={`w-full pl-4 pr-10 py-2 border-2 rounded-xl text-sm focus:border-emerald-500 focus:outline-none ${
+                darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            />
+            {templateSearch && (
+              <button
+                onClick={() => setTemplateSearch('')}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 px-2 text-lg leading-none ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Effacer la recherche"
+              >×</button>
+            )}
+          </div>
+
+          {nameQ && (
+            <p className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Filtré d'après le nom du jeu « {nomJeu.trim()} » (les modèles généraux restent affichés).{' '}
+              <button onClick={() => setShowAllTemplates(true)} className="text-emerald-600 font-semibold hover:underline">Tout afficher</button>
+            </p>
+          )}
+
+          <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 mb-3 text-[11px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            <span>Couleur = état général :</span>
+            {LEVEL_STYLES.map(l => (
+              <span key={l.label} className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-full ${l.bar}`} />{l.label}</span>
+            ))}
+          </div>
 
           {templatesError && (
             <p className={`text-sm mb-4 px-3 py-2 rounded-lg ${darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>
@@ -752,7 +817,7 @@ export default function GenerateurAnnonces() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {templates.map((tpl, i) => {
+            {visibleTemplates.map((tpl) => {
               const t = tpl.settings || {};
               const isActive = activeTemplateId === tpl.id;
               const chips = [
@@ -772,7 +837,7 @@ export default function GenerateurAnnonces() {
                       : (darkMode ? 'border-gray-700 bg-gray-700/40 hover:border-gray-500' : 'border-gray-200 bg-white hover:border-emerald-300')
                   }`}
                 >
-                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${TEMPLATE_ACCENTS[i % TEMPLATE_ACCENTS.length]}`} />
+                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${LEVEL_STYLES[templateLevel(t)].bar}`} />
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
                       {renamingTemplateId === tpl.id ? (
@@ -840,6 +905,11 @@ export default function GenerateurAnnonces() {
               );
             })}
 
+            {templates.length > 0 && visibleTemplates.length === 0 && (
+              <p className={`text-sm col-span-full text-center py-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                Aucune annonce type ne correspond.
+              </p>
+            )}
             {templates.length === 0 && !templatesError && (
               <p className={`text-sm col-span-full text-center py-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                 Aucune annonce type pour l'instant. Remplis le formulaire puis clique sur « Enregistrer comme annonce type ».
