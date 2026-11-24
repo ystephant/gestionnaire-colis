@@ -34,6 +34,17 @@ export default function GenerateurAnnonces() {
   const [copyMessage, setCopyMessage] = useState('');
   const [gameNameSuggestions, setGameNameSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [extraText, setExtraText] = useState('');
+
+  // Annonces types
+  const [templates, setTemplates] = useState([]);
+  const [templatesError, setTemplatesError] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateIncludeName, setTemplateIncludeName] = useState(true);
+  const [activeTemplateId, setActiveTemplateId] = useState(null);
+  const [renamingTemplateId, setRenamingTemplateId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const etatOptions = [
     "Bon état", "Boîte usée un peu partout", "Comme neuf", "Correct avec marques d'usage",
@@ -54,11 +65,12 @@ export default function GenerateurAnnonces() {
   useEffect(() => {
     checkAuth();
     loadGameNames();
+    loadTemplates();
   }, []);
 
   useEffect(() => {
     genererDescription();
-  }, [nomJeu, prefixSociete, etatMateriel, blister, complet, reglesFr, rayures, aspectSecondaire, rayures2, extension, lot, vintedInfo, noHand, preferShipping, elementsManquants]);
+  }, [nomJeu, prefixSociete, etatMateriel, blister, complet, reglesFr, rayures, aspectSecondaire, rayures2, extension, lot, vintedInfo, noHand, preferShipping, elementsManquants, extraText]);
 
   const checkAuth = () => {
     const savedUsername = localStorage.getItem('username');
@@ -139,6 +151,10 @@ export default function GenerateurAnnonces() {
       }
     }
 
+    if (extraText.trim()) {
+      desc += '\n' + extraText.trim() + '\n';
+    }
+
     if (extension) {
       desc += '\n🚩 Attention, il s\'agit d\'une extension. Je ne vends pas le jeu de base qui est nécessaire pour jouer.';
     }
@@ -169,6 +185,125 @@ export default function GenerateurAnnonces() {
       setTimeout(() => setCopyMessage(''), 10000);
     }
   };
+
+  // ── Annonces types ───────────────────────────────────────────
+  const loadTemplates = async () => {
+    const savedUsername = localStorage.getItem('username');
+    if (!savedUsername) return;
+    try {
+      const { data, error } = await supabase
+        .from('annonce_templates')
+        .select('*')
+        .eq('user_id', savedUsername)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setTemplates(data || []);
+      setTemplatesError(false);
+    } catch (error) {
+      console.error('Erreur de chargement des annonces types:', error);
+      setTemplatesError(true);
+    }
+  };
+
+  const getCurrentSettings = (includeName) => ({
+    gameName: includeName ? nomJeu.trim() : '',
+    prefixSociete, etatMateriel, blister, complet, reglesFr, rayures,
+    aspectSecondaire, rayures2, extension, lot, vintedInfo, noHand, preferShipping,
+    elementsManquants, extraText,
+  });
+
+  const appliquerTemplate = (tpl) => {
+    const t = tpl.settings || {};
+    if (t.gameName) setNomJeu(t.gameName);
+    setPrefixSociete(t.prefixSociete ?? true);
+    setEtatMateriel(t.etatMateriel ?? 'Bon état');
+    setBlister(t.blister ?? 'Non');
+    setComplet(t.complet ?? 'Complet');
+    setReglesFr(t.reglesFr ?? true);
+    setRayures(t.rayures ?? 'Bon état');
+    setAspectSecondaire(t.aspectSecondaire ?? false);
+    setRayures2(t.rayures2 ?? 'Bon état');
+    setExtension(t.extension ?? false);
+    setLot(t.lot ?? false);
+    setVintedInfo(t.vintedInfo ?? true);
+    setNoHand(t.noHand ?? false);
+    setPreferShipping(t.preferShipping ?? false);
+    setElementsManquants(t.elementsManquants ?? '');
+    setExtraText(t.extraText ?? '');
+    setActiveTemplateId(tpl.id);
+    setCopyMessage(`Annonce type « ${tpl.name} » appliquée`);
+    setTimeout(() => setCopyMessage(''), 4000);
+  };
+
+  const enregistrerTemplate = async () => {
+    const name = templateName.trim();
+    if (!name) return;
+    const savedUsername = localStorage.getItem('username');
+    try {
+      const { data, error } = await supabase
+        .from('annonce_templates')
+        .insert({ user_id: savedUsername, name, settings: getCurrentSettings(templateIncludeName) })
+        .select()
+        .single();
+      if (error) throw error;
+      setTemplates(prev => [...prev, data]);
+      setActiveTemplateId(data.id);
+      setShowSaveTemplate(false);
+      setTemplateName('');
+      setTemplatesError(false);
+      setCopyMessage(`Annonce type « ${name} » enregistrée`);
+      setTimeout(() => setCopyMessage(''), 4000);
+    } catch (error) {
+      console.error('Erreur enregistrement annonce type:', error);
+      alert("Impossible d'enregistrer l'annonce type. La table annonce_templates existe-t-elle bien dans Supabase ?");
+    }
+  };
+
+  const mettreAJourTemplate = async (tpl) => {
+    if (!confirm(`Remplacer le contenu de « ${tpl.name} » par le formulaire actuel ?`)) return;
+    const includeName = !!(tpl.settings && tpl.settings.gameName);
+    const settings = getCurrentSettings(includeName);
+    try {
+      const { error } = await supabase.from('annonce_templates').update({ settings }).eq('id', tpl.id);
+      if (error) throw error;
+      setTemplates(prev => prev.map(t => t.id === tpl.id ? { ...t, settings } : t));
+      setActiveTemplateId(tpl.id);
+      setCopyMessage(`Annonce type « ${tpl.name} » mise à jour`);
+      setTimeout(() => setCopyMessage(''), 4000);
+    } catch (error) {
+      console.error('Erreur mise à jour annonce type:', error);
+      alert("Impossible de mettre à jour l'annonce type.");
+    }
+  };
+
+  const renommerTemplate = async (tpl) => {
+    const name = renameValue.trim();
+    setRenamingTemplateId(null);
+    if (!name || name === tpl.name) return;
+    try {
+      const { error } = await supabase.from('annonce_templates').update({ name }).eq('id', tpl.id);
+      if (error) throw error;
+      setTemplates(prev => prev.map(t => t.id === tpl.id ? { ...t, name } : t));
+    } catch (error) {
+      console.error('Erreur renommage annonce type:', error);
+      alert("Impossible de renommer l'annonce type.");
+    }
+  };
+
+  const supprimerTemplate = async (tpl) => {
+    if (!confirm(`Supprimer l'annonce type « ${tpl.name} » ?`)) return;
+    try {
+      const { error } = await supabase.from('annonce_templates').delete().eq('id', tpl.id);
+      if (error) throw error;
+      setTemplates(prev => prev.filter(t => t.id !== tpl.id));
+      if (activeTemplateId === tpl.id) setActiveTemplateId(null);
+    } catch (error) {
+      console.error('Erreur suppression annonce type:', error);
+      alert("Impossible de supprimer l'annonce type.");
+    }
+  };
+
+  const TEMPLATE_ACCENTS = ['bg-emerald-500', 'bg-sky-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-500', 'bg-teal-500'];
 
   if (loading) {
     return (
@@ -484,6 +619,24 @@ export default function GenerateurAnnonces() {
                   </select>
                 </div>
               )}
+
+              {/* Caractéristiques particulières du jeu */}
+              <div>
+                <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} mb-2`}>
+                  Caractéristiques particulières (ajouté à l'annonce) :
+                </label>
+                <textarea
+                  value={extraText}
+                  onChange={(e) => setExtraText(e.target.value)}
+                  rows="3"
+                  className={`w-full px-4 py-2 border-2 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors duration-300 ${
+                    darkMode
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400'
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                  placeholder="Ex : édition collector, 3 extensions incluses, jetons en bois..."
+                />
+              </div>
             </div>
           </div>
 
@@ -517,6 +670,179 @@ export default function GenerateurAnnonces() {
             {copyMessage && (
               <p className="text-green-600 text-center mt-4 font-medium animate-pulse">
                 {copyMessage}
+              </p>
+            )}
+
+            <button
+              onClick={() => {
+                setTemplateName(nomJeu.trim());
+                setTemplateIncludeName(nomJeu.trim() !== '');
+                setShowSaveTemplate(v => !v);
+              }}
+              className={`w-full mt-3 py-2.5 rounded-xl font-semibold text-sm border-2 border-dashed transition ${
+                darkMode
+                  ? 'border-gray-600 text-gray-300 hover:border-emerald-500 hover:text-emerald-400'
+                  : 'border-gray-300 text-gray-600 hover:border-emerald-500 hover:text-emerald-600'
+              }`}
+            >
+              💾 Enregistrer comme annonce type
+            </button>
+
+            {showSaveTemplate && (
+              <div className={`mt-3 p-4 rounded-xl space-y-3 ${darkMode ? 'bg-gray-700/60' : 'bg-emerald-50'}`}>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') enregistrerTemplate(); }}
+                  placeholder="Nom de l'annonce type (ex : Catane, Très bon état...)"
+                  className={`w-full px-3 py-2 border-2 rounded-lg text-sm focus:border-emerald-500 focus:outline-none ${
+                    darkMode
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400'
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                  autoFocus
+                />
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={templateIncludeName}
+                    onChange={(e) => setTemplateIncludeName(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600"
+                  />
+                  <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Inclure le nom du jeu (décocher pour un modèle général, valable pour tous les jeux)
+                  </span>
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={enregistrerTemplate}
+                    className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-emerald-700 transition"
+                  >
+                    Enregistrer
+                  </button>
+                  <button
+                    onClick={() => setShowSaveTemplate(false)}
+                    className={`flex-1 py-2 rounded-lg font-semibold text-sm transition ${
+                      darkMode ? 'bg-gray-600 text-gray-200 hover:bg-gray-500' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Annonces types */}
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 mt-6 transition-colors duration-300`}>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Annonces types</h2>
+            <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{templates.length} modèle{templates.length > 1 ? 's' : ''}</span>
+          </div>
+          <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            Clique sur une vignette pour remplir le formulaire d'un coup, puis ajuste si besoin.
+          </p>
+
+          {templatesError && (
+            <p className={`text-sm mb-4 px-3 py-2 rounded-lg ${darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>
+              Les annonces types ne sont pas encore activées : lance le script SQL « annonce_templates » dans Supabase.
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {templates.map((tpl, i) => {
+              const t = tpl.settings || {};
+              const isActive = activeTemplateId === tpl.id;
+              const chips = [
+                t.blister === 'Oui - Neuf sous blister' ? 'Neuf sous blister' : (t.etatMateriel || 'Bon état'),
+                t.blister === 'Oui - Neuf sous blister' ? null : (t.complet || 'Complet'),
+                t.extension ? 'Extension' : null,
+                t.lot ? 'Lot' : null,
+                t.extraText && t.extraText.trim() ? 'Texte perso' : null,
+              ].filter(Boolean);
+              return (
+                <div
+                  key={tpl.id}
+                  onClick={() => renamingTemplateId !== tpl.id && appliquerTemplate(tpl)}
+                  className={`relative group rounded-xl border-2 p-3 pl-4 cursor-pointer overflow-hidden transition-all hover:shadow-lg ${
+                    isActive
+                      ? (darkMode ? 'border-emerald-500 bg-emerald-900/20' : 'border-emerald-500 bg-emerald-50')
+                      : (darkMode ? 'border-gray-700 bg-gray-700/40 hover:border-gray-500' : 'border-gray-200 bg-white hover:border-emerald-300')
+                  }`}
+                >
+                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${TEMPLATE_ACCENTS[i % TEMPLATE_ACCENTS.length]}`} />
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      {renamingTemplateId === tpl.id ? (
+                        <input
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onBlur={() => renommerTemplate(tpl)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') renommerTemplate(tpl);
+                            if (e.key === 'Escape') setRenamingTemplateId(null);
+                          }}
+                          className={`w-full px-2 py-1 border-2 rounded-lg text-sm focus:border-emerald-500 focus:outline-none ${
+                            darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-200 text-gray-900'
+                          }`}
+                          autoFocus
+                        />
+                      ) : (
+                        <p className={`font-bold text-sm truncate ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{tpl.name}</p>
+                      )}
+                      <p className={`text-xs truncate mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {t.gameName ? `🎲 ${t.gameName}` : 'Modèle général'}
+                      </p>
+                    </div>
+                    <div className="flex gap-0.5 flex-shrink-0 opacity-60 group-hover:opacity-100 transition">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setRenamingTemplateId(tpl.id); setRenameValue(tpl.name); }}
+                        className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-100 text-gray-500'}`}
+                        title="Renommer"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); mettreAJourTemplate(tpl); }}
+                        className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-100 text-gray-500'}`}
+                        title="Mettre à jour avec le formulaire actuel"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="23 4 23 10 17 10"></polyline>
+                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); supprimerTemplate(tpl); }}
+                        className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-red-900/50 text-red-400' : 'hover:bg-red-50 text-red-500'}`}
+                        title="Supprimer"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {chips.map(c => (
+                      <span key={c} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${darkMode ? 'bg-gray-600 text-gray-200' : 'bg-gray-100 text-gray-600'}`}>{c}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {templates.length === 0 && !templatesError && (
+              <p className={`text-sm col-span-full text-center py-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                Aucune annonce type pour l'instant. Remplis le formulaire puis clique sur « Enregistrer comme annonce type ».
               </p>
             )}
           </div>

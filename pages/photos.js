@@ -8,6 +8,7 @@ import {
   Image as ImageIcon, Loader2, Sun, Moon, LogOut, ArrowLeft,
   Folder, FolderOpen, Download, ZoomIn, Clipboard, Search,
   RotateCcw, RotateCw, ChevronLeft, AlertTriangle,
+  Package, Plus, FolderMinus, Merge,
 } from 'lucide-react';
 
 const supabase = createClient(
@@ -55,6 +56,120 @@ const formatTagTimestamp = () => {
 };
 const baseGameName = (tag) => (tag ? tag.split(' \u2022 ')[0] : '');
 
+const formatTagTimestampAt = (d) =>
+  `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+
+// ── Regroupement automatique des photos par heure de prise de vue ──
+
+// Lit la date de prise de vue dans l'EXIF d'un JPEG (ms) — null si absente
+const readExifDate = async (file) => {
+  try {
+    const buf = await file.slice(0, 131072).arrayBuffer();
+    const v = new DataView(buf);
+    if (v.getUint16(0) !== 0xFFD8) return null;
+    let off = 2;
+    while (off + 4 < v.byteLength) {
+      const marker = v.getUint16(off);
+      if (marker === 0xFFDA) break;
+      const size = v.getUint16(off + 2);
+      if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) {
+        const tiff = off + 10;
+        const little = v.getUint16(tiff) === 0x4949;
+        const u16 = (o) => v.getUint16(o, little);
+        const u32 = (o) => v.getUint32(o, little);
+        const findTag = (ifdOff, wanted) => {
+          const count = u16(tiff + ifdOff);
+          for (let i = 0; i < count; i++) {
+            const e = tiff + ifdOff + 2 + i * 12;
+            if (u16(e) === wanted) return { n: u32(e + 4), valOff: e + 8 };
+          }
+          return null;
+        };
+        const readAscii = (entry) => {
+          const o = entry.n > 4 ? tiff + u32(entry.valOff) : entry.valOff;
+          let str = '';
+          for (let i = 0; i < entry.n - 1; i++) str += String.fromCharCode(v.getUint8(o + i));
+          return str;
+        };
+        const ifd0 = u32(tiff + 4);
+        const exifPtr = findTag(ifd0, 0x8769);
+        let entry = null;
+        if (exifPtr) {
+          const exifIfd = u32(exifPtr.valOff);
+          entry = findTag(exifIfd, 0x9003) || findTag(exifIfd, 0x9004);
+        }
+        if (!entry) entry = findTag(ifd0, 0x0132);
+        if (!entry) return null;
+        const m = readAscii(entry).match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+        return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : null;
+      }
+      off += 2 + size;
+    }
+  } catch { /* ignore */ }
+  return null;
+};
+
+// EXIF → date dans le nom du fichier (IMG_20241120_143201.jpg) → date du fichier
+const getCaptureTime = async (file) => {
+  const exif = await readExifDate(file);
+  if (exif) return { time: exif, source: 'exif' };
+  const m = file.name.match(/(20\d{2})[-_]?(\d{2})[-_]?(\d{2})[-_ T]?(\d{2})[-_]?(\d{2})[-_]?(\d{2})/);
+  if (m && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31 && +m[4] < 24) {
+    return { time: new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime(), source: 'nom' };
+  }
+  return { time: file.lastModified || Date.now(), source: 'fichier' };
+};
+
+let _groupSeq = 0;
+const nextGroupId = () => `g${++_groupSeq}`;
+
+// items triés par heure → groupes : nouvelle série quand l'écart dépasse gapSec
+const buildGroups = (items, gapSec) => {
+  const groups = [];
+  let cur = null;
+  let last = null;
+  items.forEach(it => {
+    if (!cur || (it.time - last) / 1000 > gapSec) {
+      cur = { id: nextGroupId(), name: '', itemIds: [] };
+      groups.push(cur);
+    }
+    cur.itemIds.push(it.id);
+    last = it.time;
+  });
+  return groups;
+};
+
+// Écart conseillé : repère le plus gros "saut" entre les écarts courts (même jeu) et longs (jeu suivant)
+const suggestGap = (items) => {
+  if (items.length < 5) return 60;
+  const gaps = [];
+  for (let i = 1; i < items.length; i++) gaps.push(Math.max(1, (items[i].time - items[i - 1].time) / 1000));
+  const sorted = [...gaps].sort((a, b) => a - b);
+  let best = null;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const ratio = sorted[i + 1] / sorted[i];
+    if (sorted[i + 1] >= 20 && ratio >= 2.5 && (!best || ratio > best.ratio)) {
+      best = { ratio, thr: Math.sqrt(sorted[i] * sorted[i + 1]) };
+    }
+  }
+  if (!best) return 60;
+  return Math.round(Math.min(600, Math.max(15, best.thr)) / 5) * 5;
+};
+
+const formatClock = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+const runPool = async (tasks, limit, onDone) => {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+    while (i < tasks.length) {
+      const idx = i++;
+      await tasks[idx]();
+      onDone();
+    }
+  });
+  await Promise.all(workers);
+};
+
 // Horodatage court depuis le tag : "11/03 14:32" → "1103-1432"
 const shortTs = (tag) => {
   if (!tag) return '';
@@ -68,7 +183,8 @@ const makeFilename = (photo, index, ext) => {
   if (photo.game_tag) {
     const name = baseGameName(photo.game_tag).replace(/\s+/g, '_');
     const ts   = shortTs(photo.game_tag);
-    return `${name}_${ts}_${index}.${ext}`;
+    const kind = photo.photo_type === 'colis' ? 'colis_' : '';
+    return `${name}_${ts}_${kind}${index}.${ext}`;
   }
   return `photo_${index}.${ext}`;
 };
@@ -82,7 +198,7 @@ const PhotoCard = ({
   photo, columnId, siblingPhotos,
   isSelected, isDragged, isOverItem, inFolder,
   onDragStart, onDragEnd, onDragOver,
-  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto, onCopyImage,
+  onToggleSelect, onCtrlSelect, onOpenLightbox, onDownloadSingle, onDeletePhoto, onCopyImage, onUntagPhoto,
 }) => {
   const rot        = photo.rotation || 0;
   const blobCache  = React.useRef(null); // { url, file } — pré-chargé au survol
@@ -173,6 +289,15 @@ const PhotoCard = ({
           >
             <Download className="w-3.5 h-3.5" />
           </button>
+          {photo.game_tag && onUntagPhoto && (
+            <button
+              onClick={e => { e.stopPropagation(); onUntagPhoto(photo); }}
+              className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+              title="Sortir du dossier (sans supprimer la photo)"
+            >
+              <FolderMinus className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={e => { e.stopPropagation(); onDeletePhoto(photo); }}
             className="w-7 h-7 rounded-lg bg-red-500/80 hover:bg-red-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
@@ -198,7 +323,7 @@ const PhotoCard = ({
         const [name, ts] = photo.game_tag.split(' \u2022 ');
         return (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-1.5 pt-4 pb-1">
-            <p className="text-white text-xs font-semibold truncate leading-tight">{name}</p>
+            <p className="text-white text-xs font-semibold truncate leading-tight">{photo.photo_type === 'colis' ? '📦 ' : ''}{name}</p>
             {ts && <p className="text-white/60 text-[9px] truncate leading-tight">{ts}</p>}
           </div>
         );
@@ -227,6 +352,13 @@ export default function PhotosManager() {
   const [uploading, setUploading]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef(null);
+  const folderFileRef = useRef(null);      // sélecteur de fichiers pour un dossier précis
+  const folderTargetRef = useRef(null);    // { colId, tagLabel, photoType }
+  const colisPromptInputRef = useRef(null);
+  const [preparingBatch, setPreparingBatch] = useState(false);
+  const [reviewBatch, setReviewBatch]       = useState(null); // { items, gap, groups, selected }
+  const [dragOverFolderTag, setDragOverFolderTag] = useState(null);
+  const [colisPrompt, setColisPrompt]       = useState(null); // { tagLabel }
 
   // Drag de photos entre colonnes
   const [draggingPhoto, setDraggingPhoto]     = useState(null);
@@ -259,6 +391,7 @@ export default function PhotosManager() {
 
   // Filtre/surbrillance des jeux en attente depuis 20+ jours
   const [filterOldAttente, setFilterOldAttente] = useState(false); // false=surbrillance seulement, true=filtre
+  const [filterNoColis, setFilterNoColis] = useState(false); // true = seulement les dossiers sans photos du colis
 
   // Retourne true si le tag correspond à un groupe entré en attente réception il y a 20 jours ou plus
   // Utilise le champ attente_since de la première photo du groupe
@@ -534,32 +667,237 @@ export default function PhotosManager() {
     return { url: data.secure_url, publicId: data.public_id };
   };
 
-  const handleFileDrop = useCallback(async (files) => {
+  // Date d'entrée en "attente réception" d'un dossier (conservée pour y ajouter des photos)
+  const folderAttenteSince = (colId, tagLabel) => {
+    if (colId !== 'en_attente_reception') return null;
+    const ref = (photosRef.current[colId] || []).find(p => p.game_tag === tagLabel && p.attente_since);
+    return ref ? ref.attente_since : new Date().toISOString();
+  };
+
+  // Upload direct (sans classement) — photo isolée ou ajout à un dossier précis
+  const uploadFilesDirect = useCallback(async (files, opts = {}) => {
+    const { status = 'pas_encore_en_vente', tag = null, photoType = 'annonce', attenteSince = null } = opts;
     const valid = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (!valid.length) return;
     setUploading(true); setUploadProgress(0);
 
     let done = 0;
+    let ok = 0;
+    let missingColumn = false;
+    const base = Date.now();
 
     await Promise.all(
-      valid.map(async (file) => {
+      valid.map(async (file, i) => {
         try {
           const { url, publicId } = await uploadToCloudinary(file);
-          const { data, error } = await supabase.from('sale_photos').insert({
+          const row = {
             user_id: username, image_url: url, cloudinary_public_id: publicId,
-            status: 'pas_encore_en_vente', position: Date.now(), rotation: 0,
-          }).select().single();
-          if (error) throw error;
-          setPhotos(prev => ({ ...prev, pas_encore_en_vente: [...prev.pas_encore_en_vente, data] }));
-        } catch { showToast(`Erreur upload: ${file.name}`, 'error'); }
+            status, position: base + i, rotation: 0,
+          };
+          if (tag) row.game_tag = tag;
+          if (photoType !== 'annonce') row.photo_type = photoType;
+          if (attenteSince) row.attente_since = attenteSince;
+          const { data, error } = await supabase.from('sale_photos').insert(row).select().single();
+          if (error) { if (/photo_type/.test(error.message || '')) missingColumn = true; throw error; }
+          setPhotos(prev => ({ ...prev, [status]: [...(prev[status] || []), data] }));
+          ok++;
+        } catch { if (!missingColumn) showToast(`Erreur upload: ${file.name}`, 'error'); }
         done++;
         setUploadProgress(Math.round((done / valid.length) * 100));
       })
     );
 
     setUploading(false); setUploadProgress(0);
-    showToast(`${done} photo${done > 1 ? 's' : ''} ajoutée${done > 1 ? 's' : ''}`, 'success');
+    if (missingColumn) {
+      showToast('Colonne photo_type manquante : lance le SQL fourni dans Supabase', 'error');
+    } else if (ok > 0) {
+      showToast(
+        photoType === 'colis'
+          ? `${ok} photo${ok > 1 ? 's' : ''} du colis ajoutée${ok > 1 ? 's' : ''}`
+          : `${ok} photo${ok > 1 ? 's' : ''} ajoutée${ok > 1 ? 's' : ''}`,
+        'success'
+      );
+    }
   }, [username]);
+
+  // Dépôt de plusieurs photos : lecture de l'heure de prise de vue puis écran de vérification
+  const handleFileDrop = useCallback(async (files) => {
+    const valid = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (!valid.length) return;
+    if (valid.length === 1) { await uploadFilesDirect(valid); return; }
+
+    setPreparingBatch(true);
+    try {
+      const items = await Promise.all(valid.map(async (file, i) => {
+        const { time, source } = await getCaptureTime(file);
+        return { id: `f${i}`, file, url: URL.createObjectURL(file), time, source };
+      }));
+      items.sort((x, y) => x.time - y.time || x.file.name.localeCompare(y.file.name));
+      const gap = suggestGap(items);
+      setReviewBatch({ items, gap, groups: buildGroups(items, gap), selected: [] });
+    } catch {
+      showToast('Erreur de lecture des photos', 'error');
+    } finally {
+      setPreparingBatch(false);
+    }
+  }, [uploadFilesDirect]);
+
+  // ── Écran de vérification du classement automatique ──
+  const reviewCancel = () => {
+    if (reviewBatch) reviewBatch.items.forEach(i => URL.revokeObjectURL(i.url));
+    setReviewBatch(null);
+  };
+  const reviewSetGap = (gap) => setReviewBatch(prev => prev ? { ...prev, gap, groups: buildGroups(prev.items, gap), selected: [] } : prev);
+  const reviewSetName = (groupId, name) => setReviewBatch(prev => prev ? { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, name } : g) } : prev);
+  const reviewToggleSelect = (itemId) => setReviewBatch(prev => {
+    if (!prev) return prev;
+    const sel = prev.selected.includes(itemId) ? prev.selected.filter(id => id !== itemId) : [...prev.selected, itemId];
+    return { ...prev, selected: sel };
+  });
+  const reviewSelectGroup = (groupId) => setReviewBatch(prev => {
+    if (!prev) return prev;
+    const g = prev.groups.find(x => x.id === groupId);
+    if (!g) return prev;
+    const all = g.itemIds.every(id => prev.selected.includes(id));
+    const sel = all ? prev.selected.filter(id => !g.itemIds.includes(id)) : [...new Set([...prev.selected, ...g.itemIds])];
+    return { ...prev, selected: sel };
+  });
+  const reviewMoveSelected = (targetId) => setReviewBatch(prev => {
+    if (!prev || prev.selected.length === 0) return prev;
+    const sel = new Set(prev.selected);
+    const times = Object.fromEntries(prev.items.map(i => [i.id, i.time]));
+    const moved = prev.items.filter(i => sel.has(i.id)).map(i => i.id);
+    const srcIdx = prev.groups.findIndex(g => g.itemIds.some(id => sel.has(id)));
+    let groups = prev.groups.map(g => ({ ...g, itemIds: g.itemIds.filter(id => !sel.has(id)) }));
+    if (targetId === 'new') {
+      groups.splice(Math.max(srcIdx, 0) + 1, 0, { id: nextGroupId(), name: '', itemIds: moved });
+    } else {
+      groups = groups.map(g => g.id === targetId ? { ...g, itemIds: [...g.itemIds, ...moved].sort((x, y) => times[x] - times[y]) } : g);
+    }
+    return { ...prev, groups: groups.filter(g => g.itemIds.length > 0), selected: [] };
+  });
+  const reviewMergePrev = (groupId) => setReviewBatch(prev => {
+    if (!prev) return prev;
+    const visible = prev.groups.filter(g => g.itemIds.length > 0);
+    const idx = visible.findIndex(g => g.id === groupId);
+    if (idx <= 0) return prev;
+    const times = Object.fromEntries(prev.items.map(i => [i.id, i.time]));
+    const before = visible[idx - 1];
+    const cur = visible[idx];
+    const merged = { ...before, name: before.name || cur.name, itemIds: [...before.itemIds, ...cur.itemIds].sort((x, y) => times[x] - times[y]) };
+    return { ...prev, groups: visible.filter(g => g.id !== groupId).map(g => g.id === before.id ? merged : g), selected: [] };
+  });
+  const reviewRemoveSelected = () => setReviewBatch(prev => {
+    if (!prev || prev.selected.length === 0) return prev;
+    const sel = new Set(prev.selected);
+    prev.items.filter(i => sel.has(i.id)).forEach(i => URL.revokeObjectURL(i.url));
+    return {
+      ...prev,
+      items: prev.items.filter(i => !sel.has(i.id)),
+      groups: prev.groups.map(g => ({ ...g, itemIds: g.itemIds.filter(id => !sel.has(id)) })).filter(g => g.itemIds.length > 0),
+      selected: [],
+    };
+  });
+
+  // Enregistre un nouveau jeu dans l'autocomplétion (transactions / game_ref), comme le fait "Tagger"
+  const registerGame = async (gameName) => {
+    if (!gameName || gamesList.includes(gameName)) return;
+    try {
+      const { error } = await supabase.from('transactions').insert([{
+        user_id: username, type: 'game_ref', game_name: gameName, price: 0, created_at: new Date().toISOString(),
+      }]);
+      if (!error) setGamesList(prev => (prev.includes(gameName) ? prev : [...prev, gameName].sort()));
+    } catch { /* ignore */ }
+  };
+
+  // Validation : envoi des photos avec un tag par groupe nommé
+  const validerBatch = async () => {
+    const batch = reviewBatch;
+    if (!batch || batch.items.length === 0) return;
+    const itemById = Object.fromEntries(batch.items.map(i => [i.id, i]));
+    const usedTags = new Set(
+      COLUMNS.flatMap(col => (photos[col.id] || []).map(ph => ph.game_tag).filter(Boolean)).map(t => t.toLowerCase())
+    );
+    const names = new Set();
+    const plan = [];
+    batch.groups.filter(g => g.itemIds.length > 0).forEach(g => {
+      const name = g.name.trim();
+      let tag = null;
+      if (name) {
+        names.add(name);
+        let when = new Date();
+        tag = `${name} \u2022 ${formatTagTimestampAt(when)}`;
+        while (usedTags.has(tag.toLowerCase())) {
+          when = new Date(when.getTime() + 60000);
+          tag = `${name} \u2022 ${formatTagTimestampAt(when)}`;
+        }
+        usedTags.add(tag.toLowerCase());
+      }
+      g.itemIds.forEach(id => plan.push({ item: itemById[id], tag }));
+    });
+
+    batch.items.forEach(i => URL.revokeObjectURL(i.url));
+    setReviewBatch(null);
+    setUploading(true); setUploadProgress(0);
+
+    for (const n of names) await registerGame(n);
+
+    const base = Date.now();
+    let done = 0;
+    let ok = 0;
+    const tasks = plan.map((entry, idx) => async () => {
+      try {
+        const { url, publicId } = await uploadToCloudinary(entry.item.file);
+        const row = {
+          user_id: username, image_url: url, cloudinary_public_id: publicId,
+          status: 'pas_encore_en_vente', position: base + idx, rotation: 0,
+        };
+        if (entry.tag) row.game_tag = entry.tag;
+        const { data, error } = await supabase.from('sale_photos').insert(row).select().single();
+        if (error) throw error;
+        setPhotos(prev => ({ ...prev, pas_encore_en_vente: [...prev.pas_encore_en_vente, data] }));
+        ok++;
+      } catch { showToast(`Erreur upload: ${entry.item.file.name}`, 'error'); }
+    });
+    await runPool(tasks, 4, () => { done++; setUploadProgress(Math.round((done / plan.length) * 100)); });
+
+    setUploading(false); setUploadProgress(0);
+    showToast(
+      `${ok} photo${ok > 1 ? 's' : ''} ajoutée${ok > 1 ? 's' : ''}${names.size ? ` dans ${names.size} dossier${names.size > 1 ? 's' : ''}` : ''}`,
+      'success'
+    );
+  };
+
+  // ── Ajout de photos dans un dossier précis (annonce ou colis) ──
+  const startFolderUpload = (colId, tagLabel, photoType = 'annonce') => {
+    folderTargetRef.current = { colId, tagLabel, photoType };
+    if (folderFileRef.current) folderFileRef.current.click();
+  };
+  const onFolderFileChange = async (e) => {
+    const target = folderTargetRef.current;
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!target || !files.length) return;
+    await uploadFilesDirect(files, {
+      status: target.colId, tag: target.tagLabel, photoType: target.photoType,
+      attenteSince: folderAttenteSince(target.colId, target.tagLabel),
+    });
+  };
+  const submitColisFiles = async (files, tagLabel) => {
+    const imgs = Array.from(files || []).filter(f => f.type.startsWith('image/'));
+    setColisPrompt(null);
+    if (!imgs.length) return;
+    // Ouvre le dossier pour montrer le résultat
+    setCollapsedFolders(prev => {
+      const s = new Set(prev['en_attente_reception'] || []);
+      s.add(tagLabel);
+      return { ...prev, en_attente_reception: s };
+    });
+    await uploadFilesDirect(imgs, {
+      status: 'en_attente_reception', tag: tagLabel, photoType: 'colis',
+      attenteSince: folderAttenteSince('en_attente_reception', tagLabel),
+    });
+  };
 
   const onDropZoneDragOver  = (e) => { e.preventDefault(); setIsDraggingFile(true); };
   const onDropZoneDragLeave = ()  => setIsDraggingFile(false);
@@ -584,6 +922,7 @@ export default function PhotosManager() {
   }, [selectMode, selectedPhotos, photos]);
 
   const onPhotoDragEnd = useCallback(() => {
+    setDragOverFolderTag(null);
     setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
   }, []);
 
@@ -631,6 +970,9 @@ export default function PhotosManager() {
       const destLabel = destCol ? destCol.label : toColumn;
       const toastColor = destCol ? destCol.toastBg : null;
       showToast(`"${tagLabel === '__ungrouped__' ? 'Sans tag' : baseGameName(tagLabel)}" déplacé vers "${destLabel}"`, 'success', toastColor);
+      if (toColumn === 'en_attente_reception' && tagLabel !== '__ungrouped__' && !folderPhotos.some(ph => ph.photo_type === 'colis')) {
+        setColisPrompt({ tagLabel });
+      }
       return;
     }
 
@@ -1062,7 +1404,88 @@ export default function PhotosManager() {
       showToast('Tag retiré', 'success');
     } catch { showToast('Erreur retrait tag', 'error'); }
   };
+  // Sortir une photo de son dossier (sans la supprimer)
+  const untagPhoto = useCallback(async (photo) => {
+    const colId = photo.status;
+    setPhotos(prev => ({ ...prev, [colId]: (prev[colId] || []).map(p => p.id === photo.id ? { ...p, game_tag: null } : p) }));
+    try {
+      const { error } = await supabase.from('sale_photos')
+        .update({ game_tag: null, updated_at: new Date().toISOString() }).eq('id', photo.id);
+      if (error) throw error;
+      showToast('Photo sortie du dossier', 'success');
+    } catch { showToast('Erreur', 'error'); loadPhotos(); }
+  }, [showToast, username]);
+
+  // Ajoute des photos à un dossier existant (et les place dans sa colonne)
+  const applyTagToPhotos = async (ptm, tagLabel, destColId) => {
+    const ids = ptm.map(p => p.id);
+    const attenteSince = folderAttenteSince(destColId, tagLabel);
+    setPhotos(prev => {
+      const next = {};
+      COLUMNS.forEach(col => { next[col.id] = (prev[col.id] || []).filter(p => !ids.includes(p.id)); });
+      next[destColId] = [...next[destColId], ...ptm.map(p => ({ ...p, status: destColId, game_tag: tagLabel, attente_since: attenteSince }))];
+      return next;
+    });
+    setSelectedPhotos({});
+    try {
+      const { error } = await supabase.from('sale_photos')
+        .update({ game_tag: tagLabel, status: destColId, attente_since: attenteSince, updated_at: new Date().toISOString() })
+        .in('id', ids);
+      if (error) throw error;
+    } catch { showToast('Erreur ajout au dossier', 'error'); loadPhotos(); }
+  };
+
+  const assignExistingTag = async (tagLabel, colId) => {
+    const sel = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
+    setShowTagDropdown(false); setTagSearch('');
+    if (!sel.length) return;
+    await applyTagToPhotos(sel, tagLabel, colId);
+    showToast(`${sel.length} photo${sel.length > 1 ? 's' : ''} ajoutée${sel.length > 1 ? 's' : ''} à « ${baseGameName(tagLabel)} »`, 'success');
+  };
+
+  // Glisser des photos (ou des fichiers du bureau) sur un dossier
+  const onFolderZoneDragOverCapture = (e, tagLabel) => {
+    if (draggingFolder) return;
+    const hasFiles = Array.from(e.dataTransfer?.types || []).includes('Files');
+    if (!draggingPhoto && !hasFiles) return;
+    if (dragOverFolderTag !== tagLabel) setDragOverFolderTag(tagLabel);
+  };
+  const onFolderZoneDragLeave = (e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) setDragOverFolderTag(null);
+  };
+  const onFolderZoneDrop = async (e, tagLabel, colId) => {
+    if (draggingFolder) return;
+    if (colId === 'vendu') return;
+    const files = Array.from(e.dataTransfer?.files || []).filter(f => f.type.startsWith('image/'));
+    if (!draggingPhoto && files.length === 0) return;
+    e.preventDefault(); e.stopPropagation();
+    setDragOverFolderTag(null);
+    if (draggingPhoto) {
+      const { photos: ptm } = draggingPhoto;
+      setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
+      const toMove = ptm.filter(p => !(p.game_tag === tagLabel && p.status === colId));
+      if (!toMove.length) return;
+      await applyTagToPhotos(toMove, tagLabel, colId);
+      showToast(`${toMove.length} photo${toMove.length > 1 ? 's' : ''} ajoutée${toMove.length > 1 ? 's' : ''} à « ${baseGameName(tagLabel)} »`, 'success');
+      return;
+    }
+    await uploadFilesDirect(files, { status: colId, tag: tagLabel, attenteSince: folderAttenteSince(colId, tagLabel) });
+  };
+
   const filteredGames = gamesList.filter(g => g.toLowerCase().includes(tagSearch.toLowerCase()));
+  // Dossiers existants proposés dans "Tagger" (pour y ajouter les photos sélectionnées)
+  const existingFolderOptions = (() => {
+    const seen = new Set();
+    const out = [];
+    COLUMNS.forEach(col => (photos[col.id] || []).forEach(p => {
+      if (p.game_tag && !seen.has(p.game_tag)) { seen.add(p.game_tag); out.push({ tag: p.game_tag, colId: col.id }); }
+    }));
+    const q = tagSearch.trim().toLowerCase();
+    return out
+      .filter(o => !q || baseGameName(o.tag).toLowerCase().includes(q))
+      .sort((x, y) => baseGameName(x.tag).localeCompare(baseGameName(y.tag), 'fr', { sensitivity: 'base' }))
+      .slice(0, 8);
+  })();
   const handleLogout  = () => { localStorage.removeItem('username'); localStorage.removeItem('password'); router.push('/'); };
 
   // ── Rendu ────────────────────────────────────────────────────
@@ -1095,6 +1518,7 @@ export default function PhotosManager() {
     onDownloadSingle: downloadSingle,
     onDeletePhoto:    handleDeletePhoto,
     onCopyImage:      openPhotoPopup,
+    onUntagPhoto:     untagPhoto,
   };
 
   const renderCard = (colId, photo, sibs, inFolder = false) => (
@@ -1295,6 +1719,25 @@ export default function PhotosManager() {
                         + Créer « {tagSearch.trim()} »
                       </button>
                     )}
+                    {existingFolderOptions.length > 0 && (
+                      <>
+                        <p className={`px-4 pt-2 pb-1 text-[10px] uppercase tracking-wide font-semibold ${subtext}`}>Ajouter à un dossier existant</p>
+                        {existingFolderOptions.map(({ tag, colId }) => {
+                          const c = COLUMNS.find(x => x.id === colId);
+                          return (
+                            <button
+                              key={tag} onClick={() => assignExistingTag(tag, colId)}
+                              className={`w-full text-left text-sm px-4 py-2 transition-colors border-b flex items-center gap-2 ${darkMode ? 'hover:bg-gray-700 text-gray-200 border-gray-700' : 'hover:bg-emerald-50 text-gray-700 border-gray-100'}`}
+                            >
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c ? c.dot : 'bg-gray-400'}`} />
+                              <span className="truncate">{baseGameName(tag)}</span>
+                              <span className={`ml-auto text-[10px] flex-shrink-0 ${subtext}`}>{tag.split(' • ')[1] || ''}</span>
+                            </button>
+                          );
+                        })}
+                        <p className={`px-4 pt-2 pb-1 text-[10px] uppercase tracking-wide font-semibold ${subtext}`}>Nouveau tag</p>
+                      </>
+                    )}
                     {gamesList.length === 0 && !tagSearch.trim() && <p className={`text-sm px-4 py-3 ${subtext}`}>Chargement des jeux...</p>}
                     {filteredGames.map(game => (
                       <button
@@ -1330,7 +1773,12 @@ export default function PhotosManager() {
         >
           <input ref={fileInputRef} type="file" multiple accept="image/*" className="hidden"
             onChange={e => handleFileDrop(e.target.files)} />
-          {uploading ? (
+          {preparingBatch ? (
+            <div className="space-y-3">
+              <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto" />
+              <p className={`text-sm font-medium ${subtext}`}>Analyse des photos…</p>
+            </div>
+          ) : uploading ? (
             <div className="space-y-3">
               <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto" />
               <p className={`text-sm font-medium ${subtext}`}>Upload en cours… {uploadProgress}%</p>
@@ -1343,6 +1791,7 @@ export default function PhotosManager() {
               <Upload className={`w-10 h-10 mx-auto ${subtext}`} />
               <p className={`font-semibold ${textMain}`}>Glisser vos photos depuis le bureau ici</p>
               <p className={`text-sm ${subtext}`}>ou cliquer pour selectionner — JPG, PNG, WEBP</p>
+              <p className={`text-xs ${subtext}`}>Plusieurs photos : classement automatique par jeu, à vérifier avant l'envoi</p>
             </div>
           )}
         </div>
@@ -1390,7 +1839,7 @@ export default function PhotosManager() {
                         <span className={`text-[9px] font-mono mt-0.5 ${isMatch && q ? 'text-blue-500 font-bold' : ''}`}>
                           {folderCount > 0 && <span className="text-yellow-400 font-bold">{folderCount}</span>}
                           {folderCount > 0 && <span className={darkMode ? 'text-gray-600' : 'text-gray-400'}>-</span>}
-                          <span className={isMatch && q ? 'text-blue-500' : darkMode ? 'text-gray-500' : 'text-gray-400'}>{photos[c.id].length}</span>
+                          <span className={isMatch && q ? 'text-blue-500' : darkMode ? 'text-gray-500' : 'text-gray-400'}>{photos[c.id].filter(p => p.photo_type !== 'colis').length}</span>
                         </span>
                       );
                     })()}
@@ -1465,7 +1914,7 @@ export default function PhotosManager() {
                         {Object.keys(groups).length > 0 && (
                           <span className={darkMode ? 'text-gray-500' : 'text-gray-400'}> — </span>
                         )}
-                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>{colPhotos.length}</span>
+                        <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>{colPhotos.filter(p => p.photo_type !== 'colis').length}</span>
                         {selCount > 0 && <span className="text-blue-400 ml-0.5">·{selCount}</span>}
                       </span>
                       {/* Indicateur + boutons de zoom */}
@@ -1541,6 +1990,29 @@ export default function PhotosManager() {
                           </button>
                         );
                       })()}
+                      {col.id === 'en_attente_reception' && (() => {
+                        const { groups: attenteGroups2 } = groupByTag(colPhotos);
+                        const noColisCount = Object.values(attenteGroups2).filter(gp => !gp.some(ph => ph.photo_type === 'colis')).length;
+                        return (
+                          <button
+                            onClick={() => setFilterNoColis(p => !p)}
+                            title={filterNoColis ? 'Afficher tous les dossiers' : `Colis pas encore photographiés (${noColisCount})`}
+                            className={[
+                              'p-1 rounded-lg transition-colors flex-shrink-0',
+                              filterNoColis
+                                ? 'bg-amber-500 text-white'
+                                : noColisCount > 0
+                                  ? darkMode ? 'text-amber-400 hover:bg-amber-500/20' : 'text-amber-600 hover:bg-amber-100'
+                                  : darkMode ? 'text-gray-600 hover:bg-white/10' : 'text-gray-300 hover:bg-white',
+                            ].join(' ')}
+                          >
+                            <Package className="w-3.5 h-3.5" />
+                            {noColisCount > 0 && (
+                              <span className={`ml-0.5 text-[9px] font-bold align-middle ${filterNoColis ? 'text-white' : darkMode ? 'text-amber-400' : 'text-amber-600'}`}>{noColisCount}</span>
+                            )}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1592,9 +2064,10 @@ export default function PhotosManager() {
                         const filteredEntries = q2
                           ? sortedEntries.filter(([tagLabel]) => baseGameName(tagLabel).toLowerCase().includes(q2))
                           : sortedEntries;
-                        const filteredByOld = (col.id === 'en_attente_reception' && filterOldAttente)
+                        const filteredByOld = ((col.id === 'en_attente_reception' && filterOldAttente)
                           ? filteredEntries.filter(([tagLabel, gPhotos]) => isOlderThan20Days(tagLabel, gPhotos))
-                          : filteredEntries;
+                          : filteredEntries
+                        ).filter(([, gPhotos]) => !(col.id === 'en_attente_reception' && filterNoColis) || !gPhotos.some(ph => ph.photo_type === 'colis'));
                         const isPaginated = (col.id === 'en_vente' || col.id === 'en_attente_reception') && !q2;
                         const currentPage    = col.id === 'en_attente_reception' ? enAttenteReceptionPage : enVentePage;
                         const setCurrentPage = col.id === 'en_attente_reception' ? setEnAttenteReceptionPage : setEnVentePage;
@@ -1632,6 +2105,8 @@ export default function PhotosManager() {
                         const gSel           = gPhotos.filter(p => selectedPhotos[col.id]?.has(p.id)).length;
                         const allSelected    = gPhotos.length > 0 && gSel === gPhotos.length;
                         const someSelected   = gSel > 0 && !allSelected;
+                        const listingPhotos  = gPhotos.filter(ph => ph.photo_type !== 'colis');
+                        const colisPhotos    = gPhotos.filter(ph => ph.photo_type === 'colis');
 
                         // Filtrage par recherche — masquer les non-matchés
                         const q = folderSearch.trim().toLowerCase();
@@ -1644,9 +2119,13 @@ export default function PhotosManager() {
                             draggable
                             onDragStart={e => onFolderDragStart(e, tagLabel, col.id, gPhotos)}
                             onDragEnd={onFolderDragEnd}
+                            onDragOverCapture={e => onFolderZoneDragOverCapture(e, tagLabel)}
+                            onDragLeave={onFolderZoneDragLeave}
+                            onDrop={e => onFolderZoneDrop(e, tagLabel, col.id)}
                             className={[
                               'rounded-xl overflow-hidden border transition-all duration-200',
                               isFolderBeingDragged ? 'opacity-40 scale-95' : '',
+                              dragOverFolderTag === tagLabel ? 'ring-2 ring-emerald-400 scale-[1.01]' : '',
                               isMatch && q
                                 ? darkMode
                                   ? 'border-blue-400 bg-blue-500/15 shadow-lg shadow-blue-500/20 scale-[1.02]'
@@ -1693,28 +2172,87 @@ export default function PhotosManager() {
                                 <p className="text-xs font-bold leading-tight break-words">{bName}</p>
                               </div>
                               <button
-                                onClick={e => { e.stopPropagation(); openPhotoPopup(gPhotos[0], gPhotos); }}
+                                onClick={e => { e.stopPropagation(); openPhotoPopup(listingPhotos[0] || gPhotos[0], listingPhotos.length ? listingPhotos : gPhotos); }}
                                 className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
                                 title="Ouvrir le dossier pour glisser vers LeBonCoin"
                               >
                                 <Clipboard className="w-3 h-3" />
                               </button>
                               <button
-                                onClick={e => { e.stopPropagation(); downloadMultiple(gPhotos); }}
+                                onClick={e => { e.stopPropagation(); downloadMultiple(listingPhotos.length ? listingPhotos : gPhotos); }}
                                 disabled={downloading}
                                 className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
                                 title="Telecharger ce dossier"
                               >
                                 <Download className="w-3 h-3" />
                               </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); startFolderUpload(col.id, tagLabel, 'annonce'); }}
+                                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-amber-200 text-amber-700'}`}
+                                title="Ajouter des photos à ce dossier"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                              {col.id === 'en_attente_reception' && (
+                                <button
+                                  onClick={e => { e.stopPropagation(); startFolderUpload(col.id, tagLabel, 'colis'); }}
+                                  className={[
+                                    'flex items-center gap-0.5 p-1 rounded-lg transition-colors flex-shrink-0 text-[10px] font-bold',
+                                    colisPhotos.length > 0
+                                      ? darkMode ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                      : darkMode ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 ring-1 ring-amber-400/60' : 'bg-amber-200/80 text-amber-800 hover:bg-amber-300 ring-1 ring-amber-400',
+                                  ].join(' ')}
+                                  title={colisPhotos.length > 0 ? `Photos du colis : ${colisPhotos.length} — en ajouter` : "Ajouter les photos du colis (preuve d'envoi)"}
+                                >
+                                  <Package className="w-3 h-3" />
+                                  {colisPhotos.length > 0 && <span>{colisPhotos.length}</span>}
+                                </button>
+                              )}
                               <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono flex-shrink-0 ${darkMode ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>
-                                {gPhotos.length}{gSel > 0 && <span className="text-blue-400 ml-0.5">·{gSel}</span>}
+                                {listingPhotos.length}{gSel > 0 && <span className="text-blue-400 ml-0.5">·{gSel}</span>}
                               </span>
                             </div>
                             {!isCollapsed && (
-                              <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
-                                {gPhotos.map(photo => renderCard(col.id, photo, gPhotos, true))}
-                              </div>
+                              <>
+                                {listingPhotos.length > 0 && (
+                                  <div className={`grid ${gridCls} gap-1 p-1.5 pt-0`}>
+                                    {listingPhotos.map(photo => renderCard(col.id, photo, listingPhotos, true))}
+                                  </div>
+                                )}
+                                {(col.id === 'en_attente_reception' || colisPhotos.length > 0) && (
+                                  <div
+                                    className={`mx-1.5 mb-1.5 mt-1 rounded-lg border border-dashed p-1.5 ${darkMode ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-emerald-300 bg-emerald-50/60'}`}
+                                    onDragOver={e => { if (Array.from(e.dataTransfer?.types || []).includes('Files')) { e.preventDefault(); e.stopPropagation(); } }}
+                                    onDrop={e => {
+                                      const imgs = Array.from(e.dataTransfer?.files || []).filter(f => f.type.startsWith('image/'));
+                                      if (!imgs.length) return;
+                                      e.preventDefault(); e.stopPropagation(); setDragOverFolderTag(null);
+                                      uploadFilesDirect(imgs, { status: col.id, tag: tagLabel, photoType: 'colis', attenteSince: folderAttenteSince(col.id, tagLabel) });
+                                    }}
+                                  >
+                                    <div className="flex items-center gap-1.5 px-0.5 pb-1">
+                                      <Package className={`w-3 h-3 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`} />
+                                      <span className={`text-[11px] font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>Colis en préparation</span>
+                                      <span className={`text-[10px] font-mono ${subtext}`}>{colisPhotos.length}</span>
+                                      {col.id === 'en_attente_reception' && (
+                                        <button
+                                          onClick={() => startFolderUpload(col.id, tagLabel, 'colis')}
+                                          className={`ml-auto flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md transition-colors ${darkMode ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}
+                                        >
+                                          <Plus className="w-3 h-3" /> Ajouter
+                                        </button>
+                                      )}
+                                    </div>
+                                    {colisPhotos.length > 0 ? (
+                                      <div className={`grid ${gridCls} gap-1`}>
+                                        {colisPhotos.map(photo => renderCard(col.id, photo, colisPhotos, true))}
+                                      </div>
+                                    ) : (
+                                      <p className={`text-[11px] px-0.5 pb-0.5 ${subtext}`}>Aucune photo du colis — ajoute-les avant l'envoi (glisse-les ici ou utilise « Ajouter »).</p>
+                                    )}
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         );
@@ -1936,6 +2474,159 @@ export default function PhotosManager() {
             <span className="text-gray-500 text-xs font-mono w-10 text-center">{lightbox.rotation}°</span>
             <button onClick={() => rotateLightbox(90)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors">
               Droite <RotateCw className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sélecteur de fichiers caché (ajout à un dossier précis) ── */}
+      <input ref={folderFileRef} type="file" multiple accept="image/*" className="hidden" onChange={onFolderFileChange} />
+      <datalist id="games-datalist">
+        {gamesList.map(g => <option key={g} value={g} />)}
+      </datalist>
+
+      {/* ── Vérification du classement automatique ── */}
+      {reviewBatch && (() => {
+        const b = reviewBatch;
+        const itemById = Object.fromEntries(b.items.map(i => [i.id, i]));
+        const groups = b.groups.filter(g => g.itemIds.length > 0);
+        const selCount = b.selected.length;
+        const approx = b.items.filter(i => i.source !== 'exif').length;
+        const gapLabel = b.gap >= 60 ? `${Math.floor(b.gap / 60)} min${b.gap % 60 ? ` ${b.gap % 60} s` : ''}` : `${b.gap} s`;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4">
+            <div className={`rounded-2xl shadow-2xl w-full max-w-5xl max-h-[94vh] flex flex-col ${cardBg}`}>
+              {/* En-tête */}
+              <div className={`px-4 sm:px-5 pt-4 pb-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-base sm:text-lg">Vérifie le classement</h3>
+                    <p className={`text-xs sm:text-sm mt-0.5 ${subtext}`}>
+                      {b.items.length} photo{b.items.length > 1 ? 's' : ''} · {groups.length} groupe{groups.length > 1 ? 's' : ''} détecté{groups.length > 1 ? 's' : ''} d'après l'heure de prise de vue. Nomme chaque jeu — un groupe sans nom reste sans tag.
+                    </p>
+                  </div>
+                  <button onClick={reviewCancel} className={`p-1.5 rounded-lg flex-shrink-0 ${btnGhost}`} title="Annuler"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                  <label className={`text-xs font-medium whitespace-nowrap ${subtext}`}>Nouveau jeu si plus de <span className="font-bold text-blue-500">{gapLabel}</span> entre deux photos</label>
+                  <input
+                    type="range" min="5" max="600" step="5" value={b.gap}
+                    onChange={e => reviewSetGap(+e.target.value)}
+                    className="flex-1 accent-blue-500"
+                  />
+                </div>
+                {approx > 0 && (
+                  <p className={`text-[11px] mt-1.5 ${darkMode ? 'text-amber-300' : 'text-amber-600'}`}>
+                    {approx} photo{approx > 1 ? 's' : ''} sans heure de prise de vue précise (date du fichier utilisée) : le regroupement peut être moins fiable.
+                  </p>
+                )}
+                {selCount > 0 && (
+                  <div className={`mt-3 flex flex-wrap items-center gap-2 p-2 rounded-xl ${darkMode ? 'bg-blue-500/10' : 'bg-blue-50'}`}>
+                    <span className="text-xs font-semibold text-blue-500">{selCount} sélectionnée{selCount > 1 ? 's' : ''}</span>
+                    <button onClick={() => reviewMoveSelected('new')} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"><Plus className="w-3.5 h-3.5" /> Nouveau groupe</button>
+                    <button onClick={reviewRemoveSelected} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"><Trash2 className="w-3.5 h-3.5" /> Ne pas envoyer</button>
+                    <button onClick={() => setReviewBatch(prev => prev ? { ...prev, selected: [] } : prev)} className={`text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}>Désélectionner</button>
+                    <span className={`text-[11px] ${subtext}`}>ou clique « Déplacer ici » sur un groupe</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Groupes */}
+              <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
+                {groups.map((g, gi) => {
+                  const its = g.itemIds.map(id => itemById[id]);
+                  const allSel = its.every(i => b.selected.includes(i.id));
+                  return (
+                    <div key={g.id} className={`rounded-xl border p-2.5 sm:p-3 ${darkMode ? 'border-gray-700 bg-gray-900/40' : 'border-gray-200 bg-gray-50/70'}`}>
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{gi + 1}</span>
+                        <input
+                          list="games-datalist" type="text" value={g.name} placeholder="Nom du jeu (vide = sans tag)"
+                          onChange={e => reviewSetName(g.id, e.target.value)}
+                          className={`flex-1 min-w-[160px] text-sm px-3 py-1.5 rounded-lg border outline-none ${inputCls}`}
+                        />
+                        <span className={`text-[11px] font-mono ${subtext}`}>{its.length} photo{its.length > 1 ? 's' : ''} · {formatClock(its[0].time)}{its.length > 1 ? ` → ${formatClock(its[its.length - 1].time)}` : ''}</span>
+                        {selCount > 0 && !its.every(i => b.selected.includes(i.id)) && (
+                          <button onClick={() => reviewMoveSelected(g.id)} className="text-xs px-2.5 py-1.5 rounded-lg font-medium bg-emerald-500 hover:bg-emerald-600 text-white transition-colors">Déplacer ici</button>
+                        )}
+                        <button onClick={() => reviewSelectGroup(g.id)} className={`text-xs px-2 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`}>{allSel ? 'Désélectionner' : 'Tout sélectionner'}</button>
+                        {gi > 0 && (
+                          <button onClick={() => reviewMergePrev(g.id)} className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg font-medium transition-colors ${btnGhost}`} title="Fusionner avec le groupe précédent">
+                            <Merge className="w-3.5 h-3.5" /><span className="hidden sm:inline">Fusionner avec le précédent</span>
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
+                        {its.map(it => {
+                          const sel = b.selected.includes(it.id);
+                          return (
+                            <button
+                              key={it.id} onClick={() => reviewToggleSelect(it.id)}
+                              className={`relative rounded-lg overflow-hidden aspect-square transition-all ${sel ? 'ring-2 ring-blue-500 scale-[0.95]' : ''}`}
+                              title={`${it.file.name} — ${formatClock(it.time)}`}
+                            >
+                              <img src={it.url} alt="" className="w-full h-full object-cover" loading="lazy" draggable={false} />
+                              {sel && <div className="absolute inset-0 bg-blue-500/30 flex items-center justify-center"><div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center"><Check className="w-3 h-3 text-white" /></div></div>}
+                              <span className="absolute bottom-0 left-0 right-0 bg-black/55 text-white text-[9px] text-center py-px">{formatClock(it.time)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {groups.length === 0 && <p className={`text-sm text-center py-8 ${subtext}`}>Plus aucune photo à envoyer.</p>}
+              </div>
+
+              {/* Pied */}
+              <div className={`px-4 sm:px-5 py-3 border-t flex gap-3 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                <button onClick={reviewCancel} className={`flex-1 sm:flex-none sm:px-6 py-2.5 rounded-xl font-medium text-sm transition-colors ${btnGhost}`}>Annuler</button>
+                <button
+                  onClick={validerBatch} disabled={b.items.length === 0}
+                  className="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white transition-colors"
+                >
+                  Envoyer {b.items.length} photo{b.items.length > 1 ? 's' : ''}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Photos du colis (proposé quand un dossier arrive en "En attente réception") ── */}
+      {colisPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setColisPrompt(null)}>
+          <div
+            className={`rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4 ${cardBg}`}
+            onClick={e => e.stopPropagation()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); submitColisFiles(e.dataTransfer.files, colisPrompt.tagLabel); }}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <Package className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base">Photos du colis ?</h3>
+                <p className={`text-sm mt-1 ${subtext}`}>
+                  « {baseGameName(colisPrompt.tagLabel)} » est en attente de réception. Ajoute maintenant les photos du colis emballé : elles seront rangées dans ce dossier.
+                </p>
+              </div>
+            </div>
+            <input
+              ref={colisPromptInputRef} type="file" multiple accept="image/*" className="hidden"
+              onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; submitColisFiles(files, colisPrompt.tagLabel); }}
+            />
+            <button
+              onClick={() => colisPromptInputRef.current && colisPromptInputRef.current.click()}
+              className={`w-full py-6 rounded-xl border-2 border-dashed text-sm font-medium flex flex-col items-center gap-1.5 transition-colors ${darkMode ? 'border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
+            >
+              <Upload className="w-6 h-6" />
+              Choisir ou prendre des photos
+              <span className={`text-xs font-normal ${subtext}`}>ou glisse-les ici</span>
+            </button>
+            <button onClick={() => setColisPrompt(null)} className={`w-full py-2.5 rounded-xl font-medium text-sm transition-colors ${btnGhost}`}>
+              Plus tard
             </button>
           </div>
         </div>
