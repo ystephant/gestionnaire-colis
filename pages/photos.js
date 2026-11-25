@@ -337,12 +337,11 @@ export default function PhotosManager() {
   const fileInputRef = useRef(null);
   const folderFileRef = useRef(null);      // sélecteur de fichiers pour un dossier précis
   const folderTargetRef = useRef(null);    // { colId, tagLabel, photoType }
-  const colisPromptInputRef = useRef(null);
   const [preparingBatch, setPreparingBatch] = useState(false);
+  const [reviewSuggestFor, setReviewSuggestFor] = useState(null); // id du groupe dont le champ nom est actif
   const [reviewDrag, setReviewDrag]         = useState(null); // { itemId, over }
   const [reviewBatch, setReviewBatch]       = useState(null); // { items, gap, groups }
   const [dragOverFolderTag, setDragOverFolderTag] = useState(null);
-  const [colisPrompt, setColisPrompt]       = useState(null); // { tagLabel }
 
   // Drag de photos entre colonnes
   const [draggingPhoto, setDraggingPhoto]     = useState(null);
@@ -847,22 +846,6 @@ export default function PhotosManager() {
       attenteSince: folderAttenteSince(target.colId, target.tagLabel),
     });
   };
-  const submitColisFiles = async (files, tagLabel) => {
-    const imgs = Array.from(files || []).filter(f => f.type.startsWith('image/'));
-    setColisPrompt(null);
-    if (!imgs.length) return;
-    // Ouvre le dossier pour montrer le résultat
-    setCollapsedFolders(prev => {
-      const s = new Set(prev['en_attente_reception'] || []);
-      s.add(tagLabel);
-      return { ...prev, en_attente_reception: s };
-    });
-    await uploadFilesDirect(imgs, {
-      status: 'en_attente_reception', tag: tagLabel, photoType: 'colis',
-      attenteSince: folderAttenteSince('en_attente_reception', tagLabel),
-    });
-  };
-
   const onDropZoneDragOver  = (e) => { e.preventDefault(); setIsDraggingFile(true); };
   const onDropZoneDragLeave = ()  => setIsDraggingFile(false);
   const onDropZoneDrop      = (e) => {
@@ -934,9 +917,6 @@ export default function PhotosManager() {
       const destLabel = destCol ? destCol.label : toColumn;
       const toastColor = destCol ? destCol.toastBg : null;
       showToast(`"${tagLabel === '__ungrouped__' ? 'Sans tag' : baseGameName(tagLabel)}" déplacé vers "${destLabel}"`, 'success', toastColor);
-      if (toColumn === 'en_attente_reception' && tagLabel !== '__ungrouped__' && !folderPhotos.some(ph => ph.photo_type === 'colis')) {
-        setColisPrompt({ tagLabel });
-      }
       return;
     }
 
@@ -2445,9 +2425,6 @@ export default function PhotosManager() {
 
       {/* ── Sélecteur de fichiers caché (ajout à un dossier précis) ── */}
       <input ref={folderFileRef} type="file" multiple accept="image/*" className="hidden" onChange={onFolderFileChange} />
-      <datalist id="games-datalist">
-        {gamesList.map(g => <option key={g} value={g} />)}
-      </datalist>
 
       {/* ── Vérification du classement automatique ── */}
       {reviewBatch && (() => {
@@ -2499,11 +2476,33 @@ export default function PhotosManager() {
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <span className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{gi + 1}</span>
-                        <input
-                          list="games-datalist" type="text" value={g.name} placeholder="Nom du jeu (vide = sans tag)"
-                          onChange={e => reviewSetName(g.id, e.target.value)}
-                          className={`flex-1 min-w-[160px] text-sm px-3 py-1.5 rounded-lg border outline-none ${inputCls}`}
-                        />
+                        <div className="relative flex-1 min-w-[160px]">
+                          <input
+                            type="text" value={g.name} placeholder="Nom du jeu (vide = sans tag)"
+                            onChange={e => { reviewSetName(g.id, e.target.value); setReviewSuggestFor(g.id); }}
+                            onFocus={() => setReviewSuggestFor(g.id)}
+                            onBlur={() => setReviewSuggestFor(cur => (cur === g.id ? null : cur))}
+                            onKeyDown={e => { if (e.key === 'Escape') setReviewSuggestFor(null); }}
+                            autoComplete="off"
+                            className={`w-full text-sm px-3 py-1.5 rounded-lg border outline-none ${inputCls}`}
+                          />
+                          {reviewSuggestFor === g.id && (() => {
+                            const q = g.name.trim().toLowerCase();
+                            const sugg = gamesList.filter(n => n.toLowerCase().includes(q) && n.toLowerCase() !== q).slice(0, 8);
+                            if (sugg.length === 0) return null;
+                            return (
+                              <div className={`absolute left-0 right-0 top-full mt-1 z-20 rounded-xl border shadow-xl overflow-hidden max-h-56 overflow-y-auto ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                {sugg.map(n => (
+                                  <button
+                                    key={n} type="button"
+                                    onMouseDown={e => { e.preventDefault(); reviewSetName(g.id, n); setReviewSuggestFor(null); }}
+                                    className={`w-full text-left text-sm px-3 py-2 transition-colors ${darkMode ? 'hover:bg-gray-700 text-gray-100' : 'hover:bg-blue-50 text-gray-800'}`}
+                                  >{n}</button>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
                         {its.map(it => (
@@ -2553,45 +2552,6 @@ export default function PhotosManager() {
           </div>
         );
       })()}
-
-      {/* ── Photos du colis (proposé quand un dossier arrive en "En attente réception") ── */}
-      {colisPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setColisPrompt(null)}>
-          <div
-            className={`rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4 ${cardBg}`}
-            onClick={e => e.stopPropagation()}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); submitColisFiles(e.dataTransfer.files, colisPrompt.tagLabel); }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                <Package className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <h3 className="font-bold text-base">Photos du colis ?</h3>
-                <p className={`text-sm mt-1 ${subtext}`}>
-                  « {baseGameName(colisPrompt.tagLabel)} » est en attente de réception. Ajoute maintenant les photos du colis emballé : elles seront rangées dans ce dossier.
-                </p>
-              </div>
-            </div>
-            <input
-              ref={colisPromptInputRef} type="file" multiple accept="image/*" className="hidden"
-              onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; submitColisFiles(files, colisPrompt.tagLabel); }}
-            />
-            <button
-              onClick={() => colisPromptInputRef.current && colisPromptInputRef.current.click()}
-              className={`w-full py-6 rounded-xl border-2 border-dashed text-sm font-medium flex flex-col items-center gap-1.5 transition-colors ${darkMode ? 'border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
-            >
-              <Upload className="w-6 h-6" />
-              Choisir ou prendre des photos
-              <span className={`text-xs font-normal ${subtext}`}>ou glisse-les ici</span>
-            </button>
-            <button onClick={() => setColisPrompt(null)} className={`w-full py-2.5 rounded-xl font-medium text-sm transition-colors ${btnGhost}`}>
-              Plus tard
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ── Modale suppression ── */}
       {pendingDelete && (
