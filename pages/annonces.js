@@ -35,6 +35,7 @@ export default function GenerateurAnnonces() {
   const [gameNameSuggestions, setGameNameSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [extraText, setExtraText] = useState('');
+  const [ventes, setVentes] = useState([]); // ventes passées, pour le prix moyen
 
   // Annonces types
   const [templates, setTemplates] = useState([]);
@@ -71,7 +72,38 @@ export default function GenerateurAnnonces() {
     checkAuth();
     loadGameNames();
     loadTemplates();
+    loadVentes();
   }, []);
+
+  // Même regroupement que le stock : sans accents ni casse, sans suffixe « +… »
+  const cleJeu = (name) =>
+    String(name || '').split(' +')[0].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  const loadVentes = async () => {
+    const savedUsername = localStorage.getItem('username');
+    if (!savedUsername) return;
+    const toutes = [];
+    for (let from = 0; from < 100000; from += 1000) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('id, game_name, price')
+        .eq('user_id', savedUsername)
+        .eq('type', 'sell')
+        .order('id', { ascending: true })
+        .range(from, from + 999);
+      if (error) { console.error('Erreur ventes:', error); return; }
+      toutes.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    setVentes(toutes);
+  };
+
+  const ventesDuJeu = nomJeu.trim()
+    ? ventes.filter(v => cleJeu(v.game_name) === cleJeu(nomJeu) && Number(v.price) > 0)
+    : [];
+  const prixMoyen = ventesDuJeu.length
+    ? ventesDuJeu.reduce((s, v) => s + Number(v.price), 0) / ventesDuJeu.length
+    : null;
 
   useEffect(() => {
     genererDescription();
@@ -674,7 +706,20 @@ export default function GenerateurAnnonces() {
 
           {/* Colonne droite - Résultat */}
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
-            <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} mb-4`}>Description générée</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Description générée</h2>
+              {nomJeu.trim() && (
+                <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
+                  prixMoyen === null
+                    ? darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'
+                    : darkMode ? 'bg-emerald-900/40 text-emerald-300' : 'bg-emerald-50 text-emerald-700'
+                }`}>
+                  {prixMoyen === null
+                    ? 'Aucune vente connue'
+                    : `Vente moyenne : ${prixMoyen.toFixed(2).replace('.', ',')} € (${ventesDuJeu.length} vente${ventesDuJeu.length > 1 ? 's' : ''})`}
+                </span>
+              )}
+            </div>
             
             <textarea
               value={description}

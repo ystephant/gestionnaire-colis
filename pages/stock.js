@@ -50,6 +50,7 @@ function calculerStock({ transactions, salePhotos, incompleteGames, hiddenGames 
   const nouveau = (name) => ({
     name, buys: 0, sells: 0, manualRemovals: 0,
     incomingBuys: [], lastBuyDate: null, lastSellDate: null,
+    entryDates: [], sellTotal: 0, sellCount: 0,
   });
 
   (transactions || []).forEach(t => {
@@ -59,6 +60,9 @@ function calculerStock({ transactions, salePhotos, incompleteGames, hiddenGames 
     if (!map[k]) map[k] = nouveau(baseName(t.game_name));
     const g = map[k];
     const d = new Date(t.created_at);
+
+    if (t.type === 'buy' || t.type === 'stock_add') g.entryDates.push(d.getTime());
+    if (t.type === 'sell' && Number(t.price) > 0) { g.sellTotal += Number(t.price); g.sellCount++; }
 
     if (t.type === 'buy') {
       g.buys++;
@@ -135,7 +139,15 @@ function calculerStock({ transactions, salePhotos, incompleteGames, hiddenGames 
       // [15] Stock négatif = plus de sorties (ventes/retraits) que d'entrées (achats), signe d'un écart d'historique
       const isNegativeStock = netRaw < 0;
 
-      return { ...g, incomingCount, daysLeft, incompletCount, net, netRaw, isNegativeStock, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
+      // Ancienneté (premier entré, premier sorti) : les exemplaires restants sont les entrées les plus récentes
+      const entrees   = [...g.entryDates].sort((a, b) => a - b);
+      const depuis    = net > 0 && entrees.length ? entrees[Math.max(0, entrees.length - net)] : null;
+      const ageDays   = depuis === null ? null : Math.max(0, Math.floor((now - depuis) / 86400000));
+      // Argent immobilisé : exemplaires en stock × prix de vente moyen du jeu (null si jamais vendu)
+      const avgSell     = g.sellCount ? g.sellTotal / g.sellCount : null;
+      const immobilised = avgSell === null ? null : avgSell * net;
+
+      return { ...g, ageDays, avgSell, immobilised, incomingCount, daysLeft, incompletCount, net, netRaw, isNegativeStock, confirmedStock, isEnVente, enVenteCopies, canList, hasTxLooseMatch };
     })
     .filter(g => (g.net > 0 || g.isNegativeStock) && !hiddenSetLow.has(baseNameLow(g.name)));
 }
@@ -669,6 +681,7 @@ export default function StockManager() {
     })
     .sort((a, b) => {
       if (sortMode === 'desc')  return b.net - a.net;
+      if (sortMode === 'age')   return (b.ageDays ?? -1) - (a.ageDays ?? -1) || a.name.localeCompare(b.name, 'fr');
       if (sortMode === 'alpha') return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
       if (a.isNegativeStock && !b.isNegativeStock) return -1;
       if (!a.isNegativeStock && b.isNegativeStock) return 1;
@@ -687,6 +700,10 @@ export default function StockManager() {
     available: stockItems.filter(g => g.canList).length,
     negative:  stockItems.filter(g => g.isNegativeStock).length, // [15]
   };
+
+  const moneyTotal   = stockItems.reduce((s, g) => s + (g.immobilised || 0), 0);
+  const unpricedCount = stockItems.filter(g => g.net > 0 && g.avgSell === null).length;
+  const euros = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 
   const stockNameSet  = new Set(stockItems.map(g => baseNameLow(g.name)));
   const orphanEnVente = [...new Set(
@@ -840,6 +857,17 @@ export default function StockManager() {
             })}
           </div>
 
+          {/* Argent immobilisé */}
+          {!loading && (
+            <div className={`rounded-xl px-4 py-3 shadow-sm flex flex-wrap items-baseline gap-x-3 gap-y-1 ${dm ? 'bg-slate-800' : 'bg-white border border-gray-100'}`}>
+              <span className="text-sm font-semibold">💶 Argent immobilisé</span>
+              <span className="text-2xl font-black text-emerald-500">{euros(moneyTotal)}</span>
+              <span className={`text-xs ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
+                au prix de vente moyen{unpricedCount > 0 ? ` · ${unpricedCount} jeu${unpricedCount > 1 ? 'x' : ''} jamais vendu${unpricedCount > 1 ? 's' : ''}, non compté${unpricedCount > 1 ? 's' : ''}` : ''}
+              </span>
+            </div>
+          )}
+
           {/* Recherche */}
           <div className="relative" ref={searchWrapRef} onClick={e => e.stopPropagation()}>
             <input
@@ -895,14 +923,14 @@ export default function StockManager() {
               ))}
             </div>
             <button
-              onClick={() => setSortMode(m => m === 'alpha' ? 'desc' : 'alpha')}
-              title={sortMode === 'desc' ? 'Tri : quantité décroissante' : 'Tri : alphabétique'}
+              onClick={() => setSortMode(m => m === 'alpha' ? 'desc' : m === 'desc' ? 'age' : 'alpha')}
+              title={sortMode === 'desc' ? 'Tri : quantité décroissante' : sortMode === 'age' ? 'Tri : les plus anciens en premier' : 'Tri : alphabétique'}
               className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition whitespace-nowrap ${
-                sortMode === 'desc'
+                sortMode !== 'alpha'
                   ? 'bg-indigo-600 text-white shadow'
                   : dm ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-gray-100 text-gray-500 hover:text-gray-800'
               }`}
-            >📊 {sortMode === 'desc' ? 'Qté ↓' : 'A → Z'}</button>
+            >📊 {sortMode === 'desc' ? 'Qté ↓' : sortMode === 'age' ? 'Ancienneté ↓' : 'A → Z'}</button>
           </div>
 
           {/* [5] Compteur de résultats */}
@@ -1019,6 +1047,11 @@ export default function StockManager() {
                           {g.isEnVente && (
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${dm ? 'bg-green-500/15 text-green-400 border-green-500/30' : 'bg-green-50 text-green-600 border-green-200'}`}>
                               🟢 En vente{g.enVenteCopies > 1 ? ` (×${g.enVenteCopies})` : ''}
+                            </span>
+                          )}
+                          {g.ageDays !== null && (
+                            <span className={`text-xs ${dm ? 'text-slate-400' : 'text-gray-500'}`}>
+                              🕒 {g.ageDays} j{g.immobilised !== null ? ` · ≈ ${euros(g.immobilised)}` : ''}
                             </span>
                           )}
                           {/* [9] Badge transit avec J-X plus lisible + [14] sortie manuelle du transit */}

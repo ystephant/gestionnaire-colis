@@ -40,7 +40,7 @@ export default function TransactionsTracker() {
   const [showGameSearch, setShowGameSearch] = useState(true);
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [toast, setToast] = useState(null); // { message, type: 'buy' | 'sell' }
-  const [editingTransaction, setEditingTransaction] = useState(null); // { id, price }
+  const [editingTransaction, setEditingTransaction] = useState(null); // { id, name, price, date, original }
   const [showDormantStock, setShowDormantStock] = useState(false);
   const [affluenceMetric, setAffluenceMetric] = useState('ventes'); // 'ventes' | 'achats'
   const [isMobile, setIsMobile] = useState(false);
@@ -329,18 +329,39 @@ const loadUserPreferences = async () => {
     }
   };
 
-  const updateTransactionPrice = async (id, newPrice) => {
-    const price = parseFloat(String(newPrice).replace(',', '.'));
-    if (!price || price <= 0) return;
+  // Date locale au format AAAA-MM-JJ (attendu par <input type="date">)
+  const toDateInput = (iso) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const startEditTransaction = (t) => setEditingTransaction({
+    id: t.id, name: t.game_name || '', price: t.price.toFixed(2), date: toDateInput(t.created_at), original: t.created_at,
+  });
+
+  const saveTransactionEdit = async () => {
+    if (!editingTransaction) return;
+    const { id, name, date, original } = editingTransaction;
+    const price = parseFloat(String(editingTransaction.price).replace(',', '.'));
+    if (!price || price <= 0) { alert('Prix invalide'); return; }
+    if (!date) { alert('Date invalide'); return; }
+
+    const changes = { game_name: name.trim() || null, price };
+    if (date !== toDateInput(original)) {
+      // On garde l'heure d'origine, seule la date change
+      const [y, m, d] = date.split('-').map(Number);
+      const nd = new Date(original);
+      nd.setFullYear(y, m - 1, d);
+      changes.created_at = nd.toISOString();
+    }
     try {
-      const { error } = await supabase
-        .from('transactions')
-        .update({ price })
-        .eq('id', id);
+      const { error } = await supabase.from('transactions').update(changes).eq('id', id);
       if (error) throw error;
       setEditingTransaction(null);
+      loadTransactions();
     } catch (error) {
       console.error('Erreur de mise à jour:', error);
+      alert('Erreur lors de la modification: ' + error.message);
     }
   };
 
@@ -2344,36 +2365,17 @@ const loadUserPreferences = async () => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    {editingTransaction?.id === transaction.id ? (
-                                      <div className="flex items-center gap-1">
-                                        <input
-                                          type="text"
-                                          defaultValue={transaction.price.toFixed(2)}
-                                          autoFocus
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') updateTransactionPrice(transaction.id, e.target.value);
-                                            if (e.key === 'Escape') setEditingTransaction(null);
-                                          }}
-                                          onBlur={(e) => updateTransactionPrice(transaction.id, e.target.value)}
-                                          className={`w-20 px-2 py-1 text-sm rounded border-2 focus:outline-none focus:border-red-400 ${
-                                            darkMode ? 'bg-gray-700 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                                          }`}
-                                        />
-                                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>€</span>
-                                      </div>
-                                    ) : (
-                                      <div className="font-bold text-red-500">
+                                    <div className="font-bold text-red-500">
                                         -{transaction.price.toFixed(2)}€
                                       </div>
-                                    )}
                                     <button
-                                      onClick={() => setEditingTransaction({ id: transaction.id, price: transaction.price })}
+                                      onClick={() => startEditTransaction(transaction)}
                                       className={`p-1.5 rounded-lg transition ${
                                         darkMode
                                           ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300'
                                           : 'hover:bg-gray-200 text-gray-600 hover:text-gray-800'
                                       }`}
-                                      title="Modifier le prix"
+                                      title="Modifier la transaction"
                                     >
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -2472,36 +2474,17 @@ const loadUserPreferences = async () => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    {editingTransaction?.id === transaction.id ? (
-                                      <div className="flex items-center gap-1">
-                                        <input
-                                          type="text"
-                                          defaultValue={transaction.price.toFixed(2)}
-                                          autoFocus
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') updateTransactionPrice(transaction.id, e.target.value);
-                                            if (e.key === 'Escape') setEditingTransaction(null);
-                                          }}
-                                          onBlur={(e) => updateTransactionPrice(transaction.id, e.target.value)}
-                                          className={`w-20 px-2 py-1 text-sm rounded border-2 focus:outline-none focus:border-green-400 ${
-                                            darkMode ? 'bg-gray-700 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                                          }`}
-                                        />
-                                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>€</span>
-                                      </div>
-                                    ) : (
-                                      <div className="font-bold text-green-500">
+                                    <div className="font-bold text-green-500">
                                         +{transaction.price.toFixed(2)}€
                                       </div>
-                                    )}
                                     <button
-                                      onClick={() => setEditingTransaction({ id: transaction.id, price: transaction.price })}
+                                      onClick={() => startEditTransaction(transaction)}
                                       className={`p-1.5 rounded-lg transition ${
                                         darkMode
                                           ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300'
                                           : 'hover:bg-gray-200 text-gray-600 hover:text-gray-800'
                                       }`}
-                                      title="Modifier le prix"
+                                      title="Modifier la transaction"
                                     >
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -3408,6 +3391,49 @@ const loadUserPreferences = async () => {
                 }
               </button>
             </div>
+          </div>
+        );
+      })()}
+
+      {/* Modification d'une transaction */}
+      {editingTransaction && (() => {
+        const champ = `w-full px-3 py-2.5 rounded-xl border-2 text-sm focus:outline-none focus:border-indigo-500 ${
+          darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-200 text-gray-900'
+        }`;
+        const maj = (k) => (e) => { const v = e.target.value; setEditingTransaction(prev => ({ ...prev, [k]: v })); };
+        const noms = [...new Set([...buyTransactions, ...sellTransactions].map(t => t.game_name).filter(Boolean))].sort();
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingTransaction(null)}>
+            <form
+              onClick={e => e.stopPropagation()}
+              onSubmit={e => { e.preventDefault(); saveTransactionEdit(); }}
+              onKeyDown={e => { if (e.key === 'Escape') setEditingTransaction(null); }}
+              className={`w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`}
+            >
+              <h3 className="text-lg font-bold">Modifier la transaction</h3>
+              <label className="block text-sm font-semibold space-y-1">
+                <span>Nom du jeu</span>
+                <input type="text" list="noms-jeux-edition" value={editingTransaction.name} onChange={maj('name')} className={champ} />
+                <datalist id="noms-jeux-edition">{noms.map(n => <option key={n} value={n} />)}</datalist>
+              </label>
+              <label className="block text-sm font-semibold space-y-1">
+                <span>Date</span>
+                <input type="date" value={editingTransaction.date} onChange={maj('date')} className={champ} />
+              </label>
+              <label className="block text-sm font-semibold space-y-1">
+                <span>Prix (€)</span>
+                <input type="text" inputMode="decimal" autoFocus value={editingTransaction.price} onChange={maj('price')} className={champ} />
+              </label>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setEditingTransaction(null)}
+                  className={`flex-1 py-2.5 rounded-xl font-semibold text-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}>
+                  Annuler
+                </button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-indigo-600 hover:bg-indigo-500 text-white">
+                  Enregistrer
+                </button>
+              </div>
+            </form>
           </div>
         );
       })()}

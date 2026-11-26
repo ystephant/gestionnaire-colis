@@ -666,6 +666,20 @@ export default function MenuPrincipal() {
                   </svg>
                 ),
               },
+              {
+                path: '/scores',
+                title: 'Compteur de Scores',
+                description: 'Comptez les points, lancez les dés et la roue pendant vos parties',
+                gradient: 'from-fuchsia-500 to-purple-700',
+                tags: [{ label: '🏆 Scores', bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' }, { label: '🎡 Roue', bg: 'bg-purple-100', text: 'text-purple-700' }],
+                badge: null,
+                icon: (size) => (
+                  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"></path>
+                    <path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"></path>
+                  </svg>
+                ),
+              },
             ];
 
             if (viewMode === 'grid') {

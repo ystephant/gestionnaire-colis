@@ -54,6 +54,10 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { useRouter } from "next/router";
+import { readLocal, saveItem, pushItem, deleteItem, syncAll } from "../lib/scoresSync";
+import DiceTable from "../components/DiceTable";
+import ScoreSheet from "../components/ScoreSheet";
 
 // ─────────────────────────────────────────────────────────
 //  SUPABASE CLIENT (graceful degradation)
@@ -87,7 +91,7 @@ const DEFAULT_NAMES = [
 const BONUS_CARDS = [-10,-5,-3,-1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
 const MEDALS      = ["🥇","🥈","🥉"];
 const DICE_TYPES  = [4,6,8,10,12,20,100];
-const MAX_HIST    = 500;
+const MAX_HIST    = 2000;
 const uid         = () => Math.random().toString(36).slice(2,9);
 
 const GAME_PRESETS = [
@@ -129,6 +133,8 @@ const GLOBAL_CSS = `
   .gear-hint-anim svg{animation:gearHint 1.1s ease-in-out 3}
   @keyframes swipeFlash{0%{opacity:.9}60%{opacity:.6}100%{opacity:0}}
   .swipe-flash{animation:swipeFlash .38s ease forwards}
+  @keyframes hgStream{from{stroke-dashoffset:7}to{stroke-dashoffset:0}}
+  @keyframes hgGrain{from{transform:translateY(-3px);opacity:1}to{transform:translateY(7px);opacity:0}}
   @keyframes sandFall{0%{transform:translateY(0);opacity:.9}100%{transform:translateY(7px);opacity:0}}
   @keyframes hourglassShake{0%,100%{transform:rotate(0)}20%{transform:rotate(-9deg)}60%{transform:rotate(9deg)}}
   @keyframes hourglassFlip{0%{transform:rotate(0deg) scale(1)}30%{transform:rotate(120deg) scale(0.9)}60%{transform:rotate(200deg) scale(1.05)}80%{transform:rotate(175deg) scale(0.97)}100%{transform:rotate(180deg) scale(1)}}
@@ -172,6 +178,8 @@ const GLOBAL_CSS = `
   input[type=number]{-moz-appearance:textfield}
   .tabs-scroll{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:2px;padding-bottom:1px}
   .tabs-scroll::-webkit-scrollbar{display:none}
+  .tabs-scroll .tab-btn{flex:1;min-width:0;min-height:44px}
+  .die-sel-btn{min-height:46px;padding:0 4px!important}
   .safe-bottom{padding-bottom:env(safe-area-inset-bottom,0px)}
   .overlay{position:fixed;inset:0;z-index:54;background:rgba(0,0,0,.68);backdrop-filter:blur(7px)}
   .name-edit-input{background:transparent;border:none;border-bottom:2px solid rgba(255,255,255,.7);color:#fff;font-family:'Sora',sans-serif;font-size:13px;font-weight:700;outline:none;width:100%;caret-color:#fff}
@@ -444,7 +452,7 @@ function PlayerMiniHistory({ entries, color, isMobile }) {
 // ─────────────────────────────────────────────────────────
 //  SPINNER WHEEL (condensed)
 // ─────────────────────────────────────────────────────────
-function SpinnerWheel({ players, onResult, acc, isMobile }) {
+function SpinnerWheel({ players, onResult, acc, isMobile, renderAction }) {
   const [spinning,setSp]=useState(false),[angle,setAng]=useState(0),[winner,setW]=useState(null);
   const aR=useRef(null),angR=useRef(0),velR=useRef(0),ltR=useRef(null),sf=useRef(false),pR=useRef(null);
   const rW=useCallback((a)=>{
@@ -467,15 +475,15 @@ function SpinnerWheel({ players, onResult, acc, isMobile }) {
   },[spinning,players,fin]);
   useEffect(()=>()=>cancelAnimationFrame(aR.current),[]);
   if(!players.length)return(<div style={{textAlign:"center",padding:"40px 20px",color:"#50556e"}}><div style={{fontSize:48,marginBottom:8}}>🎡</div><div style={{fontSize:14,fontWeight:700}}>Ajoutez des joueurs pour utiliser la roue</div></div>);
-  const W=isMobile?Math.min(window.innerWidth-48,240):230,CX=W/2,CY=W/2,R=W/2-6,SA=360/players.length;
-  const nfs=players.length<=4?13:players.length<=7?10:8;
+  const W=Math.max(240,Math.min(window.innerWidth-56,window.innerHeight-(isMobile?360:330),460)),CX=W/2,CY=W/2,R=W/2-6,SA=360/players.length;
+  const nfs=Math.round((players.length<=4?15:players.length<=7?13:11)*Math.max(1,W/300));
   const nc=acc||"#f59e0b";
-  const slices=players.map((p,i)=>{const a0=(i*SA-90)*Math.PI/180,a1=((i+1)*SA-90)*Math.PI/180,large=SA>180?1:0,mA=((i+0.5)*SA-90)*Math.PI/180,tr=R*.62;return{p,d:`M${CX},${CY} L${(CX+R*Math.cos(a0)).toFixed(2)},${(CY+R*Math.sin(a0)).toFixed(2)} A${R},${R} 0 ${large},1 ${(CX+R*Math.cos(a1)).toFixed(2)},${(CY+R*Math.sin(a1)).toFixed(2)}Z`,tx:CX+tr*Math.cos(mA),ty:CY+tr*Math.sin(mA),ta:(i+0.5)*SA};});
+  const slices=players.map((p,i)=>{const a0=(i*SA-90)*Math.PI/180,a1=((i+1)*SA-90)*Math.PI/180,large=SA>180?1:0,mA=((i+0.5)*SA-90)*Math.PI/180,tr=R*.62;return{p,d:`M${CX},${CY} L${(CX+R*Math.cos(a0)).toFixed(2)},${(CY+R*Math.sin(a0)).toFixed(2)} A${R},${R} 0 ${large},1 ${(CX+R*Math.cos(a1)).toFixed(2)},${(CY+R*Math.sin(a1)).toFixed(2)}Z`,tx:CX+tr*Math.cos(mA),ty:CY+tr*Math.sin(mA),ta:(i+0.5)*SA-90};});
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
       <div style={{position:"relative",width:W,height:W+20,flexShrink:0}}>
         <div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"12px solid transparent",borderRight:"12px solid transparent",borderTop:`24px solid ${nc}`,zIndex:10,filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.7))"}}/>
-        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} style={{marginTop:20,display:"block",filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.60))"}}>
+        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} onClick={spin} role="img" aria-label="Roue : toucher pour lancer" style={{marginTop:20,display:"block",cursor:spinning?"default":"pointer",filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.60))"}}>
           <circle cx={CX} cy={CY} r={R+4} fill="#111318" stroke="rgba(255,255,255,0.10)" strokeWidth="2"/>
           <g transform={`rotate(${angle} ${CX} ${CY})`}>
             {slices.map(({p,d,tx,ty,ta})=>(<g key={p.id}><path d={d} fill={p.color.hex} stroke="rgba(0,0,0,0.35)" strokeWidth="1.5"/><path d={d} fill="rgba(255,255,255,0.06)"/><g transform={`rotate(${ta} ${tx} ${ty})`}><text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" fontSize={nfs} fontWeight="800" fontFamily="Sora,sans-serif" fill="#fff" stroke="rgba(0,0,0,0.60)" strokeWidth="3.5" paintOrder="stroke fill" style={{userSelect:"none"}}>{p.name.length>9?p.name.slice(0,8)+"…":p.name}</text></g></g>))}
@@ -486,10 +494,11 @@ function SpinnerWheel({ players, onResult, acc, isMobile }) {
           </g>
         </svg>
       </div>
-      {winner&&!spinning&&(<div className="slide-up" style={{padding:"11px 28px",borderRadius:13,background:`linear-gradient(135deg,${winner.color.hex},${winner.color.hex}aa)`,color:"#fff",fontWeight:800,fontSize:17,textAlign:"center"}}>🎉 {winner.name} commence !</div>)}
+      {winner&&!spinning&&(<div className="slide-up" style={{padding:"11px 28px",borderRadius:13,background:`linear-gradient(135deg,${winner.color.hex},${winner.color.hex}aa)`,color:"#fff",fontWeight:800,fontSize:17,textAlign:"center"}}>🎉 {winner.name} !</div>)}
+      {winner&&!spinning&&renderAction?.(winner)}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
-        <button onClick={spin} disabled={spinning||players.length<2} style={{padding:"13px 28px",borderRadius:12,border:"none",background:spinning?"#374151":`linear-gradient(135deg,${nc},#ef4444)`,color:"#fff",fontWeight:800,fontSize:14,cursor:spinning||players.length<2?"not-allowed":"pointer",opacity:players.length<2?.5:1,minHeight:48}}>{spinning?"⏳ En cours…":"🎡 Lancer"}</button>
-        <button onClick={stopNow} disabled={!spinning} style={{padding:"13px 18px",borderRadius:12,border:"none",background:spinning?"#ef4444":"rgba(239,68,68,0.15)",color:spinning?"#fff":"#f87171",fontWeight:800,fontSize:14,cursor:spinning?"pointer":"default",opacity:spinning?1:.45,transition:"all .2s",minHeight:48}}>⏹ Stop</button>
+        <button id="sgt-spin" onClick={spin} disabled={spinning||players.length<2} style={{padding:"13px 28px",borderRadius:12,border:"none",background:spinning?"#374151":`linear-gradient(135deg,${nc},#ef4444)`,color:"#fff",fontWeight:800,fontSize:14,cursor:spinning||players.length<2?"not-allowed":"pointer",opacity:players.length<2?.5:1,minHeight:48}}>{spinning?"⏳ En cours…":"🎡 Lancer"}</button>
+        {spinning&&<button onClick={stopNow} disabled={!spinning} style={{padding:"13px 18px",borderRadius:12,border:"none",background:spinning?"#ef4444":"rgba(239,68,68,0.15)",color:spinning?"#fff":"#f87171",fontWeight:800,fontSize:14,cursor:spinning?"pointer":"default",opacity:spinning?1:.45,transition:"all .2s",minHeight:48}}>⏹ Stop</button>}
       </div>
     </div>
   );
@@ -505,34 +514,19 @@ function SandTimer({ D, dark }) {
   const ivR=useRef(null),endR=useRef(null);
   const pr=rem/dur;
   const ring=pr>.5?"#4ade80":pr>.25?"#fbbf24":"#ef4444";
-  // Anneau plus grand — SVG 280×280, cx/cy=140, r=110
-  const RING_R=110, RING_W=280;
-  const CIRC=2*Math.PI*RING_R;
-
   // ── Sable ──────────────────────────────────────────────
-  // tp : 0 = début (top plein, bas vide) → 1 = fin (top vide, bas plein)
+  // tp : 0 = début (haut plein) → 1 = fin (bas plein)
   const tp=1-pr;
+  // Les ampoules sont larges au milieu et fines au col : la hauteur n'est pas proportionnelle au volume
+  const topY=148-88*Math.pow(pr,.62);                 // surface du sable en haut
+  const dip=status==="idle"?2:Math.min(16,34*tp,40*pr); // creux en entonnoir
+  const botH=84*Math.pow(tp,.8);
+  const botY=264-botH;                                // niveau du sable en bas
+  const mound=Math.min(22,botH*.7);                   // petit tas conique
+  const GLASS="M52,36 L148,36 C166,86 116,122 106,142 Q102,150 106,158 C116,178 166,214 148,264 L52,264 C34,214 84,178 94,158 Q98,150 94,142 C84,122 34,86 52,36 Z";
+  const wood=dark?["#8a5a2b","#c48a4a","#5e3a18"]:["#9a6430","#d9a05c","#6b4019"];
+  const glassEdge=dark?"rgba(226,240,255,0.55)":"rgba(60,90,130,0.45)";
 
-  // Chambre HAUTE : M 20,11 L 80,11 L 52,47 L 48,47
-  // Mur gauche : (20,11)→(48,47), droit : (80,11)→(52,47)
-  const tSY=11+36*tp;           // surface du sable en haut (descend)
-  // Bords du sable au niveau tSY, le long des parois :
-  const tL=(20+28*tp).toFixed(2);   // paroi gauche à y=tSY : 20+28*(tSY-11)/36 = 20+28*tp
-  const tR=(80-28*tp).toFixed(2);   // paroi droite
-
-  // Chambre BAS : M 48,53 L 52,53 L 80,89 L 20,89
-  // Mur gauche : (48,53)→(20,89), droit : (52,53)→(80,89)
-  const bSY=89-36*tp;           // surface du sable en bas (monte)
-  // Bords du sable au niveau bSY, le long des parois :
-  // x_gauche = 48 - 28*(bSY-53)/36 = 48 - 28*(1-tp) = 20+28*tp
-  const bL=(20+28*tp).toFixed(2);
-  const bR=(80-28*tp).toFixed(2);
-
-  // Polygones
-  const tP=pr>.004?`M ${tL},${tSY.toFixed(2)} L ${tR},${tSY.toFixed(2)} L 52,47 L 48,47 Z`:null;
-  const bP=pr<.996?`M ${bL},${bSY.toFixed(2)} L ${bR},${bSY.toFixed(2)} L 80,89 L 20,89 Z`:null;
-
-  const sC=dark?"#fbbf24":"#d97706",gS=dark?"rgba(255,255,255,0.28)":"rgba(0,0,0,0.22)",gF=dark?"rgba(255,255,255,0.05)":"rgba(0,0,0,0.04)",pC=dark?"rgba(255,255,255,0.22)":"rgba(0,0,0,0.18)";
   const tick=useCallback(()=>{const r=Math.max(0,Math.round((endR.current-Date.now())/1000));setRem(r);if(r<=0){clearInterval(ivR.current);setSt("done");playAlarmSound();}},[]);
   const start=useCallback(()=>{const r=status==="done"?dur:rem;setRem(r);endR.current=Date.now()+r*1e3;setSt("running");clearInterval(ivR.current);ivR.current=setInterval(tick,200);},[status,dur,rem,tick]);
   const pause=useCallback(()=>{clearInterval(ivR.current);setSt("paused");},[]);
@@ -561,57 +555,72 @@ function SandTimer({ D, dark }) {
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:20,padding:"22px 18px 20px",display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
-          {PRE.map(p=>(<button key={p.s} onClick={()=>pick(p.s)} aria-pressed={dur===p.s} style={{padding:"10px 18px",borderRadius:10,border:`1.5px solid ${dur===p.s?ring:D.brd}`,background:dur===p.s?ring+"22":"transparent",color:dur===p.s?ring:D.sub,fontWeight:700,fontSize:14,cursor:"pointer",transition:"all .15s",minHeight:44}}>{p.label}</button>))}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:6,width:"100%",maxWidth:360}}>
+          {PRE.map(p=>(<button key={p.s} onClick={()=>pick(p.s)} aria-pressed={dur===p.s} style={{padding:"10px 2px",whiteSpace:"nowrap",borderRadius:10,border:`1.5px solid ${dur===p.s?ring:D.brd}`,background:dur===p.s?ring+"22":"transparent",color:dur===p.s?ring:D.sub,fontWeight:700,fontSize:14,cursor:"pointer",transition:"all .15s",minHeight:44}}>{p.label}</button>))}
         </div>
 
-        {/* Conteneur : anneau (280×280) + sablier centré */}
-        <div style={{position:"relative",width:RING_W,height:RING_W,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          {/* Anneau de progression — grand, écarté du sablier */}
-          <svg width={RING_W} height={RING_W} viewBox={`0 0 ${RING_W} ${RING_W}`}
-            style={{position:"absolute",inset:0,transform:"rotate(-90deg)",pointerEvents:"none"}}>
-            <circle cx={RING_W/2} cy={RING_W/2} r={RING_R} fill="none" stroke={ring+"1a"} strokeWidth="10"/>
-            <circle cx={RING_W/2} cy={RING_W/2} r={RING_R} fill="none" stroke={ring} strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={`${CIRC*pr} ${CIRC*(1-pr)}`}
-              style={{transition:"stroke-dasharray .28s ease,stroke .6s ease"}}/>
-          </svg>
+        {/* Sablier */}
+        <svg viewBox="0 0 200 300" role="img" aria-label={`Sablier : ${fmt(rem)} restantes`}
+          style={{height:"clamp(230px, calc(100dvh - 420px), 340px)",maxWidth:"100%",overflow:"visible",filter:"drop-shadow(0 10px 18px rgba(0,0,0,.28))",animation:hourglassAnim}}>
+          <defs>
+            <linearGradient id="hgWood" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor={wood[2]}/><stop offset=".35" stopColor={wood[1]}/><stop offset=".7" stopColor={wood[0]}/><stop offset="1" stopColor={wood[2]}/>
+            </linearGradient>
+            <linearGradient id="hgSand" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#c8871a"/><stop offset=".42" stopColor="#fbd36b"/><stop offset="1" stopColor="#b97812"/>
+            </linearGradient>
+            <linearGradient id="hgGlass" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="rgba(150,190,230,.34)"/><stop offset=".3" stopColor="rgba(255,255,255,.10)"/><stop offset=".75" stopColor="rgba(150,190,230,.08)"/><stop offset="1" stopColor="rgba(120,160,210,.34)"/>
+            </linearGradient>
+            <clipPath id="hgClip"><path d={GLASS}/></clipPath>
+          </defs>
 
-          {/* Sablier + timer */}
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
-            <svg width="110" height="110" viewBox="0 0 100 100"
-              style={{filter:"drop-shadow(0 4px 18px rgba(0,0,0,.4))",
-                animation:hourglassAnim}}>
-              {/* Plaques */}
-              <rect x="16" y="4"  width="68" height="7" rx="3.5" fill={pC}/>
-              <rect x="16" y="89" width="68" height="7" rx="3.5" fill={pC}/>
-              {/* Verre haut */}
-              <path d="M 20,11 L 80,11 L 52,47 L 48,47 Z" fill={gF} stroke={gS} strokeWidth="1.4" strokeLinejoin="round"/>
-              {/* Verre bas */}
-              <path d="M 48,53 L 52,53 L 80,89 L 20,89 Z" fill={gF} stroke={gS} strokeWidth="1.4" strokeLinejoin="round"/>
-              {/* Sable haut */}
-              {tP&&<path d={tP} fill={sC} opacity=".92"/>}
-              {tP&&pr>.07&&<line x1={tL} y1={(tSY+.8).toFixed(2)} x2={tR} y2={(tSY+.8).toFixed(2)} stroke="rgba(255,255,255,0.48)" strokeWidth="1.2"/>}
-              {/* Filet de sable au col */}
-              {status==="running"&&pr>.02&&pr<.98&&(
-                <ellipse cx="50" cy="49" rx="1.2" ry="1.8" fill={sC}
-                  style={{animation:"sandFall .36s linear infinite"}}/>
-              )}
-              {/* Sable bas */}
-              {bP&&<path d={bP} fill={sC} opacity=".92"/>}
-              {bP&&pr<.93&&<line x1={bL} y1={(bSY+.8).toFixed(2)} x2={bR} y2={(bSY+.8).toFixed(2)} stroke="rgba(255,255,255,0.40)" strokeWidth="1.2"/>}
-              {/* Check fin */}
-              {done&&<text x="50" y="72" textAnchor="middle" fontSize="19" fill={sC}
-                style={{animation:"timerPulse .8s ease infinite"}}>✓</text>}
-            </svg>
+          {/* Montants tournés */}
+          {[28,172].map(x=>(
+            <g key={x} fill="url(#hgWood)">
+              <rect x={x-3.5} y="30" width="7" height="240" rx="3"/>
+              <ellipse cx={x} cy="52" rx="7" ry="9"/><ellipse cx={x} cy="150" rx="6" ry="16"/><ellipse cx={x} cy="248" rx="7" ry="9"/>
+            </g>
+          ))}
 
-            {/* Affichage du temps */}
-            <div className="mono" style={{fontSize:32,fontWeight:800,letterSpacing:-1,
-              color:done?ring:D.txt,
-              animation:done?"timerPulse .85s ease 4":"none",
-              transition:"color .5s"}}>
-              {fmt(rem)}
-            </div>
+          <path d={GLASS} fill="url(#hgGlass)"/>
+
+          {/* Sable */}
+          <g clipPath="url(#hgClip)">
+            {pr>.003&&<path d={`M0,${topY} Q50,${topY-dip*.25} 100,${topY+dip} Q150,${topY-dip*.25} 200,${topY} L200,150 L0,150 Z`} fill="url(#hgSand)"/>}
+            {tp>.003&&<path d={`M0,${botY+mound*.5} L40,${botY+mound*.45} C75,${botY+mound*.35} 88,${botY-mound*.5} 100,${botY-mound*.5} C112,${botY-mound*.5} 125,${botY+mound*.35} 160,${botY+mound*.45} L200,${botY+mound*.5} L200,266 L0,266 Z`} fill="url(#hgSand)"/>}
+            {/* Filet de sable */}
+            {status==="running"&&pr>.005&&(
+              <g>
+                <line x1="100" y1="147" x2="100" y2={Math.max(150,botY-mound*.5)} stroke="#f2bd45" strokeWidth="2.4" strokeLinecap="round" strokeDasharray="5 2" style={{animation:"hgStream .25s linear infinite"}}/>
+                {[-4,3,-2].map((dx,i)=><circle key={i} cx={100+dx} cy={Math.max(152,botY-mound*.5-4)} r="1.3" fill="#fbd36b" style={{animation:`hgGrain .5s ${i*.16}s ease-out infinite`}}/>)}
+              </g>
+            )}
+          </g>
+
+          {/* Verre : contour et reflets */}
+          <path d={GLASS} fill="none" stroke={glassEdge} strokeWidth="2"/>
+          <path d="M60,46 C52,82 74,108 88,126" fill="none" stroke="rgba(255,255,255,.75)" strokeWidth="4" strokeLinecap="round"/>
+          <path d="M88,174 C70,196 56,220 59,248" fill="none" stroke="rgba(255,255,255,.55)" strokeWidth="4" strokeLinecap="round"/>
+          <path d="M142,50 C144,66 140,80 133,92" fill="none" stroke="rgba(255,255,255,.4)" strokeWidth="2.5" strokeLinecap="round"/>
+
+          {/* Socles */}
+          {[0,1].map(i=>(
+            <g key={i} transform={i?"translate(0 300) scale(1 -1)":undefined}>
+              <rect x="14" y="10" width="172" height="17" rx="8" fill="url(#hgWood)"/>
+              <rect x="26" y="26" width="148" height="10" rx="4" fill="url(#hgWood)"/>
+              <rect x="22" y="13" width="156" height="2.5" rx="1.2" fill="rgba(255,255,255,.28)"/>
+            </g>
+          ))}
+        </svg>
+
+        {/* Temps restant */}
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,width:"100%",maxWidth:260}}>
+          <div className="mono" style={{fontSize:40,fontWeight:800,letterSpacing:-1,lineHeight:1,color:done?ring:D.txt,animation:done?"timerPulse .85s ease 4":"none",transition:"color .5s"}}>
+            {fmt(rem)}
+          </div>
+          <div style={{width:"100%",height:7,borderRadius:4,background:ring+"26",overflow:"hidden"}}>
+            <div style={{width:`${pr*100}%`,height:"100%",background:ring,borderRadius:4,transition:"width .28s ease,background .6s ease"}}/>
           </div>
         </div>
 
@@ -693,9 +702,7 @@ function GamePresetModal({ onSelect, onClose, D, dark, isMobile }) {
 //  INTER-GAME STATS
 // ─────────────────────────────────────────────────────────
 function InterGameStats({ D, dark, isMobile, onClose }) {
-  const saved = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("sgt7_saved") || "[]"); } catch { return []; }
-  }, []);
+  const saved = useMemo(() => readLocal("history").filter(g => g.players?.length), []);
 
   const finished = saved.filter(g => g.state === "ended" || g.players?.some(p => p.score !== 0));
 
@@ -794,7 +801,7 @@ function InterGameStats({ D, dark, isMobile, onClose }) {
                       background:dark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.03)",
                       border:`1px solid ${D.brd}` }}>
                       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
-                        <span style={{ fontWeight:700, fontSize:13 }}>{g.name||"Partie"}</span>
+                        <span style={{ fontWeight:700, fontSize:13 }}>{g.gameName||g.name||"Partie"}</span>
                         <span style={{ fontSize:10, color:D.sub }}>{g.savedAt?new Date(g.savedAt).toLocaleDateString("fr-FR"):""}</span>
                       </div>
                       <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
@@ -1124,16 +1131,11 @@ function OnlineModal({ onClose, D, isMobile, dark, onCreateGame, onJoinGame, onl
 //  MULTI-GAME PICKER
 // ─────────────────────────────────────────────────────────
 function GamePicker({ D, isMobile, dark, onClose, onLoad, onNew }) {
-  const games = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("sgt7_saved") || "[]"); } catch { return []; }
-  }, []);
+  const [games, setGames] = useState(() => readLocal("history").filter(g => g.players?.length));
 
   const del = (id) => {
-    try {
-      const updated = games.filter(g => g.id !== id);
-      localStorage.setItem("sgt7_saved", JSON.stringify(updated));
-    } catch {}
-    onClose();
+    setGames(list => list.filter(g => g.id !== id));
+    deleteItem(supabase, "history", id);
   };
 
   return (
@@ -1159,7 +1161,7 @@ function GamePicker({ D, isMobile, dark, onClose, onLoad, onNew }) {
                 background:dark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)" }}>
                 <button onClick={()=>onLoad(g)} style={{ flex:1, background:"none", border:"none",
                   cursor:"pointer", textAlign:"left", minHeight:44 }}>
-                  <div style={{ fontWeight:700, fontSize:14, color:D.txt }}>{g.name||"Partie"}</div>
+                  <div style={{ fontWeight:700, fontSize:14, color:D.txt }}>{g.gameName||g.name||"Partie"}</div>
                   <div style={{ fontSize:11, color:D.sub, marginTop:2 }}>
                     {ps} joueur{ps!==1?"s":""}
                     {winner&&<span style={{ color:D.acc }}> · 🏆 {winner.name}</span>}
@@ -1183,6 +1185,11 @@ function GamePicker({ D, isMobile, dark, onClose, onLoad, onNew }) {
 export default function ScoreTracker() {
   const winW     = useWindowWidth();
   const isMobile = winW < 600;
+  const isWide   = winW >= 1000;
+  const router   = useRouter();
+  const [groups,    setGroups]   = useState([]);
+  const [showGroups,setShowGrp]  = useState(false);
+  const [groupName, setGroupName]= useState("");
 
   // ── Core state ──
   const [dark,     setDark]    = useState(()=>{try{const s=localStorage.getItem("sgt7dark");if(s!=null)return s==="true";}catch{}return window.matchMedia?.("(prefers-color-scheme: dark)").matches??true;});
@@ -1244,11 +1251,10 @@ export default function ScoreTracker() {
   const [sugs,     setSugs]     = useState([]);
 
   // ── Dice ──
-  const [diceType,  setDType]  = useState(6);
-  const [diceCount, setDCount] = useState(2);
-  const [diceResult,setDRes]   = useState(null);
-  const [diceVals,  setDVals]  = useState([]);
-  const [rolling,   setRolling]= useState(false);
+  const [lastRoll,  setLastRoll]= useState(null);
+  const [starter,   setStarter]  = useState(null);   // { id, round } : qui commence à quelle manche
+  const [lastSpin,  setLastSpin] = useState(null);
+  const [view,      setView]     = useState(()=>{try{return localStorage.getItem("sgt7view")==="sheet"?"sheet":"cards";}catch{return "cards";}});
   const [diceHist,  setDHist]  = useState([]);
   const [wheelHist, setWHist]  = useState([]);
 
@@ -1280,21 +1286,28 @@ export default function ScoreTracker() {
   useEffect(()=>{ try{localStorage.setItem("sgt7dark",String(dark));}catch{} },[dark]);
 
   // ── Persistence ──
+  const loadedRef = useRef(false);   // vrai une fois la partie en cours relue
+  const pushRef   = useRef(null);
   const saveGame = useCallback((extra={}) => {
+    if (!loadedRef.current) return;
     try {
       const data = { players:playersRef.current, gameName, round, history, diceHist, wheelHist,
         gameState, targetScore, lowestWins, maxRounds, gamePreset, displayOrder, id:gameId,
-        savedAt:new Date().toISOString(), state:gameState, ...extra };
+        savedAt:new Date().toISOString(), state:gameState, starter, ...extra };
+      const prev = JSON.parse(localStorage.getItem("sgt7")||"{}");
       localStorage.setItem("sgt7", JSON.stringify(data));
-      // Multi-game save
-      const saved = JSON.parse(localStorage.getItem("sgt7_saved")||"[]");
-      const idx   = saved.findIndex(g=>g.id===gameId);
-      if(idx>=0) saved[idx]=data; else saved.unshift(data);
-      localStorage.setItem("sgt7_saved", JSON.stringify(saved.slice(0,12)));
+      if (!data.players.length) return;               // pas de partie vide dans l'historique
+      // Rien n'a changé (simple réouverture) : la date de la partie est conservée
+      const sans = (o) => JSON.stringify({ ...o, savedAt: undefined });
+      if (sans(prev) === sans(data) && readLocal("history").some(g=>g.id===data.id)) return;
+      saveItem("history", data);
+      clearTimeout(pushRef.current);
+      pushRef.current = setTimeout(()=>pushItem(supabase, "history", data), 1500);
     } catch {}
-  },[gameName,round,history,diceHist,wheelHist,gameState,targetScore,lowestWins,maxRounds,gamePreset,displayOrder,gameId]);
+  },[gameName,round,history,diceHist,wheelHist,gameState,targetScore,lowestWins,maxRounds,gamePreset,displayOrder,gameId,starter]);
 
-  useEffect(()=>{ saveGame(); },[players,gameName,round,history,diceHist,wheelHist,gameState,targetScore,lowestWins,maxRounds,displayOrder]); // eslint-disable-line
+  const [ready, setReady] = useState(false);
+  useEffect(()=>{ saveGame(); },[ready,players,gameName,round,history,diceHist,wheelHist,gameState,targetScore,lowestWins,maxRounds,displayOrder,starter]); // eslint-disable-line
 
   // ── Load on mount ──
   useEffect(()=>{
@@ -1306,8 +1319,13 @@ export default function ScoreTracker() {
       if(d.lowestWins!=null)setLowest(d.lowestWins);if(d.maxRounds!=null)setMaxRnd(d.maxRounds);
       if(d.gamePreset)setPreset(d.gamePreset);if(d.displayOrder)setDispOrder(d.displayOrder);
       if(d.id)setGameId(d.id);
+      if(d.starter)setStarter(d.starter);
       const n=JSON.parse(localStorage.getItem("sgt7n")||"null");if(n)setSavedN(n);
     }catch{}
+    loadedRef.current=true; setReady(true);
+    setGroups(readLocal("groups"));
+    syncAll(supabase,"history");
+    syncAll(supabase,"groups").then(()=>setGroups(readLocal("groups")));
   },[]);
 
   // ── Sync displayOrder when players change ──
@@ -1321,6 +1339,8 @@ export default function ScoreTracker() {
 
   // ── Auto color ──
   useEffect(()=>{if(players.length>0){const u=new Set(players.map(p=>p.color.hex));setAddColor(PALETTE.find(c=>!u.has(c.hex))||PALETTE[0]);}},[players.length]); // eslint-disable-line
+
+  useEffect(()=>{ try{localStorage.setItem("sgt7view",view);}catch{} },[view]);
 
   // ── Clear session on deselect ──
   useEffect(()=>{setSession([]);},[selected]);
@@ -1344,24 +1364,25 @@ export default function ScoreTracker() {
 
   // ── Toast ──
   const flash=useCallback((msg,bg)=>{ clearTimeout(toastRef.current);setToast({msg,bg});toastRef.current=setTimeout(()=>setToast(null),2600); },[]);
-  const saveUndo=useCallback((snap)=>setUndo(u=>[...u.slice(-29),snap]),[]);
-  const doUndo=useCallback(()=>{ if(!undo.length)return;setPlayers(undo[undo.length-1]);setUndo(u=>u.slice(0,-1));flash("Action annulée ↩"); },[undo,flash]);
+  const histRef=useRef([]); histRef.current=history;
+  const saveUndo=useCallback((snap)=>{const hist=histRef.current;setUndo(u=>[...u.slice(-29),{players:snap,hist}]);},[]);
+  const doUndo=useCallback(()=>{ if(!undo.length)return;setPlayers(undo[undo.length-1].players);setHist(undo[undo.length-1].hist);setUndo(u=>u.slice(0,-1));flash("Action annulée ↩"); },[undo,flash]);
 
   // ── Adjust (swipe, bonus, edit) ──
-  const adjust=useCallback((id,delta)=>{
-    if(!delta)return;
+  const adjust=useCallback((id,delta,atRound=round,allowZero=false)=>{
+    if(!delta&&!allowZero)return;
     if("vibrate"in navigator)navigator.vibrate(delta>0?22:[22,12,22]);
     const p=playersRef.current.find(x=>x.id===id);if(!p)return;
     const ns=p.score+delta,time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
     saveUndo(playersRef.current);
     setPlayers(prev=>prev.map(x=>x.id===id?{...x,score:x.score+delta}:x));
-    const entry={id,name:p.name,delta,score:ns,round,time};
+    const entry={id,name:p.name,delta,score:ns,round:atRound,time};
     setHist(h=>{ const nh=[...h,entry]; return nh.length>MAX_HIST?nh.slice(-MAX_HIST):nh; });
     setFlashCt(f=>({...f,[id]:(f[id]||0)+1}));
     // Supabase sync
     if(isOnline&&supabase&&onlineCode){
       const evId=uid();processedEventsRef.current.add(evId);
-      supabase.from("sgt_events").insert({id:evId,game_id:onlineCode,player_id:id,player_name:p.name,delta,score:ns,round,time}).then(()=>{}).catch(()=>{});
+      supabase.from("sgt_events").insert({id:evId,game_id:onlineCode,player_id:id,player_name:p.name,delta,score:ns,round:atRound,time}).then(()=>{}).catch(()=>{});
     }
   },[saveUndo,round,isOnline,onlineCode]);
 
@@ -1397,13 +1418,17 @@ export default function ScoreTracker() {
     const h=(e)=>{
       if((e.ctrlKey||e.metaKey)&&e.key==="z"&&!e.shiftKey){e.preventDefault();doUndo();return;}
       if(e.key==="Escape"){if(overflowOpen){setOvf(false);return;}if(selected){setSelected(null);return;}}
+      if(e.code==="Space"&&!e.repeat&&!e.target.matches("input,textarea,select,button")){
+        const id=tab==="dice"?"sgt-roll":tab==="wheel"?"sgt-spin":null;
+        if(id){e.preventDefault();document.getElementById(id)?.click();return;}
+      }
       if(selected&&!e.target.matches("input,textarea,select")){
         if(e.key==="ArrowUp"){e.preventDefault();adjust(selected,1);}
         if(e.key==="ArrowDown"){e.preventDefault();adjust(selected,-1);}
       }
     };
     window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);
-  },[doUndo,selected,adjust,overflowOpen]);
+  },[doUndo,selected,adjust,overflowOpen,tab]);
 
   // ── Add player ──
   const addPlayer=useCallback((name=addQ.trim())=>{
@@ -1425,7 +1450,58 @@ export default function ScoreTracker() {
 
   const onQ=(v)=>{setAddQ(v);if(!v.trim()){setSugs([]);setSugOpen(false);return;}const q=v.toLowerCase();const r=savedNames.filter(n=>n.toLowerCase().includes(q)&&!playersRef.current.find(p=>p.name.toLowerCase()===n.toLowerCase())).slice(0,8);setSugs(r);setSugOpen(r.length>0);};
 
-  const doReset=useCallback(()=>{saveUndo(playersRef.current);setPlayers(p=>p.map(x=>({...x,score:0})));setHist([]);setRound(1);setSR(false);setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);flash("Scores remis à zéro 🔄");},[saveUndo,flash]);
+  const doReset=useCallback(()=>{saveUndo(playersRef.current);setPlayers(p=>p.map(x=>({...x,score:0})));setHist([]);setRound(1);setStarter(null);setLastSpin(null);setSR(false);setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);flash("Scores remis à zéro 🔄");},[saveUndo,flash]);
+
+  // ── Groupes de joueurs ──
+  const addGroup=(g)=>{
+    const here=playersRef.current;
+    const names=new Set(here.map(p=>p.name.toLowerCase()));
+    const used=new Set(here.map(p=>p.color.hex));
+    const added=[];
+    g.players.forEach(m=>{
+      if(names.has(m.name.toLowerCase()))return;
+      const color=(m.color&&!used.has(m.color.hex))?m.color:(PALETTE.find(c=>!used.has(c.hex))||PALETTE[0]);
+      used.add(color.hex);names.add(m.name.toLowerCase());
+      added.push({id:uid(),name:m.name,color,score:0});
+    });
+    setShowGrp(false);
+    if(!added.length){flash("Ces joueurs sont déjà là !");return;}
+    saveUndo(here);setPlayers([...here,...added]);
+    flash(`👥 ${g.name} : ${added.length} joueur${added.length>1?"s":""} ajouté${added.length>1?"s":""}`);
+    if(isOnline&&supabase&&onlineCode){
+      added.forEach((p,i)=>supabase.from("sgt_players").insert({id:p.id,game_id:onlineCode,name:p.name,color_hex:p.color.hex,color_name:p.color.name,score:0,position:here.length+i}).then(()=>{}).catch(()=>{}));
+    }
+  };
+  const saveGroup=()=>{
+    const name=groupName.trim();
+    if(!name||!playersRef.current.length)return;
+    const old=groups.find(g=>g.name.toLowerCase()===name.toLowerCase());
+    const g={id:old?old.id:uid()+uid(),name,players:playersRef.current.map(p=>({name:p.name,color:p.color})),updatedAt:new Date().toISOString()};
+    saveItem("groups",g);setGroups(readLocal("groups"));setGroupName("");
+    pushItem(supabase,"groups",g);
+    flash(old?`Groupe « ${name} » mis à jour`:`Groupe « ${name} » enregistré`);
+  };
+  const removeGroup=(g)=>{
+    if(!window.confirm(`Supprimer le groupe « ${g.name} » ?`))return;
+    deleteItem(supabase,"groups",g.id);
+    setGroups(list=>list.filter(x=>x.id!==g.id));
+  };
+
+  // ── Feuille de score : fixer les points d'une case ──
+  const setCell=(id,r,value)=>{
+    const cur=history.filter(e=>e.id===id&&e.round===r);
+    const delta=value-cur.reduce((s,e)=>s+e.delta,0);
+    if(!delta&&cur.length)return;
+    adjust(id,delta,r,true);
+  };
+
+  // ── Premier joueur : tourne à chaque manche dans l'ordre des cartes ──
+  const starterAt=(r)=>{
+    if(!starter)return null;
+    const order=displayOrder.filter(id=>players.some(p=>p.id===id));
+    const i=order.indexOf(starter.id),n=order.length;
+    return i<0?null:order[(((i+r-starter.round)%n)+n)%n];
+  };
 
   // ── Preset selection ──
   const applyPreset=useCallback((preset)=>{
@@ -1440,6 +1516,7 @@ export default function ScoreTracker() {
     if(players.length<2){flash("Il faut au moins 2 joueurs !");return;}
     if(!gamePreset){setShowPr(true);return;}
     setGameSt("playing");setAddBar(false);setGST(Date.now());setElapsed(0);
+    if(!starterAt(round)){setSelected(null);setTab("wheel");flash("Tournez la roue pour désigner le premier joueur 🎡","#16a34a");return;}
     flash("La partie a commencé ! 🎮","#16a34a");
   };
   const endGame=useCallback(()=>{
@@ -1453,7 +1530,7 @@ export default function ScoreTracker() {
     saveUndo(playersRef.current);
     // Garde les joueurs mais remet les scores à 0
     setPlayers(p=>p.map(x=>({...x,score:0})));
-    setGName("Nouvelle partie 🎲");setRound(1);setHist([]);setGameSt("idle");
+    setGName("Nouvelle partie 🎲");setRound(1);setStarter(null);setLastSpin(null);setLastRoll(null);setHist([]);setGameSt("idle");
     setWinner(null);setTarget(null);setLowest(false);setMaxRnd(null);setPreset(null);
     setSelected(null);setSession([]);
     setGST(null);setElapsed(0);setGameId(uid());
@@ -1467,7 +1544,8 @@ export default function ScoreTracker() {
     if(g.lowestWins!=null)setLowest(g.lowestWins);if(g.maxRounds!=null)setMaxRnd(g.maxRounds);
     if(g.gamePreset)setPreset(g.gamePreset);if(g.displayOrder)setDispOrder(g.displayOrder);
     if(g.id)setGameId(g.id);
-    setShowPk(false);flash(`Partie "${g.name||"?"}" chargée`);
+    setStarter(g.starter||null);setLastSpin(null);setLastRoll(null);
+    setShowPk(false);flash(`Partie "${g.gameName||g.name||"?"}" chargée`);
   },[flash]);
 
   // ── Copy résumé ──
@@ -1488,15 +1566,7 @@ export default function ScoreTracker() {
     Object.assign(document.createElement("a"),{href:url,download:`${gameName.replace(/\s+/g,"_")}.csv`}).click();URL.revokeObjectURL(url);flash("CSV téléchargé ✓");
   };
 
-  // ── Dice ──
-  const rollDice=()=>{
-    if(rolling)return;setRolling(true);setDRes(null);let n=0;
-    const land=(vals,total)=>{setDVals(vals);setDRes(total);setRolling(false);playDiceSound();const time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});setDHist(h=>[{id:uid(),diceType,diceCount,values:vals,total,time},...h].slice(0,50));};
-    if(diceType===100){const iv=setInterval(()=>{const t=Math.floor(Math.random()*10)*10,u=Math.ceil(Math.random()*10);setDVals([t,u]);n++;if(n>14){clearInterval(iv);const ft=Math.floor(Math.random()*10)*10,fu=Math.ceil(Math.random()*10);land([ft,fu],ft+fu);}},80);return;}
-    const iv=setInterval(()=>{setDVals(Array.from({length:diceCount},()=>Math.ceil(Math.random()*diceType)));n++;if(n>14){clearInterval(iv);const vals=Array.from({length:diceCount},()=>Math.ceil(Math.random()*diceType));land(vals,vals.reduce((a,b)=>a+b,0));}},80);
-  };
-
-  const handleWheel=(w)=>{const time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});setWHist(h=>[{id:uid(),name:w.name,color:w.color.hex,time,date:new Date().toLocaleDateString("fr-FR")},...h].slice(0,10));};
+  const handleWheel=(w)=>{setLastSpin(w.id);if(!starterAt(round))setStarter({id:w.id,round});const time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});setWHist(h=>[{id:uid(),name:w.name,color:w.color.hex,time,date:new Date().toLocaleDateString("fr-FR")},...h].slice(0,10));};
   const dismissGear=useCallback(()=>{setGearDone(true);try{localStorage.setItem("sgt7gear","1");}catch{}},[]);
 
   // ── Supabase online ──
@@ -1548,7 +1618,7 @@ export default function ScoreTracker() {
       setPlayers(pArr);setGName(game.name);setRound(game.round||1);
       if(game.target_score!=null)setTarget(game.target_score);
       if(game.lowest_wins!=null)setLowest(game.lowest_wins);
-      setOnlineCode(gId);setIsOnline(true);subscribeToGame(gId);setShowOnl(false);
+      setStarter(null);setLastSpin(null);setOnlineCode(gId);setIsOnline(true);subscribeToGame(gId);setShowOnl(false);
       flash(`Rejoint la partie ${gId} ! 🌐`,"#4ade80");
     }catch{flash("Erreur de connexion");setOnlineSt("error");}
   },[subscribeToGame,flash]);
@@ -1603,10 +1673,10 @@ export default function ScoreTracker() {
   };
 
   const TABS=[
-    {key:"scores",label:isMobile?"🏆":"🏆 Scores"},
-    {key:"dice",  label:isMobile?"🎲":"🎲 Dés"},
-    {key:"wheel", label:isMobile?"🎡":"🎡 Roue"},
-    {key:"timer", label:isMobile?"⏳":"⏳ Sablier"},
+    {key:"scores",label:"🏆 Scores"},
+    {key:"dice",  label:"🎲 Dés"},
+    {key:"wheel", label:"🎡 Roue"},
+    {key:"timer", label:"⏳ Sablier"},
   ];
 
   const overflowActions=[
@@ -1616,11 +1686,16 @@ export default function ScoreTracker() {
     {icon:"CSV",label:"Exporter CSV",      action:()=>{exportCSV();setOvf(false);}},
     {icon:"🎯", label:"Score objectif",    action:()=>{setTgtInput(targetScore!=null?String(targetScore):"");setShowTgt(true);setOvf(false);}},
     {icon:"🎮", label:"Choisir le jeu",   action:()=>{setShowPr(true);setOvf(false);}},
+    {icon:"👥", label:"Groupes de joueurs",  action:()=>{setShowGrp(true);setOvf(false);}},
     {icon:"📂", label:"Parties sauveg.",  action:()=>{setShowPk(true);setOvf(false);}},
     {icon:"📈", label:"Stats inter-parties",action:()=>{setShowSt(true);setOvf(false);}},
     {icon:isOnline?"🔴":"🌐",label:isOnline?"Partie en ligne ✓":"Jouer en ligne",action:()=>{setShowOnl(true);setOvf(false);}},
     {icon:"🔄", label:"Remettre à zéro",  action:()=>{setSR(true);setOvf(false);}},
+    ...(isMobile?[{icon:dark?"☀️":"🌙",label:dark?"Thème clair":"Thème sombre",action:()=>{setDark(!dark);setOvf(false);}}]:[]),
   ];
+
+  const hdrBtn={minWidth:40,height:40,padding:"0 10px",borderRadius:10,border:`1px solid ${D.brd}`,background:"transparent",color:D.txt,cursor:"pointer",fontSize:13,fontWeight:700,flexShrink:0};
+  const mainBtn={height:40,padding:"0 12px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:13,flexShrink:0};
 
   return(
     <div style={{minHeight:"100dvh",background:D.bg,color:D.txt,fontFamily:"'Sora',sans-serif",transition:"background .3s",cursor:dragging?"grabbing":"auto"}}>
@@ -1628,90 +1703,38 @@ export default function ScoreTracker() {
 
       {/* ════ HEADER ════ */}
       <header style={{position:"sticky",top:0,zIndex:40,background:D.hbg,backdropFilter:"blur(16px)",borderBottom:`1px solid ${D.brd}`}}>
-        {isMobile?(
-          <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:9}}>
-            <span style={{fontSize:18,flexShrink:0}} aria-hidden>🎲</span>
-            <div style={{flex:1,minWidth:0}}>
-              {editName
-                ?<input ref={nameRef} value={gameName} onChange={e=>setGName(e.target.value)} onBlur={()=>setEditName(false)} onKeyDown={e=>{if(e.key==="Enter"||e.key==="Escape")setEditName(false);}} autoFocus style={{background:"transparent",border:"none",borderBottom:`2px solid ${D.acc}`,fontWeight:800,fontSize:14,color:D.txt,width:"100%",paddingBottom:1}}/>
-                :<div onClick={()=>setEditName(true)} role="button" style={{fontWeight:800,fontSize:14,color:D.txt,cursor:"text",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
-                  <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{gameName}</span>
-                  <span style={{fontSize:10,color:D.sub,flexShrink:0}} aria-hidden>✏️</span>
-                </div>
-              }
-              <div style={{fontSize:10,color:D.sub,marginTop:1,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-                {players.length} joueur{players.length!==1?"s":""} · R{round}
-                {isPlaying&&<span style={{color:"#22c55e"}}>● En jeu {gameStartTime?`· ${fmtElapsed(elapsed)}`:""}</span>}
-                {isEnded&&<span style={{color:D.acc}}>● Terminée</span>}
-                {targetScore!=null&&<span style={{color:D.acc}}>🎯{targetScore}</span>}
-                {isOnline&&<span style={{color:"#4ade80",fontSize:9}}>🌐{onlineCode}</span>}
-                {lowestWins&&<span style={{color:"#60a5fa",fontSize:9}}>↓min</span>}
-              </div>
+        <div style={{maxWidth:isWide?1100:900,margin:"0 auto",padding:isMobile?"10px 10px 6px":"10px 16px 6px",display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={()=>router.push("/")} aria-label="Retour à l'accueil" title="Retour à l'accueil" style={{...hdrBtn,fontSize:18}}>←</button>
+          <div style={{flex:1,minWidth:0}}>
+            {editName
+              ?<input ref={nameRef} value={gameName} onChange={e=>setGName(e.target.value)} onBlur={()=>setEditName(false)} onKeyDown={e=>{if(e.key==="Enter"||e.key==="Escape")setEditName(false);}} autoFocus aria-label="Nom de la partie" style={{background:"transparent",border:"none",borderBottom:`2px solid ${D.acc}`,color:D.txt,fontWeight:800,fontSize:15,width:"100%"}}/>
+              :<div onClick={()=>setEditName(true)} role="button" title="Renommer la partie" style={{fontWeight:800,fontSize:15,cursor:"text",display:"flex",alignItems:"center",gap:5}}>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{gameName}</span>
+                <span style={{fontSize:10,color:D.sub,flexShrink:0}} aria-hidden>✏️</span>
+              </div>}
+            <div style={{fontSize:11,color:D.sub,marginTop:2,display:"flex",gap:7,flexWrap:"wrap"}}>
+              <span>{players.length} joueur{players.length!==1?"s":""}</span>
+              {isPlaying&&<span style={{color:"#22c55e"}}>● {fmtElapsed(elapsed)}</span>}
+              {isEnded&&<span style={{color:D.acc}}>● Terminée</span>}
+              {targetScore!=null&&<span style={{color:D.acc}}>🎯 {targetScore}</span>}
+              {maxRounds!=null&&<span>{maxRounds} manches</span>}
+              {lowestWins&&<span style={{color:"#60a5fa"}}>↓ min gagne</span>}
+              {isOnline&&<span style={{color:"#22c55e"}}>🌐 {onlineCode}{onlineStatus==="connected"?"":" …"}</span>}
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-              <button onClick={()=>setRound(r=>Math.max(1,r-1))} style={{width:30,height:30,borderRadius:8,border:`1px solid ${D.brd}`,background:"transparent",color:D.sub,cursor:"pointer",fontSize:14,fontWeight:800}}>−</button>
-              <span className="mono" style={{fontSize:11,color:D.sub,minWidth:18,textAlign:"center"}}>R{round}</span>
-              <button onClick={()=>setRound(r=>r+1)} style={{width:30,height:30,borderRadius:8,border:`1px solid ${D.brd}`,background:"transparent",color:D.sub,cursor:"pointer",fontSize:14,fontWeight:800}}>+</button>
-            </div>
-            {gameState==="idle"&&players.length>=2&&<button onClick={startGame} style={{padding:"7px 11px",borderRadius:9,border:"none",background:"#16a34a",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",flexShrink:0,minHeight:36}}>▶</button>}
-            {isPlaying&&<button onClick={endGame} style={{padding:"7px 11px",borderRadius:9,border:"none",background:"#ef4444",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",flexShrink:0,minHeight:36}}>⏹</button>}
-            {isEnded&&<button onClick={newGame} style={{padding:"7px 11px",borderRadius:9,border:"none",background:D.acc,color:"#111",cursor:"pointer",fontWeight:800,fontSize:12,flexShrink:0,minHeight:36}}>🔁</button>}
-            <button onClick={()=>setDark(!dark)} style={{width:36,height:36,borderRadius:9,border:`1px solid ${D.brd}`,background:"transparent",cursor:"pointer",fontSize:15,flexShrink:0}}>{dark?"☀️":"🌙"}</button>
-            <button onClick={()=>setOvf(o=>!o)} aria-expanded={overflowOpen}
-              style={{width:36,height:36,borderRadius:9,border:`1px solid ${overflowOpen?D.acc:D.brd}`,background:overflowOpen?D.acc+"22":"transparent",color:overflowOpen?D.acc:D.sub,cursor:"pointer",fontSize:20,fontWeight:900,flexShrink:0}}>⋯</button>
           </div>
-        ):(
-          <div style={{maxWidth:900,margin:"0 auto",padding:"9px 16px",display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-            <span style={{fontSize:20,flexShrink:0}} aria-hidden>🎲</span>
-            <div style={{flex:1,minWidth:0}}>
-              {editName?<input ref={nameRef} value={gameName} onChange={e=>setGName(e.target.value)} onBlur={()=>setEditName(false)} onKeyDown={e=>{if(e.key==="Enter"||e.key==="Escape")setEditName(false);}} autoFocus style={{background:"transparent",border:"none",borderBottom:`2px solid ${D.acc}`,fontWeight:800,fontSize:13,color:D.txt,width:"100%",paddingBottom:2}}/>
-                :<div onClick={()=>setEditName(true)} role="button" style={{fontWeight:800,fontSize:13,color:D.txt,cursor:"text",display:"flex",alignItems:"center",gap:5}}>{gameName}<span style={{fontSize:10,color:D.sub}} aria-hidden>✏️</span></div>}
-              <div style={{fontSize:10,color:D.sub,marginTop:1,display:"flex",gap:8,alignItems:"center"}}>
-                {players.length} joueur{players.length!==1?"s":""} · Round {round}
-                {isPlaying&&<span style={{color:"#22c55e"}}>● En jeu · ⏱ {fmtElapsed(elapsed)}</span>}
-                {isEnded&&<span style={{color:D.acc}}>● Terminée</span>}
-                {targetScore!=null&&<span style={{color:D.acc}}>🎯 {targetScore}</span>}
-                {isOnline&&<span style={{color:"#4ade80"}}>🌐 {onlineCode} — {onlineStatus==="connected"?"✓ connecté":"…"}</span>}
-                {lowestWins&&<span style={{color:"#60a5fa"}}>↓ min gagne</span>}
-                {maxRounds!=null&&<span>· {maxRounds} manches</span>}
-              </div>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:2}}>
-              <button onClick={()=>setRound(r=>Math.max(1,r-1))} className="hdr-btn" style={{padding:"4px 7px",borderRadius:7,border:`1px solid ${D.brd}`,background:"transparent",color:D.sub,cursor:"pointer",fontSize:11,fontWeight:700}}>−</button>
-              <span className="mono" style={{fontSize:10,color:D.sub,minWidth:22,textAlign:"center"}}>R{round}</span>
-              <button onClick={()=>setRound(r=>r+1)} className="hdr-btn" style={{padding:"4px 7px",borderRadius:7,border:`1px solid ${D.brd}`,background:"transparent",color:D.sub,cursor:"pointer",fontSize:11,fontWeight:700}}>+</button>
-            </div>
-            <div style={{width:1,height:18,background:D.brd}}/>
-            {[
-              {l:"↩", al:"Annuler (Ctrl+Z)", fn:doUndo, dis:!undo.length},
-              {l:"📋",al:"Historique",        fn:()=>setSH(true)},
-              {l:"📤",al:"Copier résumé",     fn:copyResume, dis:!players.length},
-              {l:"CSV",al:"Exporter CSV",      fn:exportCSV},
-              {l:"🎯",al:"Score objectif",     fn:()=>{setTgtInput(targetScore!=null?String(targetScore):"");setShowTgt(true);}},
-              {l:"🎮",al:"Choisir le jeu",    fn:()=>setShowPr(true)},
-              {l:"📂",al:"Parties sauveg.",   fn:()=>setShowPk(true)},
-              {l:"📈",al:"Stats inter-parties",fn:()=>setShowSt(true)},
-              {l:isOnline?"🌐✓":"🌐",al:"Jouer en ligne",fn:()=>setShowOnl(true)},
-              {l:"🔄",al:"Remettre à zéro",   fn:()=>setSR(true)},
-            ].map(({l,al,fn,dis})=>(
-              <button key={l} onClick={fn} disabled={dis} aria-label={al} className="hdr-btn"
-                style={{padding:"4px 7px",borderRadius:7,border:`1px solid ${D.brd}`,background:"transparent",color:dis?D.sub+"44":D.sub,cursor:dis?"default":"pointer",fontSize:11,fontWeight:700,minHeight:32}}>
-                {l}
-              </button>
-            ))}
-            <div style={{width:1,height:18,background:D.brd}}/>
-            {gameState==="idle"&&players.length>=2&&<button onClick={startGame} style={{padding:"5px 12px",borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>▶ Débuter</button>}
-            {isPlaying&&<button onClick={endGame} style={{padding:"5px 12px",borderRadius:8,border:"none",background:"#ef4444",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>⏹ Terminer</button>}
-            {isEnded&&<button onClick={newGame} style={{padding:"5px 12px",borderRadius:8,border:"none",background:D.acc,color:"#111",cursor:"pointer",fontWeight:700,fontSize:11}}>🔁 Nouvelle</button>}
-            <button onClick={()=>setDark(!dark)} style={{width:30,height:30,borderRadius:8,border:`1px solid ${D.brd}`,background:"transparent",cursor:"pointer",fontSize:14,flexShrink:0}}>{dark?"☀️":"🌙"}</button>
-          </div>
-        )}
+          {gameState==="idle"&&players.length>=2&&<button onClick={startGame} style={{...mainBtn,background:"#16a34a",color:"#fff"}}>▶ Débuter</button>}
+          {isPlaying&&<button onClick={endGame} style={{...mainBtn,background:"#ef4444",color:"#fff"}}>⏹ Terminer</button>}
+          {isEnded&&<button onClick={newGame} style={{...mainBtn,background:D.acc,color:"#111"}}>🔁 Nouvelle</button>}
+          {!isMobile&&<button onClick={doUndo} disabled={!undo.length} title="Annuler (Ctrl+Z)" style={{...hdrBtn,opacity:undo.length?1:.4}}>↩ Annuler</button>}
+          {!isMobile&&<button onClick={()=>setDark(!dark)} aria-label="Changer de thème" style={hdrBtn}>{dark?"☀️":"🌙"}</button>}
+          <button onClick={()=>setOvf(o=>!o)} aria-expanded={overflowOpen} aria-label="Menu" style={{...hdrBtn,borderColor:overflowOpen?D.acc:D.brd}}>{isMobile?"⋯":"☰ Menu"}</button>
+        </div>
         {/* Tabs */}
-        <div style={{maxWidth:900,margin:"0 auto",padding:`0 ${isMobile?8:16}px`}}>
+        <div style={{maxWidth:isWide?1100:900,margin:"0 auto",padding:`0 ${isMobile?8:16}px`}}>
           <div className="tabs-scroll">
             {TABS.map(t=>(
               <button key={t.key} className="tab-btn" onClick={()=>setTab(t.key)} aria-selected={tab===t.key} role="tab"
-                style={{padding:isMobile?"8px 16px":"7px 16px",border:"none",borderRadius:"10px 10px 0 0",background:tab===t.key?D.card:"transparent",color:tab===t.key?D.txt:D.sub,fontWeight:tab===t.key?800:600,fontSize:isMobile?13:11,cursor:"pointer",borderBottom:tab===t.key?`2px solid ${D.acc}`:"2px solid transparent",minHeight:36}}>
+                style={{padding:"8px 4px",whiteSpace:"nowrap",border:"none",borderRadius:"10px 10px 0 0",background:tab===t.key?D.card:"transparent",color:tab===t.key?D.txt:D.sub,fontWeight:tab===t.key?800:600,fontSize:isMobile?13:11,cursor:"pointer",borderBottom:tab===t.key?`2px solid ${D.acc}`:"2px solid transparent",minHeight:36}}>
                 {t.label}
               </button>
             ))}
@@ -1736,6 +1759,19 @@ export default function ScoreTracker() {
         </div>
       )}
 
+      {overflowOpen&&!isMobile&&(
+        <>
+          <div onClick={()=>setOvf(false)} style={{position:"fixed",inset:0,zIndex:54}}/>
+          <div className="fade-in" role="menu" style={{position:"fixed",top:58,right:`max(16px, calc((100vw - ${isWide?1100:900}px) / 2 + 16px))`,zIndex:55,width:250,maxHeight:"80vh",overflowY:"auto",background:D.card,border:`1px solid ${D.brd}`,borderRadius:14,padding:6,boxShadow:"0 12px 40px rgba(0,0,0,.3)"}}>
+            {overflowActions.map(({icon,label,action,disabled})=>(
+              <button key={label} role="menuitem" className="overflow-menu-item" onClick={()=>{action();setOvf(false);}} disabled={disabled} style={{color:D.txt,opacity:disabled?.4:1,padding:"10px 12px",fontSize:13}}>
+                <span style={{fontSize:16,minWidth:28}}>{icon}</span><span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Winner banner */}
       {isEnded&&gameWinner&&(
         <div className="slide-up" role="status" style={{background:`linear-gradient(135deg,${gameWinner.color.hex},${gameWinner.color.hex}99)`,padding:"18px 20px",textAlign:"center"}}>
@@ -1745,24 +1781,56 @@ export default function ScoreTracker() {
         </div>
       )}
 
-      <main style={{maxWidth:900,margin:"0 auto",padding:`12px ${isMobile?8:12}px ${bottomPad}px`,overflow:"visible"}}>
+      <main style={{maxWidth:isWide?1100:900,margin:"0 auto",padding:`12px ${isMobile?8:12}px ${bottomPad}px`,overflow:"visible"}}>
 
         {/* ═══ SCORES ═══ */}
         {tab==="scores"&&(
           <div style={{overflow:"visible"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <span style={{fontSize:13,fontWeight:700}}>Manche</span>
+              <button onClick={()=>setRound(r=>Math.max(1,r-1))} aria-label="Manche précédente" style={hdrBtn}>−</button>
+              <span className="mono" style={{fontSize:18,fontWeight:800,minWidth:24,textAlign:"center"}}>{round}</span>
+              <button onClick={()=>setRound(r=>r+1)} aria-label="Manche suivante" style={hdrBtn}>+</button>
+              <button onClick={()=>setShowGrp(true)} style={{...hdrBtn,marginLeft:"auto"}}>👥 Groupes</button>
+            </div>
+            {players.length>0&&(
+              <div role="group" aria-label="Affichage" style={{display:"flex",gap:4,padding:4,marginBottom:12,borderRadius:12,background:D.card,border:`1px solid ${D.brd}`}}>
+                {[["cards","🃏 Cartes"],["sheet","📋 Feuille"]].map(([k,l])=>(
+                  <button key={k} aria-pressed={view===k} onClick={()=>{setView(k);if(k==="sheet")setSelected(null);}}
+                    style={{flex:1,height:36,borderRadius:9,border:"none",cursor:"pointer",fontWeight:800,fontSize:13,background:view===k?D.acc+"33":"transparent",color:view===k?D.txt:D.sub}}>{l}</button>
+                ))}
+              </div>
+            )}
+            {(()=>{
+              const s=players.length>1&&players.find(p=>p.id===starterAt(round));
+              return s?<div style={{marginBottom:10,fontSize:13,fontWeight:700}}>▶ <span style={{color:s.color.hex}}>{s.name}</span> commence la manche {round}</div>:null;
+            })()}
+            {view==="sheet"&&players.length>0&&(
+              <ScoreSheet D={D} dark={dark} players={curOrder.map(id=>players.find(p=>p.id===id)).filter(Boolean)}
+                history={history} round={round} lowestWins={lowestWins} starterAt={starterAt}
+                onSetCell={setCell} onNextRound={()=>setRound(r=>r+1)}/>
+            )}
+            {!players.length&&groups.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",paddingTop:8}}>
+                {groups.map(g=>(
+                  <button key={g.id} onClick={()=>addGroup(g)} style={{...mainBtn,height:44,background:D.card,color:D.txt,border:`1px solid ${D.brd}`}}>👥 {g.name} ({g.players.length})</button>
+                ))}
+              </div>
+            )}
             {!players.length&&(
               <div style={{textAlign:"center",padding:isMobile?"48px 16px 20px":"70px 20px 24px",color:D.sub}}>
                 <div style={{fontSize:56,opacity:.6,lineHeight:1,marginBottom:12}}>🎯</div>
                 <div style={{fontSize:isMobile?16:19,fontWeight:800,color:D.txt,marginBottom:8}}>Prêt pour la partie ?</div>
                 <div style={{fontSize:13,lineHeight:2,color:D.sub}}>
-                  Ajoutez des joueurs ci-dessous · <strong style={{color:D.txt}}>Glissez</strong> gauche/droite → ±1<br/>
-                  <strong style={{color:D.txt}}>Tournez la molette</strong> → grands ajustements (bubble live)<br/>
-                  <strong style={{color:D.txt}}>Tap score</strong> → saisie directe · <strong style={{color:D.txt}}>Long press score</strong> → ±rapides<br/>
-                  <strong style={{color:D.txt}}>Double-tap nom</strong> → renommer · <strong style={{color:D.txt}}>≡</strong> → réordonner
+                  Ajoutez des joueurs ci-dessous{groups.length?" ou choisissez un groupe":""}.<br/>
+                  <strong style={{color:D.txt}}>Glissez</strong> une carte : ±1 · <strong style={{color:D.txt}}>Molette</strong> : grands écarts<br/>
+                  <strong style={{color:D.txt}}>Touchez le score</strong> pour le saisir (appui long : ± rapides)<br/>
+                  <strong style={{color:D.txt}}>Double-touche sur le nom</strong> : renommer · <strong style={{color:D.txt}}>≡</strong> : réordonner
                 </div>
               </div>
             )}
 
+            <div style={view==="sheet"&&players.length?{display:"none"}:isWide&&players.length>1?{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}:undefined}>
             <div style={{display:"flex",flexDirection:"column",gap:isMobile?9:13,overflow:"visible"}}>
               {curOrder.map(id=>{
                 const player=players.find(p=>p.id===id);if(!player)return null;
@@ -1793,81 +1861,36 @@ export default function ScoreTracker() {
               })}
             </div>
 
-            {players.length>1&&<MiniLeaderboard players={players} lowestWins={lowestWins} targetScore={targetScore} D={D} dark={dark} isMobile={isMobile}/>}
+            {players.length>1&&<div style={isWide?{position:"sticky",top:110,marginTop:-14}:undefined}><MiniLeaderboard players={players} lowestWins={lowestWins} targetScore={targetScore} D={D} dark={dark} isMobile={isMobile}/></div>}
+            </div>
           </div>
         )}
 
         {/* ═══ DÉS ═══ */}
         {tab==="dice"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?13:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:D.sub,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>Type de dé</div>
-              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                {DICE_TYPES.map(d=>(<button key={d} className="die-sel-btn" onClick={()=>setDType(d)} aria-pressed={diceType===d} style={{background:diceType===d?D.acc:dark?"#1a1d27":"#eee",color:diceType===d?dark?"#111":"#fff":D.txt,padding:"10px 13px",fontSize:isMobile?13:14,minHeight:44}}>D{d}</button>))}
-              </div>
-            </div>
-            {diceType!==100&&(
-              <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?13:16,display:"flex",alignItems:"center",gap:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1}}>Nombre</div>
-                <div style={{display:"flex",alignItems:"center",gap:12,marginLeft:"auto"}}>
-                  <button onClick={()=>setDCount(c=>Math.max(1,c-1))} style={{width:44,height:44,borderRadius:10,border:"none",background:"rgba(239,68,68,0.14)",color:"#f87171",cursor:"pointer",fontWeight:900,fontSize:20}}>−</button>
-                  <span className="mono" style={{fontSize:26,fontWeight:800,color:D.txt,minWidth:30,textAlign:"center"}}>{diceCount}</span>
-                  <button onClick={()=>setDCount(c=>Math.min(10,c+1))} style={{width:44,height:44,borderRadius:10,border:"none",background:"rgba(34,197,94,0.14)",color:"#4ade80",cursor:"pointer",fontWeight:900,fontSize:20}}>+</button>
-                </div>
-              </div>
-            )}
-            <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?16:22,textAlign:"center"}}>
-              <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",minHeight:76,alignItems:"center",marginBottom:14}}>
-                {!diceVals.length?<div style={{color:D.sub,fontSize:14}}>Lancez les dés !</div>
-                  :diceType===100&&diceVals.length>=2?(<div style={{display:"flex",alignItems:"center",gap:12}}>
-                    <div className={!rolling&&diceResult!=null?"die-land":""}><DieFace sides={10} value={diceVals[0]} size={isMobile?68:82} color="#6366f1" rolling={rolling} percentile/></div>
-                    <span style={{fontSize:20,fontWeight:900,color:"rgba(255,255,255,.5)"}}>+</span>
-                    <div className={!rolling&&diceResult!=null?"die-land":""}><DieFace sides={10} value={diceVals[1]} size={isMobile?68:82} color="#7c3aed" rolling={rolling}/></div>
-                  </div>)
-                  :diceVals.map((v,i)=>(<div key={i} className={!rolling&&diceResult!=null?"die-land":""}><DieFace sides={diceType} value={v} size={isMobile?68:82} color="#6366f1" rolling={rolling}/></div>))
-                }
-              </div>
-              {diceResult!=null&&!rolling&&(
-                <div className="slide-up" style={{marginBottom:12}}>
-                  <div className="mono" aria-live="polite" style={{fontSize:isMobile?36:44,fontWeight:800,color:D.acc}}>{diceResult}</div>
-                  {diceCount>1&&diceType!==100&&<div style={{fontSize:11,color:D.sub}}>[{diceVals.join(" + ")}]</div>}
-                  {/* Appliquer au joueur sélectionné */}
-                  {selPlayer&&(
-                    <button onClick={()=>{adjust(selPlayer.id,diceResult);flash(`+${diceResult} pts → ${selPlayer.name}`,selPlayer.color.hex);}}
-                      style={{marginTop:10,padding:"9px 20px",borderRadius:10,border:"none",background:`${selPlayer.color.hex}22`,color:selPlayer.color.hex,fontWeight:700,fontSize:13,cursor:"pointer",border:`1px solid ${selPlayer.color.hex}44`,minHeight:40}}>
-                      +{diceResult} → {selPlayer.name}
-                    </button>
-                  )}
-                </div>
-              )}
-              <button onClick={rollDice} disabled={rolling}
-                style={{padding:"13px 34px",borderRadius:13,border:"none",background:rolling?"#6b7280":`linear-gradient(135deg,${D.acc},#ef4444)`,color:dark?"#111":"#fff",fontWeight:800,fontSize:15,cursor:rolling?"not-allowed":"pointer",minHeight:50}}>
-                {rolling?"🎲 En cours…":`🎲 Lancer ${diceType===100?"D100":(diceCount>1?`${diceCount}×D${diceType}`:`D${diceType}`)}`}
-              </button>
-            </div>
-            {diceHist.length>0&&(
-              <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?12:16}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:9}}>
-                  <div style={{fontSize:11,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1}}>📋 Historique</div>
-                  <button onClick={()=>setDHist([])} style={{padding:"5px 12px",borderRadius:7,border:"none",background:"rgba(239,68,68,0.12)",color:"#f87171",cursor:"pointer",fontWeight:700,fontSize:11,minHeight:32}}>Effacer</button>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
-                  {diceHist.map(e=>(<div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:9,background:dark?"#ffffff03":"#00000003"}}>
-                    <span style={{flex:1,fontSize:12,color:D.sub}}>{e.diceType===100?`D100→[${e.values[0]===0?"00":e.values[0]}+${e.values[1]===10?0:e.values[1]}]`:`${e.diceCount}×D${e.diceType}→[${e.values.join(",")}]`}</span>
-                    <span className="mono" style={{fontSize:15,fontWeight:800,color:D.acc}}>{e.total}</span>
-                    <span style={{fontSize:10,color:D.sub,flexShrink:0}}>{e.time}</span>
-                  </div>))}
-                </div>
-              </div>
-            )}
-          </div>
+          <DiceTable D={D} dark={dark} isMobile={isMobile} DieFace={DieFace} playSound={playDiceSound}
+            last={lastRoll} setLast={setLastRoll} history={diceHist} setHistory={setDHist} selPlayer={selPlayer}
+            onApply={(p,total)=>{adjust(p.id,total);flash(`+${total} pts → ${p.name}`,p.color.hex);}}/>
         )}
 
         {/* ═══ ROUE ═══ */}
         {tab==="wheel"&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?16:22,display:"flex",flexDirection:"column",alignItems:"center"}}>
-              <SpinnerWheel players={players} onResult={handleWheel} acc={D.acc} isMobile={isMobile}/>
+              {players.length>1&&(()=>{
+                const s=players.find(p=>p.id===starterAt(round));
+                return(
+                  <div style={{textAlign:"center",marginBottom:12,fontSize:14,fontWeight:700}}>
+                    {s?<><div>Manche {round} : <span style={{color:s.color.hex}}>{s.name}</span> commence</div>
+                        <div style={{fontSize:11,color:D.sub,fontWeight:600,marginTop:3}}>Puis chacun son tour à chaque manche.</div>
+                        <button onClick={()=>setStarter(null)} style={{marginTop:6,background:"none",border:"none",color:D.sub,textDecoration:"underline",cursor:"pointer",fontSize:11,minHeight:28}}>Retirer le premier joueur</button></>
+                      :<div>Tournez la roue pour désigner le premier joueur</div>}
+                  </div>);
+              })()}
+              <SpinnerWheel players={players} onResult={handleWheel} acc={D.acc} isMobile={isMobile}
+                renderAction={w=>w.id!==lastSpin?null:starterAt(round)===w.id
+                  ?<button onClick={()=>setTab("scores")} style={{...mainBtn,height:44,background:"#16a34a",color:"#fff"}}>Voir les scores →</button>
+                  :<button onClick={()=>setStarter({id:w.id,round})} style={{...mainBtn,height:44,background:D.card,color:D.txt,border:`1px solid ${D.brd}`}}>Faire commencer {w.name}</button>}/>
             </div>
             {wheelHist.length>0&&(
               <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?12:16}}>
@@ -1893,7 +1916,7 @@ export default function ScoreTracker() {
       {/* ════ BARRE AJOUT ════ */}
       {tab==="scores"&&(
         <div style={{position:"fixed",bottom:bonusBarH,left:0,right:0,zIndex:25,background:D.hbg,backdropFilter:"blur(16px)",borderTop:`1px solid ${D.brd}`}}>
-          <div style={{maxWidth:900,margin:"0 auto"}}>
+          <div style={{maxWidth:isWide?1100:900,margin:"0 auto"}}>
             {isPlaying&&!addBarOpen?(
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:isMobile?"9px 14px":"8px 16px",gap:8}}>
                 <span style={{fontSize:11,fontWeight:600,color:D.sub,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isMobile?"👈👉 Swipe · ↺ Molette · Tap score · Long press = ±rapide":"👈👉 Swipe ±1 · ↺ Molette (bubble live) · Tap score = saisie · Long press = rapide"}</span>
@@ -2036,6 +2059,29 @@ export default function ScoreTracker() {
             {targetScore!=null&&<button onClick={()=>{setTarget(null);setShowTgt(false);flash("Objectif supprimé");}} style={{flex:1,padding:"13px 0",borderRadius:12,border:"none",background:"rgba(239,68,68,0.18)",color:"#f87171",cursor:"pointer",fontWeight:700,fontSize:14,minHeight:50}}>Supprimer</button>}
             <button onClick={applyTarget} style={{flex:1,padding:"13px 0",borderRadius:12,border:"none",background:D.acc,color:dark?"#111":"#fff",cursor:"pointer",fontWeight:700,fontSize:14,minHeight:50}}>Valider</button>
           </div>
+        </BottomSheet>
+      )}
+
+      {showGroups&&(
+        <BottomSheet onClose={()=>setShowGrp(false)} D={D} isMobile={isMobile} title="👥 Groupes de joueurs" maxW={420}>
+          {!groups.length&&<p style={{fontSize:13,color:D.sub,lineHeight:1.7,marginBottom:12}}>Aucun groupe. Ajoutez vos joueurs, puis enregistrez-les ci-dessous.</p>}
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
+            {groups.map(g=>(
+              <div key={g.id} style={{display:"flex",alignItems:"center",gap:8,border:`1px solid ${D.brd}`,borderRadius:12,padding:"8px 10px"}}>
+                <button onClick={()=>addGroup(g)} style={{flex:1,minWidth:0,minHeight:44,background:"none",border:"none",textAlign:"left",cursor:"pointer",color:D.txt}}>
+                  <div style={{fontWeight:800,fontSize:14}}>{g.name}</div>
+                  <div style={{fontSize:11,color:D.sub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.players.map(p=>p.name).join(", ")}</div>
+                </button>
+                <button onClick={()=>removeGroup(g)} aria-label={`Supprimer ${g.name}`} style={{width:36,height:36,borderRadius:8,border:"none",background:"rgba(239,68,68,0.12)",cursor:"pointer",flexShrink:0}}>🗑</button>
+              </div>
+            ))}
+          </div>
+          {players.length>0&&(
+            <div style={{display:"flex",gap:8}}>
+              <input value={groupName} onChange={e=>setGroupName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")saveGroup();}} placeholder="Nom du groupe" style={{flex:1,minWidth:0,padding:"12px",borderRadius:10,border:`1px solid ${D.brd}`,background:D.ibg,color:D.txt,fontSize:15}}/>
+              <button onClick={saveGroup} disabled={!groupName.trim()} style={{...mainBtn,height:46,background:D.acc,color:"#111",opacity:groupName.trim()?1:.5}}>Enregistrer</button>
+            </div>
+          )}
         </BottomSheet>
       )}
 

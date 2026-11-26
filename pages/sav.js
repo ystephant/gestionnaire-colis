@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTheme } from '../lib/ThemeContext';
 import { createClient } from '@supabase/supabase-js';
+import SavDemandes from '../components/SavDemandes';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -65,6 +66,7 @@ export default function SAVJeux() {
   const [availableGames, setAvailableGames] = useState([]);
   const [saveMessage, setSaveMessage] = useState('');
   const [sortBy, setSortBy] = useState('game'); // 'game' | 'editor'
+  const [onglet, setOnglet] = useState('liens'); // 'liens' | 'demandes'
 
   // États pour l'édition
   const [editingGame, setEditingGame] = useState(null);
@@ -431,6 +433,21 @@ export default function SAVJeux() {
           </div>
         </div>
 
+        {/* Onglets */}
+        <div className={`flex gap-1 p-1 mb-6 rounded-xl shadow ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          {[['liens', '🔗 Liens SAV'], ['demandes', '📮 Mes demandes']].map(([id, label]) => (
+            <button key={id} onClick={() => setOnglet(id)}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition ${
+                onglet === id ? 'bg-cyan-600 text-white shadow' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {onglet === 'demandes' && isLoggedIn && <SavDemandes supabase={supabase} darkMode={darkMode} savGames={savGames} />}
+
+        {onglet === 'liens' && (<>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Colonne gauche - Formulaire d'ajout */}
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-xl p-6 transition-colors duration-300`}>
@@ -771,6 +788,7 @@ export default function SAVJeux() {
             </div>
           )}
         </div>
+        </>)}
       </div>
 
       {/* Modal d'édition */}
