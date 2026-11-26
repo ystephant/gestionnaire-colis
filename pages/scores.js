@@ -117,7 +117,7 @@ const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Space+Mono:wght@700&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
-  body{overscroll-behavior-y:contain}
+  html{overscroll-behavior-y:contain}
   .mono{font-family:'Space Mono',monospace}
   @keyframes scorePop{0%{transform:scale(1)}35%{transform:scale(1.18)}65%{transform:scale(.94)}100%{transform:scale(1)}}
   .score-pop{animation:scorePop .28s cubic-bezier(.36,.07,.19,.97)}
@@ -219,6 +219,22 @@ const playVictorySound = () => {
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
       osc.start(t); osc.stop(t + 0.46);
     });
+  } catch {}
+};
+
+// Départ du sablier : deux notes montantes
+const playStartSound = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [[523, 0], [784, 0.13]].forEach(([freq, t]) => {
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.connect(g); g.connect(ctx.destination);
+      osc.frequency.value = freq; osc.type = "triangle";
+      g.gain.setValueAtTime(0.45, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.28);
+      osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + 0.29);
+    });
+    setTimeout(() => ctx.close(), 700);
   } catch {}
 };
 
@@ -329,21 +345,22 @@ function QuickScorePopup({ onApply, onEdit, onClose, color, isMobile }) {
 // ─────────────────────────────────────────────────────────
 //  PLAYER MINI HISTORY
 // ─────────────────────────────────────────────────────────
-function PlayerMiniHistory({ entries, color, isMobile }) {
+function PlayerMiniHistory({ entries, color, isMobile, onOpenChange }) {
   const [open, setOpen] = useState(false);
+  useEffect(()=>{ onOpenChange?.(open); },[open]);
   if (!entries.length) return null;
   const last10 = entries.slice(-10);
   return (
-    <div style={{ marginTop:4 }}>
+    <div style={{ marginTop:4, position:"relative" }} onClick={e=>e.stopPropagation()}>
       <button onClick={e=>{e.stopPropagation();setOpen(o=>!o);}} aria-expanded={open}
         style={{ display:"flex", alignItems:"center", gap:4, background:"rgba(0,0,0,0.22)",
           border:"none", borderRadius:7, padding:"3px 8px", cursor:"pointer",
-          color:"rgba(255,255,255,0.48)", minHeight:26 }}>
-        <span style={{ fontSize:9, fontWeight:700, whiteSpace:"nowrap" }}>{open?"▲":"▼"} hist.</span>
+          color:"rgba(255,255,255,0.65)", minHeight:26, maxWidth:"100%", overflow:"hidden" }}>
+        <span style={{ fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{open?"▲":"▼"} {isMobile?"hist.":"Historique"}</span>
         {!open && !isMobile && (
-          <div style={{ display:"flex", gap:2, alignItems:"center", maxWidth:isMobile?72:130, overflow:"hidden" }}>
-            {last10.slice(isMobile?-4:-10).map((h,i) => (
-              <span key={i} className="mono" style={{ fontSize:9, fontWeight:800, flexShrink:0,
+          <div style={{ display:"flex", gap:4, alignItems:"center", overflow:"hidden", marginLeft:3 }}>
+            {last10.slice(-5).map((h,i) => (
+              <span key={i} className="mono" style={{ fontSize:10, fontWeight:800, flexShrink:0, padding:"1px 5px", borderRadius:5, background:"rgba(0,0,0,0.28)",
                 color:h.delta<0?"#fca5a5":"#86efac" }}>
                 {h.delta>0?"+":""}{h.delta}
               </span>
@@ -353,8 +370,8 @@ function PlayerMiniHistory({ entries, color, isMobile }) {
       </button>
       {open && (
         <div className="hist-slide"
-          style={{ marginTop:4, background:"rgba(0,0,0,0.32)", borderRadius:9,
-            padding:"7px 10px", maxHeight:180, overflowY:"auto",
+          style={{ position:"absolute", top:"100%", left:0, width:230, marginTop:4, background:"rgba(12,14,22,0.96)", borderRadius:9,
+            boxShadow:"0 9px 28px rgba(0,0,0,.48)", padding:"7px 10px", maxHeight:180, overflowY:"auto",
             display:"flex", flexDirection:"column", gap:4 }}>
           {[...last10].reverse().map((h,i) => {
             const prev = h.score - h.delta;
@@ -379,56 +396,77 @@ function PlayerMiniHistory({ entries, color, isMobile }) {
 // ─────────────────────────────────────────────────────────
 //  SPINNER WHEEL (condensed)
 // ─────────────────────────────────────────────────────────
-function SpinnerWheel({ players, onResult, acc, isMobile, renderAction }) {
-  const [spinning,setSp]=useState(false),[angle,setAng]=useState(0),[winner,setW]=useState(null);
-  const aR=useRef(null),angR=useRef(0),velR=useRef(0),ltR=useRef(null),sf=useRef(false),pR=useRef(null);
-  const rW=useCallback((a)=>{
-    const n=players.length, SA=360/n;
-    // Quelle tranche est sous l'aiguille (haut du SVG) après rotation de `a`°?
-    // L'aiguille voit la partie du plateau qui était à -a° avant rotation.
-    // Les tranches commencent à 0° (après décalage +90°), donc :
-    const phi=((-a)%360+360)%360;
-    return players[Math.floor(phi/SA)%n];
-  },[players]);
-  const fin=useCallback((a)=>{const w=rW(a);setW(w);setSp(false);sf.current=false;onResult(w);},[rW,onResult]);
-  // Un appui lance la roue, un second l'arrête net
-  const stopNow=useCallback(()=>{
-    if(!sf.current)return;
-    cancelAnimationFrame(aR.current);fin(angR.current);
-  },[fin]);
-  const spin=useCallback(()=>{
-    if(sf.current){stopNow();return;}
-    if(players.length<2)return;setW(null);setSp(true);sf.current=true;ltR.current=null;
-    velR.current=.34+Math.random()*.1;                       // environ un tour par seconde
-    angR.current+=Math.random()*360;setAng(angR.current);    // départ à une position au hasard
-    const loop=(ts)=>{if(ltR.current){angR.current+=velR.current*Math.min(ts-ltR.current,50);setAng(angR.current);}ltR.current=ts;aR.current=requestAnimationFrame(loop);};
-    aR.current=requestAnimationFrame(loop);
-  },[players,fin,stopNow]);
-  useEffect(()=>()=>cancelAnimationFrame(aR.current),[]);
+function SpinnerWheel({ players, onResult, onStart, onShowScores, acc, isMobile }) {
+  const [spinning,setSp]=useState(false),[angle,setAng]=useState(0),[winner,setW]=useState(null),[flap,setFlap]=useState(false);
+  const raf=useRef(null),angR=useRef(0),busy=useRef(false),startedAt=useRef(0),flapT=useRef(null);
+  const playersR=useRef(players); playersR.current=players;
+  const cb=useRef({}); cb.current={onResult,onStart};
+  // Tranche située sous le repère (en haut) quand le plateau a tourné de `a` degrés
+  const under=(a)=>{const n=playersR.current.length,phi=((-a)%360+360)%360;return Math.floor(phi/(360/n))%n;};
+  const finish=()=>{
+    cancelAnimationFrame(raf.current);busy.current=false;setSp(false);setFlap(false);
+    const w=playersR.current[under(angR.current)];if(!w)return;
+    setW(w);navigator.vibrate?.(60);cb.current.onResult(w);
+  };
+  const spin=()=>{
+    if(busy.current){if(performance.now()-startedAt.current>400)finish();return;}   // 2ᵉ appui : arrêt net
+    if(playersR.current.length<2)return;
+    busy.current=true;setSp(true);setW(null);cb.current.onStart?.();
+    // Force du lancer différente à chaque fois : durée, nombre de tours et position finale au hasard
+    const from=angR.current,duration=3500+Math.random()*3000,total=360*(3+Math.floor(Math.random()*6))+Math.random()*360;
+    let t0=null,slice=under(from);startedAt.current=performance.now();
+    const loop=(ts)=>{
+      if(t0===null)t0=ts;
+      const k=Math.min(1,(ts-t0)/duration);
+      angR.current=from+total*(1-Math.pow(1-k,3));setAng(angR.current);          // ralentit jusqu'à l'arrêt
+      const s=under(angR.current);
+      if(s!==slice){slice=s;setFlap(true);clearTimeout(flapT.current);flapT.current=setTimeout(()=>setFlap(false),70);}
+      if(k<1)raf.current=requestAnimationFrame(loop);else finish();
+    };
+    raf.current=requestAnimationFrame(loop);
+  };
+  useEffect(()=>()=>{cancelAnimationFrame(raf.current);clearTimeout(flapT.current);},[]);
   if(!players.length)return(<div style={{textAlign:"center",padding:"40px 20px",color:"#50556e"}}><div style={{fontSize:48,marginBottom:8}}>🎡</div><div style={{fontSize:14,fontWeight:700}}>Ajoutez des joueurs pour utiliser la roue</div></div>);
-  const W=Math.max(240,Math.min(window.innerWidth-56,window.innerHeight-(isMobile?360:330),460)),CX=W/2,CY=W/2,R=W/2-6,SA=360/players.length;
-  const nfs=Math.round((players.length<=4?15:players.length<=7?13:11)*Math.max(1,W/300));
+  const W=Math.max(240,Math.min(window.innerWidth-56,window.innerHeight-(isMobile?360:330),460)),CX=W/2,CY=W/2,R=W/2-8,n=players.length,SA=360/n;
+  const fs=Math.round((n<=4?16:n<=7?14:11)*Math.max(1,W/340));
+  const maxChars=Math.max(5,Math.floor(R*.62/(fs*.66)));
   const nc=acc||"#f59e0b";
-  const slices=players.map((p,i)=>{const a0=(i*SA-90)*Math.PI/180,a1=((i+1)*SA-90)*Math.PI/180,large=SA>180?1:0,mA=((i+0.5)*SA-90)*Math.PI/180,tr=R*.62;return{p,d:`M${CX},${CY} L${(CX+R*Math.cos(a0)).toFixed(2)},${(CY+R*Math.sin(a0)).toFixed(2)} A${R},${R} 0 ${large},1 ${(CX+R*Math.cos(a1)).toFixed(2)},${(CY+R*Math.sin(a1)).toFixed(2)}Z`,tx:CX+tr*Math.cos(mA),ty:CY+tr*Math.sin(mA),ta:(i+0.5)*SA-90};});
+  const pt=(deg,r)=>{const a=(deg-90)*Math.PI/180;return[CX+r*Math.cos(a),CY+r*Math.sin(a)];};
+  const won=winner&&!spinning?players.find(p=>p.id===winner.id):null;
   return(
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
-      <div style={{position:"relative",width:W,height:W+20,flexShrink:0}}>
-        <div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"12px solid transparent",borderRight:"12px solid transparent",borderTop:`24px solid ${nc}`,zIndex:10,filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.7))"}}/>
-        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} onClick={spin} role="img" aria-label={spinning?"Roue : toucher pour arrêter":"Roue : toucher pour lancer"} style={{marginTop:20,display:"block",cursor:"pointer",filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.60))"}}>
-          <circle cx={CX} cy={CY} r={R+4} fill="#111318" stroke="rgba(255,255,255,0.10)" strokeWidth="2"/>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
+      <div style={{position:"relative",width:W,height:W+16,flexShrink:0}}>
+        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} onClick={spin} role="img" data-angle={Math.round(angle*100)/100}
+          aria-label={spinning?"Roue : toucher pour arrêter":"Roue : toucher pour lancer"}
+          style={{marginTop:16,display:"block",cursor:"pointer",filter:"drop-shadow(0 8px 20px rgba(0,0,0,0.35))",WebkitTapHighlightColor:"transparent"}}>
+          <circle cx={CX} cy={CY} r={R+7} fill="#111318"/>
           <g transform={`rotate(${angle} ${CX} ${CY})`}>
-            {slices.map(({p,d,tx,ty,ta})=>(<g key={p.id}><path d={d} fill={p.color.hex} stroke="rgba(0,0,0,0.35)" strokeWidth="1.5"/><path d={d} fill="rgba(255,255,255,0.06)"/><g transform={`rotate(${ta} ${tx} ${ty})`}><text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" fontSize={nfs} fontWeight="800" fontFamily="Sora,sans-serif" fill="#fff" stroke="rgba(0,0,0,0.60)" strokeWidth="3.5" paintOrder="stroke fill" style={{userSelect:"none"}}>{p.name.length>9?p.name.slice(0,8)+"…":p.name}</text></g></g>))}
-            {players.map((p,i)=>{const a=(i*SA-90)*Math.PI/180;return<line key={p.id} x1={CX} y1={CY} x2={(CX+R*Math.cos(a)).toFixed(2)} y2={(CY+R*Math.sin(a)).toFixed(2)} stroke="rgba(0,0,0,0.40)" strokeWidth="1.5"/>;  })}
-            <circle cx={CX} cy={CY} r={R} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5"/>
-            <circle cx={CX} cy={CY} r="14" fill="#1a1d28" stroke="rgba(255,255,255,0.14)" strokeWidth="2"/>
-            <circle cx={CX} cy={CY} r="8" fill={nc}/><circle cx={CX} cy={CY} r="3.5" fill="#111318"/>
+            {players.map((p,i)=>{
+              const [x0,y0]=pt(i*SA,R),[x1,y1]=pt((i+1)*SA,R),mid=(i+.5)*SA,[tx,ty]=pt(mid,R-12);
+              const d=n===1?null:`M${CX},${CY} L${x0},${y0} A${R},${R} 0 ${SA>180?1:0},1 ${x1},${y1}Z`;
+              return(<g key={p.id} data-slice={p.name} opacity={won&&won.id!==p.id?.28:1}>
+                {d?<path d={d} fill={p.color.hex} stroke="#fff" strokeWidth="2"/>:<circle cx={CX} cy={CY} r={R} fill={p.color.hex}/>}
+                <text x={tx} y={ty} transform={`rotate(${mid-90} ${tx} ${ty})`} textAnchor="end" dominantBaseline="middle" fontSize={fs} fontWeight="800" fontFamily="Sora,sans-serif" fill="#fff" stroke="rgba(0,0,0,0.65)" strokeWidth="3.5" paintOrder="stroke fill" style={{userSelect:"none"}}>{p.name.length>maxChars?p.name.slice(0,maxChars-1)+"…":p.name}</text>
+              </g>);
+            })}
           </g>
+          <circle cx={CX} cy={CY} r={Math.max(24,R*.17)} fill="#fff" stroke="#111318" strokeWidth="4"/>
+          <text x={CX} y={CY} textAnchor="middle" dominantBaseline="central" fontSize={Math.max(11,R*.08)} fontWeight="800" fontFamily="Sora,sans-serif" fill="#111318" style={{userSelect:"none"}}>{spinning?"STOP":"GO"}</text>
         </svg>
+        {/* Repère fixe */}
+        <svg width="34" height="40" viewBox="0 0 34 40" aria-hidden="true" style={{position:"absolute",top:0,left:CX-17,transformOrigin:"17px 8px",transform:flap?"rotate(-22deg)":"none",transition:"transform .07s",pointerEvents:"none",filter:"drop-shadow(0 2px 4px rgba(0,0,0,.5))"}}>
+          <path d="M3 4 H31 L17 38 Z" fill={nc} stroke="#111318" strokeWidth="3" strokeLinejoin="round"/>
+        </svg>
+        {/* Résultat, posé sur la roue pour rester visible sans défiler */}
+        {won&&(
+          <div role="status" className="slide-up" onClick={spin} style={{position:"absolute",left:"50%",top:16+W*.62,width:"max-content",maxWidth:W-24,transform:"translateX(-50%)",cursor:"pointer"}}>
+            <div style={{padding:"10px 24px",borderRadius:14,background:won.color.hex,border:"3px solid #fff",color:"#fff",fontWeight:800,fontSize:20,textAlign:"center",textShadow:"0 1px 3px rgba(0,0,0,.65)",boxShadow:"0 8px 24px rgba(0,0,0,.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🎉 {won.name} commence !</div>
+          </div>
+        )}
       </div>
-      {winner&&!spinning&&(<div className="slide-up" style={{padding:"11px 28px",borderRadius:13,background:`linear-gradient(135deg,${winner.color.hex},${winner.color.hex}aa)`,color:"#fff",fontWeight:800,fontSize:17,textAlign:"center"}}>🎉 {winner.name} !</div>)}
-      {winner&&!spinning&&renderAction?.(winner)}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
-        <button id="sgt-spin" onClick={spin} disabled={players.length<2} style={{padding:"13px 28px",borderRadius:12,border:"none",background:spinning?"#ef4444":`linear-gradient(135deg,${nc},#ef4444)`,color:"#fff",fontWeight:800,fontSize:14,cursor:players.length<2?"not-allowed":"pointer",opacity:players.length<2?.5:1,minHeight:48}}>{spinning?"⏹ Stop":"🎡 Lancer"}</button>
+        <button id="sgt-spin" onClick={spin} disabled={n<2} style={{padding:"13px 28px",borderRadius:12,border:"none",background:spinning?"#ef4444":`linear-gradient(135deg,${nc},#ef4444)`,color:"#fff",fontWeight:800,fontSize:14,cursor:n<2?"not-allowed":"pointer",opacity:n<2?.5:1,minHeight:48}}>{spinning?"⏹ Stop":won?"🎡 Relancer":"🎡 Lancer"}</button>
+        {won&&<button onClick={onShowScores} style={{padding:"13px 22px",borderRadius:12,border:"none",background:"#16a34a",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",minHeight:48}}>Voir les scores →</button>}
       </div>
     </div>
   );
@@ -685,6 +723,7 @@ function PlayerRow({
   dragHandlers, rowRef, isDragging,
 }) {
   const ROW_H  = isMobile ? 76 : 82;
+  const narrow = isMobile && typeof window!=="undefined" && window.innerWidth<380;
   const col    = player.color.hex;
 
   const [showPalette, setPalette]   = useState(false);
@@ -694,6 +733,17 @@ function PlayerRow({
   const [editName,    setEditName]  = useState(false);
   const [nameVal,     setNameVal]   = useState(player.name);
   const [swipeFx,     setSwipeFx]   = useState(null);
+  const [histOpen,    setHistOpen]  = useState(false);
+
+  // ── Menu joueur : se ferme en touchant ailleurs ──
+  useEffect(()=>{
+    if(!showPalette)return;
+    const out=e=>{if(!e.target.closest(`[data-menu="${player.id}"]`))setPalette(false);};
+    const esc=e=>{if(e.key==="Escape")setPalette(false);};
+    document.addEventListener("pointerdown",out);document.addEventListener("keydown",esc);
+    return()=>{document.removeEventListener("pointerdown",out);document.removeEventListener("keydown",esc);};
+  },[showPalette,player.id]);
+  const startRename = () => { setPalette(false);setNameVal(player.name);setEditName(true);setTimeout(()=>{nameRef.current?.focus();nameRef.current?.select();},30); };
 
   const editRef    = useRef(null);
   const nameRef    = useRef(null);
@@ -739,7 +789,7 @@ function PlayerRow({
   };
 
   return(
-    <div style={{position:"relative",zIndex:isSel?10:1}} ref={rowRef}>
+    <div style={{position:"relative",zIndex:showPalette||histOpen||showQuick?30:isSel?10:1}} ref={rowRef}>
       <div className="p-row" onClick={handleClick} onTouchStart={onTS} onTouchMove={onTM}
         role="button" aria-pressed={isSel} aria-label={`${player.name} — ${player.score} pts`}
         style={{position:"relative",height:ROW_H,borderRadius:14,background:col,cursor:"pointer",overflow:"visible",
@@ -756,70 +806,74 @@ function PlayerRow({
           onPointerMove={e=>dragHandlers?.onMove(e)} onPointerUp={dragHandlers?.onUp} onPointerCancel={dragHandlers?.onUp}
           style={{color:"rgba(255,255,255,0.38)",fontSize:20,flexShrink:0,minWidth:20}}>≡</div>
 
-        {/* Rank */}
-        {!isMobile&&<div style={{minWidth:24,height:24,borderRadius:7,background:"rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:rank<3?13:10,fontWeight:800,color:"#fff",flexShrink:0}}>{medal}</div>}
-
-        {/* Avatar */}
-        <div style={{position:"relative",flexShrink:0}} data-pal>
-          <button onClick={e=>{e.stopPropagation();setPalette(v=>!v);}}
-            style={{width:isMobile?32:36,height:isMobile?32:36,borderRadius:"50%",background:"rgba(255,255,255,0.16)",backdropFilter:"blur(4px)",border:"2px solid rgba(255,255,255,0.30)",color:"#fff",fontWeight:800,fontSize:isLeader?15:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        {/* Avatar → menu du joueur */}
+        <div style={{position:"relative",flexShrink:0}} data-pal data-menu={player.id}>
+          <button onClick={e=>{e.stopPropagation();setPalette(v=>!v);}} aria-label={`Options de ${player.name}`} aria-expanded={showPalette} title="Couleur, renommer, retirer"
+            style={{width:isMobile?34:42,height:isMobile?34:42,borderRadius:"50%",background:"rgba(255,255,255,0.16)",backdropFilter:"blur(4px)",border:"2px solid rgba(255,255,255,0.30)",color:"#fff",fontWeight:800,fontSize:isLeader?16:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             {isLeader?<span style={{display:"inline-block",animation:"crown 1.4s ease-in-out infinite"}}>👑</span>:player.name[0].toUpperCase()}
           </button>
+          <span aria-hidden="true" style={{position:"absolute",right:-4,bottom:-2,width:17,height:17,borderRadius:"50%",background:"#fff",color:"#1f2937",fontSize:12,fontWeight:900,lineHeight:"15px",textAlign:"center",pointerEvents:"none"}}>⋮</span>
           {showPalette&&<div className="fade-in" data-pal onClick={e=>e.stopPropagation()}
-            style={{position:"absolute",top:42,left:0,zIndex:30,background:dark?"#1c1f2e":"#fff",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:8,display:"flex",flexWrap:"wrap",gap:5,width:132,boxShadow:"0 9px 28px rgba(0,0,0,.48)"}}>
-            {PALETTE.map(c=>(<button key={c.hex} className="cdot" onClick={()=>{onColorChange(c);setPalette(false);}} title={c.name} style={{background:c.hex,outline:player.color.hex===c.hex?`2px solid ${c.hex}`:"none",outlineOffset:player.color.hex===c.hex?2:0,transform:player.color.hex===c.hex?"scale(1.4)":"scale(1)"}}/>))}
+            style={{position:"absolute",top:"100%",marginTop:6,left:0,zIndex:30,background:dark?"#1c1f2e":"#fff",border:`1px solid ${D.brd}`,borderRadius:12,padding:8,width:190,boxShadow:"0 9px 28px rgba(0,0,0,.48)"}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:9,padding:"4px 4px 8px"}}>
+              {PALETTE.map(c=>(<button key={c.hex} className="cdot" onClick={()=>{onColorChange(c);setPalette(false);}} title={c.name} style={{background:c.hex,outline:player.color.hex===c.hex?`2px solid ${c.hex}`:"none",outlineOffset:player.color.hex===c.hex?2:0,transform:player.color.hex===c.hex?"scale(1.2)":"scale(1)"}}/>))}
+            </div>
+            <button onClick={startRename} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 8px",border:"none",borderTop:`1px solid ${D.brd}`,background:"transparent",color:D.txt,cursor:"pointer",fontWeight:700,fontSize:13}}>✏️ Renommer</button>
+            {!isPlaying&&<button data-rm onClick={e=>{e.stopPropagation();setPalette(false);onRemove();}}
+              style={{display:"block",width:"100%",textAlign:"left",padding:"10px 8px",border:"none",borderTop:`1px solid ${D.brd}`,background:"transparent",color:"#ef4444",cursor:"pointer",fontWeight:700,fontSize:13}}>🗑 Retirer le joueur</button>}
           </div>}
         </div>
 
-        {/* Name + history */}
-        <div style={{minWidth:0,flex:"0 1 auto",width:isMobile?68:120}} data-nedit>
+        {/* Name + rank + history */}
+        <div style={{minWidth:0,flex:1}}>
           {editName ? (
-            <input ref={nameRef} className="name-edit-input" value={nameVal}
+            <input data-nedit ref={nameRef} className="name-edit-input" value={nameVal}
               onChange={e=>setNameVal(e.target.value)}
               onKeyDown={e=>{if(e.key==="Enter")commitName();if(e.key==="Escape")setEditName(false);}}
               onBlur={commitName} onClick={e=>e.stopPropagation()}
-              maxLength={20} aria-label="Renommer le joueur"/>
+              maxLength={20} aria-label="Renommer le joueur" style={{maxWidth:"100%"}}/>
           ) : (
-            <div onClick={onNameTap} title="Double-tap pour renommer"
-              style={{fontWeight:700,fontSize:isMobile?12:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"default"}}>
-              {player.name}
+            <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
+              <div data-nedit onClick={onNameTap} title="Double-tap pour renommer"
+                style={{fontWeight:700,fontSize:isMobile?13:17,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"default"}}>
+                {player.name}
+              </div>
+              <span style={{fontSize:isMobile?10:12,fontWeight:700,color:"rgba(255,255,255,0.65)",whiteSpace:"nowrap",flexShrink:0}}>
+                {medal.length>1&&!isMobile?`${medal} `:""}{isExAequo?"= ":""}{rank+1}{rank===0?"er":"e"}
+              </span>
             </div>
           )}
-          <div style={{fontSize:9,color:"rgba(255,255,255,0.40)",marginTop:1}}>
-            {isLeader?"👑":isExAequo?"=":""} #{rank+1}
+          <PlayerMiniHistory entries={playerHistory} color={col} isMobile={isMobile} onOpenChange={setHistOpen}/>
+        </div>
+
+        {/* − score + : groupés */}
+        <div style={{display:"flex",alignItems:"center",gap:isMobile?2:6,height:"100%",flexShrink:0,padding:isMobile?0:"0 2px"}}>
+          <button data-step onClick={e=>{e.stopPropagation();onAdjust(-step);}} aria-label={`Retirer ${step} à ${player.name}`} className="mono"
+            style={{width:narrow?42:isMobile?48:72,height:isMobile?52:58,borderRadius:13,border:"1px solid rgba(255,255,255,0.28)",background:"rgba(0,0,0,0.32)",color:"#fff",fontSize:narrow?16:isMobile?18:22,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>−{step}</button>
+
+          {/* Score — tap=edit, long press=quick */}
+          <div data-sedit style={{width:narrow?54:isMobile?70:132,display:"flex",alignItems:"center",justifyContent:"center",height:"100%",cursor:"text",position:"relative"}}
+            onPointerDown={onScorePD} onPointerUp={onScorePU}
+            onPointerLeave={()=>clearTimeout(longT.current)}>
+            {editScore ? (
+              <input ref={editRef} className="score-input-edit" type="number"
+                value={editVal} onChange={e=>setEditVal(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter")commitScore();if(e.key==="Escape")setEditScore(false);}}
+                onBlur={commitScore} onClick={e=>e.stopPropagation()}
+                style={{fontSize:isMobile?26:34,width:isMobile?68:110}}/>
+            ) : (
+              <div key={flashKey} className="mono score-pop"
+                style={{fontSize:isMobile?(String(player.score).length>3?21:27):40,fontWeight:700,color:"#fff",letterSpacing:-1.5,lineHeight:1,
+                  textDecoration:"underline dotted rgba(255,255,255,0.22)",textUnderlineOffset:4,userSelect:"none"}}>
+                {player.score>0?"+":""}{player.score}
+              </div>
+            )}
+            {showQuick&&<QuickScorePopup onApply={onAdjust} onEdit={()=>{setEditVal(String(player.score));setEditScore(true);setTimeout(()=>{editRef.current?.focus();editRef.current?.select();},30);}} onClose={()=>setShowQuick(false)} color={col} isMobile={isMobile}/>}
           </div>
-          <PlayerMiniHistory entries={playerHistory} color={col} isMobile={isMobile}/>
+
+          <button data-step onClick={e=>{e.stopPropagation();onAdjust(step);}} aria-label={`Ajouter ${step} à ${player.name}`} className="mono"
+            style={{width:narrow?42:isMobile?48:72,height:isMobile?52:58,borderRadius:13,border:"none",background:"#fff",color:"#111827",fontSize:narrow?16:isMobile?18:22,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>+{step}</button>
         </div>
-
-        <button data-step onClick={e=>{e.stopPropagation();onAdjust(-step);}} aria-label={`Retirer ${step} à ${player.name}`}
-          style={{width:isMobile?42:48,height:isMobile?48:52,borderRadius:12,border:"1px solid rgba(255,255,255,0.28)",background:"rgba(0,0,0,0.28)",color:"#fff",fontSize:24,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>−</button>
-
-        {/* Score — tap=edit, long press=quick */}
-        <div data-sedit style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",height:"100%",cursor:"text",minWidth:0,position:"relative"}}
-          onPointerDown={onScorePD} onPointerUp={onScorePU}
-          onPointerLeave={()=>clearTimeout(longT.current)}>
-          {editScore ? (
-            <input ref={editRef} className="score-input-edit" type="number"
-              value={editVal} onChange={e=>setEditVal(e.target.value)}
-              onKeyDown={e=>{if(e.key==="Enter")commitScore();if(e.key==="Escape")setEditScore(false);}}
-              onBlur={commitScore} onClick={e=>e.stopPropagation()}
-              style={{fontSize:isMobile?28:34,width:isMobile?90:110}}/>
-          ) : (
-            <div key={flashKey} className="mono score-pop"
-              style={{fontSize:isMobile?28:40,fontWeight:700,color:"#fff",letterSpacing:-1.5,lineHeight:1,
-                textDecoration:"underline dotted rgba(255,255,255,0.22)",textUnderlineOffset:4,userSelect:"none"}}>
-              {player.score>0?"+":""}{player.score}
-            </div>
-          )}
-          {showQuick&&<QuickScorePopup onApply={onAdjust} onEdit={()=>{setEditVal(String(player.score));setEditScore(true);setTimeout(()=>{editRef.current?.focus();editRef.current?.select();},30);}} onClose={()=>setShowQuick(false)} color={col} isMobile={isMobile}/>}
-        </div>
-
-        <button data-step onClick={e=>{e.stopPropagation();onAdjust(step);}} aria-label={`Ajouter ${step} à ${player.name}`}
-          style={{width:isMobile?42:48,height:isMobile?48:52,borderRadius:12,border:"1px solid rgba(255,255,255,0.28)",background:"rgba(255,255,255,0.2)",color:"#fff",fontSize:24,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>+</button>
-
-        {/* Remove */}
-        {!isPlaying&&<button data-rm onClick={e=>{e.stopPropagation();onRemove();}} className="rm-btn"
-          style={{width:22,height:22,borderRadius:6,border:"none",flexShrink:0,background:"rgba(255,255,255,0.09)",color:"rgba(255,255,255,0.38)",cursor:"pointer",fontSize:11,zIndex:6}}>✕</button>}
       </div>
     </div>
   );
@@ -1029,7 +1083,7 @@ export default function ScoreTracker() {
   // ── Dice ──
   const [lastRoll,  setLastRoll]= useState(null);
   const [starter,   setStarter]  = useState(null);   // { id, round } : qui commence à quelle manche
-  const [lastSpin,  setLastSpin] = useState(null);
+  const [wheelBusy, setWheelBusy] = useState(false);
   const [view,      setView]     = useState(()=>{try{return localStorage.getItem("sgt7view")==="sheet"?"sheet":"cards";}catch{return "cards";}});
   const [diceHist,  setDHist]  = useState([]);
   const [wheelHist, setWHist]  = useState([]);
@@ -1349,7 +1403,8 @@ export default function ScoreTracker() {
     Object.assign(document.createElement("a"),{href:url,download:`${gameName.replace(/\s+/g,"_")}.csv`}).click();URL.revokeObjectURL(url);flash("CSV téléchargé ✓");
   };
 
-  const handleWheel=(w)=>{setLastSpin(w.id);if(!starterAt(round))setStarter({id:w.id,round});const time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});setWHist(h=>[{id:uid(),name:w.name,color:w.color.hex,time,date:new Date().toLocaleDateString("fr-FR")},...h].slice(0,10));};
+  useEffect(()=>{setWheelBusy(false);},[tab,firstMode]);
+  const handleWheel=(w)=>{setWheelBusy(false);setStarter({id:w.id,round});const time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});setWHist(h=>[{id:uid(),name:w.name,color:w.color.hex,time,date:new Date().toLocaleDateString("fr-FR")},...h].slice(0,10));};
 
   // ── Supabase online ──
   const subscribeToGame=useCallback((gameId)=>{
@@ -1686,6 +1741,7 @@ export default function ScoreTracker() {
             <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?16:22,display:"flex",flexDirection:"column",alignItems:"center"}}>
               {players.length>1&&(()=>{
                 const s=players.find(p=>p.id===starterAt(round));
+                if(wheelBusy&&firstMode==="wheel")return<div style={{marginBottom:12,fontSize:14,fontWeight:700}}>La roue tourne…</div>;
                 return(
                   <div style={{textAlign:"center",marginBottom:12,fontSize:14,fontWeight:700}}>
                     {s?<><div>Manche {round} : <span style={{color:s.color.hex}}>{s.name}</span> commence</div>
@@ -1695,13 +1751,10 @@ export default function ScoreTracker() {
                   </div>);
               })()}
               {firstMode==="cards"?
-                <FirstPlayerCards D={D} players={curOrder.map(id=>players.find(p=>p.id===id)).filter(Boolean)} deal={deal} setDeal={setDeal}
+                <FirstPlayerCards D={D} dark={dark} onShuffle={()=>setStarter(null)} players={curOrder.map(id=>players.find(p=>p.id===id)).filter(Boolean)} deal={deal} setDeal={setDeal}
                   follow={followCards} onFollow={toggleFollow}
                   onFirst={(p,d)=>{setStarter({id:p.id,round,...(followCards?{order:cardOrder(d)}:{})});flash(`👑 ${p.name} commence !`,p.color.hex);}}/>
-              :<SpinnerWheel players={players} onResult={handleWheel} acc={D.acc} isMobile={isMobile}
-                renderAction={w=>w.id!==lastSpin?null:starterAt(round)===w.id
-                  ?<button onClick={()=>setTab("scores")} style={{...mainBtn,height:44,background:"#16a34a",color:"#fff"}}>Voir les scores →</button>
-                  :<button onClick={()=>setStarter({id:w.id,round})} style={{...mainBtn,height:44,background:D.card,color:D.txt,border:`1px solid ${D.brd}`}}>Faire commencer {w.name}</button>}/>}
+              :<SpinnerWheel players={players} onResult={handleWheel} onStart={()=>setWheelBusy(true)} onShowScores={()=>setTab("scores")} acc={D.acc} isMobile={isMobile}/>}
             </div>
             {firstMode==="wheel"&&wheelHist.length>0&&(
               <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?12:16}}>
@@ -1721,7 +1774,7 @@ export default function ScoreTracker() {
         )}
 
         {/* ═══ SABLIER ═══ */}
-        {tab==="timer"&&<SandTimer D={D} dark={dark} onAlarm={playAlarmSound}/>}
+        {tab==="timer"&&<SandTimer D={D} dark={dark} onAlarm={playAlarmSound} onStart={playStartSound}/>}
       </main>
 
       {/* ════ BARRE AJOUT ════ */}

@@ -6,39 +6,48 @@ const PRESETS = [{ label:"30 s", s:30 }, { label:"1 min", s:60 }, { label:"2 min
 const GLASS = "M52,36 L148,36 C166,86 116,122 106,142 Q102,150 106,158 C116,178 166,214 148,264 L52,264 C34,214 84,178 94,158 Q98,150 94,142 C84,122 34,86 52,36 Z";
 const FULL_TOP = 62;   // niveau du sable quand une ampoule est pleine (sablier debout)
 
-// ── Forme d'une ampoule, échantillonnée en points pour conserver le volume de sable
+// ── Forme d'une ampoule (polygone) : le niveau du sable se calcule en continu, sans paliers
 const bez = (a, b, c, d, t) => (1-t)**3*a + 3*(1-t)**2*t*b + 3*(1-t)*t*t*c + t**3*d;
-// Demi-largeur de l'ampoule du haut à la hauteur y (36 → 150)
-const PROFILE = Array.from({ length:61 }, (_, i) => {
+// Côté droit de l'ampoule du haut : [demi-largeur, hauteur relative au col]
+const SIDE = Array.from({ length:61 }, (_, i) => {
   const t = i / 60;
-  return { y:bez(36, 86, 122, 142, t), w:bez(148, 166, 116, 106, t) - 100 };
-}).concat([{ y:150, w:4 }]);
-const halfWidth = (y) => {
-  for (let i = 1; i < PROFILE.length; i++) {
-    const a = PROFILE[i-1], b = PROFILE[i];
-    if (y <= b.y) return a.w + (b.w - a.w) * (y - a.y) / (b.y - a.y || 1);
-  }
-  return 4;
-};
-const TOP_POINTS = [];
-for (let y = 37; y < 150; y += 2.5) {
-  const w = halfWidth(y);
-  for (let x = -w + 1; x < w; x += 2.5) TOP_POINTS.push([x, y - 150]);   // coordonnées relatives au col
-}
-const BOTTOM_POINTS = TOP_POINTS.map(([x, y]) => [x, -y]);
-const CAPACITY = TOP_POINTS.filter(([, y]) => y + 150 >= FULL_TOP).length / TOP_POINTS.length;
+  return [bez(148, 166, 116, 106, t) - 100, bez(36, 86, 122, 142, t) - 150];
+}).concat([[4, 0]]);
+const TOP_SHAPE = [...SIDE, ...SIDE.map(([w, y]) => [-w, y]).reverse()];
+const BOTTOM_SHAPE = TOP_SHAPE.map(([x, y]) => [x, -y]);
 
-// Seuil (le long de la gravité) au-delà duquel se trouve la fraction de sable voulue
-function level(points, gx, gy, fraction) {
-  const d = points.map(([x, y]) => x*gx + y*gy).sort((a, b) => a - b);
-  const i = Math.round((1 - fraction * CAPACITY) * (d.length - 1));
-  return d[Math.max(0, Math.min(d.length - 1, i))];
+// Surface de la partie de l'ampoule située au-delà du seuil t, le long de la gravité
+function areaBeyond(shape, gx, gy, t) {
+  const out = [];
+  for (let i = 0; i < shape.length; i++) {
+    const a = shape[i], b = shape[(i+1) % shape.length];
+    const da = a[0]*gx + a[1]*gy - t, db = b[0]*gx + b[1]*gy - t;
+    if (da >= 0) out.push(a);
+    if ((da >= 0) !== (db >= 0)) { const k = da / (da - db); out.push([a[0] + (b[0]-a[0])*k, a[1] + (b[1]-a[1])*k]); }
+  }
+  let s = 0;
+  for (let i = 0; i < out.length; i++) { const a = out[i], b = out[(i+1) % out.length]; s += a[0]*b[1] - b[0]*a[1]; }
+  return Math.abs(s) / 2;
+}
+const BULB = areaBeyond(TOP_SHAPE, 0, 1, -200);
+const CAPACITY = areaBeyond(TOP_SHAPE, 0, 1, FULL_TOP - 150) / BULB;
+
+// Niveau (le long de la gravité) qui contient exactement la fraction de sable voulue
+function level(shape, gx, gy, fraction) {
+  const d = shape.map(([x, y]) => x*gx + y*gy);
+  let lo = Math.min(...d), hi = Math.max(...d);
+  const target = Math.max(0, Math.min(1, fraction)) * CAPACITY * BULB;
+  for (let i = 0; i < 28; i++) {
+    const mid = (lo + hi) / 2;
+    if (areaBeyond(shape, gx, gy, mid) > target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 const ease = (t) => t < .5 ? 2*t*t : 1 - (-2*t + 2)**2 / 2;
 const fmt = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
 
-export default function SandTimer({ D, dark, onAlarm }) {
+export default function SandTimer({ D, dark, onAlarm, onStart }) {
   const [dur, setDur] = useState(60);
   const [pr, setPr] = useState(1);          // fraction de sable dans l'ampoule du haut
   const [angle, setAngle] = useState(0);    // inclinaison du sablier en degrés
@@ -68,12 +77,17 @@ export default function SandTimer({ D, dark, onAlarm }) {
     setStatus("running"); setAngle(0); setPr(from); prRef.current = from;
     const total = durRef.current * 1000;
     const end = Date.now() + from * total;
-    iv.current = setInterval(() => {
+    const update = () => {
       const left = Math.max(0, end - Date.now());
       prRef.current = left / total;
       setPr(left / total);
-      if (!left) { clearInterval(iv.current); setStatus("done"); onAlarm?.(); }
-    }, 50);
+      return left;
+    };
+    const frame = () => { if (update()) raf.current = requestAnimationFrame(frame); };
+    raf.current = requestAnimationFrame(frame);
+    iv.current = setInterval(() => {
+      if (!update()) { stop(); setStatus("done"); onAlarm?.(); }
+    }, 100);
   };
 
   const tilt = (to, ms, done) => {
@@ -87,7 +101,7 @@ export default function SandTimer({ D, dark, onAlarm }) {
   // Retournement : le sable du bas se retrouve en haut, puis le temps repart
   const flip = () => {
     setStatus("flip");
-    tween(900, t => setAngle(180 * ease(t)), () => run(1));
+    tween(900, t => setAngle(180 * ease(t)), () => { onStart?.(); run(1); });
   };
 
   // Relancer : (se redresser) → écoulement accéléré → retournement → départ
@@ -116,11 +130,12 @@ export default function SandTimer({ D, dark, onAlarm }) {
   // Pendant le retournement, tout le sable est dans l'ampoule du bas
   const topFrac = status === "flip" ? 0 : pr;
   const botFrac = 1 - topFrac;
-  const topLevel = useMemo(() => level(TOP_POINTS, gx, gy, topFrac), [gx, gy, topFrac]);
-  const botLevel = useMemo(() => level(BOTTOM_POINTS, gx, gy, botFrac), [gx, gy, botFrac]);
+  const topLevel = useMemo(() => level(TOP_SHAPE, gx, gy, topFrac), [gx, gy, topFrac]);
+  const botLevel = useMemo(() => level(BOTTOM_SHAPE, gx, gy, botFrac), [gx, gy, botFrac]);
   const upright = angle === 0;
-  const dip = upright && flowing ? Math.min(14, 30*(1-pr), 36*pr) : 0;   // entonnoir
-  const mound = upright && status !== "idle" ? Math.min(20, 84*(1-pr)*.7) : 0; // petit tas
+  const near = Math.max(0, 1 - Math.abs(angle) / 25);                    // 1 debout → 0 penché
+  const dip = status !== "idle" && status !== "flip" ? near * Math.max(0, Math.min(14, 30*(1-pr), 36*pr)) : 0;   // entonnoir
+  const mound = status !== "idle" && status !== "flip" ? near * Math.min(20, 84*(1-pr)*.7) : 0; // petit tas
 
   const sand = (lvl, curve) => (
     <g transform={`rotate(${-angle} 100 150)`}>
@@ -174,8 +189,8 @@ export default function SandTimer({ D, dark, onAlarm }) {
           <path d={GLASS} fill="url(#hgGlass)"/>
 
           <g clipPath="url(#hgClip)">
-            {topFrac > .003 && <g clipPath="url(#hgTop)">{sand(topLevel, dip)}</g>}
-            {botFrac > .003 && <g clipPath="url(#hgBottom)">{sand(botLevel, -mound)}</g>}
+            {topFrac > .0002 && <g clipPath="url(#hgTop)">{sand(topLevel, dip)}</g>}
+            {botFrac > .0002 && <g clipPath="url(#hgBottom)">{sand(botLevel, -mound)}</g>}
             {upright && flowing && (
               <g>
                 <line x1="100" y1="147" x2="100" y2={Math.max(150, heap - mound)} stroke="#f2bd45" strokeWidth={status === "rush" ? 6 : 2.4} strokeLinecap="round" strokeDasharray={status === "rush" ? "9 2" : "5 2"} style={{ animation:`hgStream ${status === "rush" ? ".07s" : ".25s"} linear infinite` }}/>
@@ -212,7 +227,7 @@ export default function SandTimer({ D, dark, onAlarm }) {
       </div>
 
       <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
-        {status === "idle" && <button onClick={() => run(1)} style={{ ...mainBtn, background:ring, color:"#111" }}>▶ Démarrer</button>}
+        {status === "idle" && <button onClick={() => { onStart?.(); run(1); }} style={{ ...mainBtn, background:ring, color:"#111" }}>▶ Démarrer</button>}
         {status === "running" && <button onClick={pause} style={{ ...mainBtn, background:"rgba(100,116,139,0.22)", color:D.txt }}>⏸ Pause</button>}
         {(status === "paused" || status === "pausing") && <button onClick={resume} style={{ ...mainBtn, background:ring, color:"#111" }}>▶ Reprendre</button>}
         {(status === "resuming" || status === "rush" || status === "flip") && <button disabled style={{ ...mainBtn, background:"rgba(100,116,139,0.22)", color:D.sub, cursor:"default" }}>⏳ Un instant…</button>}

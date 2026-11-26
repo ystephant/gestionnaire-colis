@@ -1,6 +1,8 @@
 // Tirage du premier joueur avec des cartes : le nom devant, un numéro au hasard derrière.
 // La carte n°1 désigne le premier joueur.
 
+import { useEffect, useRef, useState } from "react";
+
 export function dealCards(players) {
   const nums = players.map((_, i) => i + 1);
   for (let i = nums.length - 1; i > 0; i--) {
@@ -12,7 +14,34 @@ export function dealCards(players) {
 
 const rank = (n) => n === 1 ? "1er joueur" : `${n}ᵉ joueur`;
 
-export default function FirstPlayerCards({ D, players, deal, setDeal, onFirst, follow, onFollow }) {
+export default function FirstPlayerCards({ D, dark, players, deal, setDeal, onFirst, onShuffle, follow, onFollow }) {
+  const [moves, setMoves] = useState(null);     // déplacement de chaque carte pendant le mélange
+  const [mixing, setMixing] = useState(false);
+  const [mixed, setMixed] = useState(false);
+  const box = useRef(null), cards = useRef({}), timers = useRef([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  // Les cartes se retournent, se rassemblent en paquet, se redistribuent deux fois
+  const shuffle = () => {
+    if (mixing) return;
+    setMixing(true); setMixed(false); onShuffle?.();
+    const wait = deal && Object.values(deal.open).some(Boolean) ? 560 : 0;
+    if (wait) setDeal({ ...deal, open:{} });
+    const gather = () => {
+      const cx = box.current.clientWidth / 2, cy = box.current.clientHeight / 2;
+      setMoves(Object.fromEntries(players.map((p, i) => {
+        const el = cards.current[p.id];
+        return [p.id, el ? `translate(${cx - el.offsetLeft - el.offsetWidth / 2}px, ${cy - el.offsetTop - el.offsetHeight / 2}px) rotate(${Math.round(Math.random() * 30 - 15)}deg)` : "none"];
+      })));
+    };
+    const at = (ms, fn) => timers.current.push(setTimeout(fn, wait + ms));
+    at(0, gather);
+    at(330, () => setDeal(dealCards(players)));
+    at(380, () => setMoves(null));
+    at(720, gather);
+    at(1100, () => setMoves(null));
+    at(1450, () => { setMixing(false); setMixed(true); navigator.vibrate?.(40); });
+  };
   if (players.length < 2) {
     return <div style={{ textAlign:"center", padding:"40px 20px", color:D.sub, fontWeight:700, fontSize:14 }}>Ajoutez au moins 2 joueurs pour tirer les cartes</div>;
   }
@@ -27,10 +56,14 @@ export default function FirstPlayerCards({ D, players, deal, setDeal, onFirst, f
     if (first && next.open[first.id] && !(valid && open[first.id])) onFirst(first, next);
   };
   const toggle = (id) => {
+    if (mixing) return;
+    setMixed(false);
     const base = valid ? deal : dealCards(players);
     apply({ ...base, open:{ ...base.open, [id]:!base.open[id] } });
   };
   const toggleAll = () => {
+    if (mixing) return;
+    setMixed(false);
     const base = valid ? deal : dealCards(players);
     apply({ ...base, open:allOpen ? {} : Object.fromEntries(players.map(p => [p.id, true])) });
   };
@@ -40,14 +73,14 @@ export default function FirstPlayerCards({ D, players, deal, setDeal, onFirst, f
 
   return (
     <div style={{ width:"100%" }}>
-      <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10 }}>
+      <div ref={box} data-mixing={mixing ? "1" : "0"} style={{ position:"relative", display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10 }}>
         {players.map(p => {
           const shown = !!open[p.id];
           const n = valid ? deal.nums[p.id] : null;
           return (
-            <button key={p.id} onClick={() => toggle(p.id)}
+            <button key={p.id} ref={el => { cards.current[p.id] = el; }} onClick={() => toggle(p.id)}
               aria-label={shown ? `${p.name} : numéro ${n}` : `Carte de ${p.name}`}
-              style={{ width:96, height:134, perspective:700, background:"none", border:"none", padding:0, cursor:"pointer", WebkitTapHighlightColor:"transparent" }}>
+              style={{ width:96, height:134, perspective:700, background:"none", border:"none", padding:0, cursor:"pointer", WebkitTapHighlightColor:"transparent", transform:moves?.[p.id] || "none", transition:"transform .3s ease" }}>
               <div style={{ position:"relative", width:"100%", height:"100%", transformStyle:"preserve-3d", transition:"transform .55s cubic-bezier(.3,.7,.3,1.1)", transform:shown ? "rotateY(180deg)" : "none" }}>
                 {/* Recto : le nom */}
                 <div style={{ ...face, background:`linear-gradient(160deg,${p.color.hex},${p.color.hex}aa)` }}>
@@ -67,7 +100,10 @@ export default function FirstPlayerCards({ D, players, deal, setDeal, onFirst, f
       </div>
       <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:8, marginTop:16 }}>
         <button onClick={toggleAll} style={btn}>{allOpen ? "🙈 Tout cacher" : "👀 Tout retourner"}</button>
-        <button onClick={() => setDeal(dealCards(players))} style={btn}>🔀 Mélanger</button>
+        <button onClick={shuffle} disabled={mixing} style={{ ...btn, opacity:mixing ? .6 : 1 }}>{mixing ? "🔀 Mélange…" : "🔀 Mélanger"}</button>
+      </div>
+      <div role="status" style={{ minHeight:22, marginTop:8, textAlign:"center", fontSize:13, fontWeight:800, color:"#16a34a" }}>
+        {mixed ? "✅ Cartes mélangées : de nouveaux numéros sont distribués" : ""}
       </div>
       <label style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginTop:12, minHeight:40, fontSize:13, fontWeight:700, color:D.txt, cursor:"pointer" }}>
         <input type="checkbox" checked={follow} onChange={e => onFollow(e.target.checked)} style={{ width:20, height:20, accentColor:"#f59e0b" }}/>
@@ -78,7 +114,7 @@ export default function FirstPlayerCards({ D, players, deal, setDeal, onFirst, f
           {[...players].sort((a, b) => deal.nums[a.id] - deal.nums[b.id]).map(p => p.name).join(" → ")}
         </div>
       )}
-      <div style={{ fontSize:11, color:D.sub, textAlign:"center", marginTop:6 }}>
+      <div style={{ fontSize:12, fontWeight:600, color:dark ? "#fff" : "#000", textAlign:"center", marginTop:6 }}>
         Touchez une carte pour la retourner. {follow ? "Les numéros donnent l’ordre de jeu." : "Le n°1 commence, puis le tour suit l’ordre des joueurs."}
       </div>
     </div>
