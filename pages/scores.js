@@ -58,6 +58,8 @@ import { useRouter } from "next/router";
 import { readLocal, saveItem, pushItem, deleteItem, syncAll } from "../lib/scoresSync";
 import DiceTable from "../components/DiceTable";
 import ScoreSheet from "../components/ScoreSheet";
+import SandTimer from "../components/SandTimer";
+import FirstPlayerCards from "../components/FirstPlayerCards";
 
 // ─────────────────────────────────────────────────────────
 //  SUPABASE CLIENT (graceful degradation)
@@ -97,7 +99,7 @@ const uid         = () => Math.random().toString(36).slice(2,9);
 const GAME_PRESETS = [
   { id:"skyjo",        name:"Skyjo",           emoji:"🃏", targetScore:100,  lowestWins:true,  maxRounds:null, desc:"1er à 100 pts perd — plus bas = meilleur"   },
   { id:"catan",        name:"Catan",           emoji:"🏝️", targetScore:10,   lowestWins:false, maxRounds:null, desc:"Premier à 10 pts de victoire gagne"          },
-  { id:"uno",          name:"Uno",             emoji:"🎴", targetScore:500,  lowestWins:false, maxRounds:null, desc:"1er à 500 pts de penalité perd"               },
+  { id:"uno",          name:"Uno",             emoji:"🎴", targetScore:500,  lowestWins:true , maxRounds:null, desc:"1er à 500 pts de penalité perd"               },
   { id:"carcassonne",  name:"Carcassonne",     emoji:"🏰", targetScore:null, lowestWins:false, maxRounds:null, desc:"Libre — score le plus haut en fin de partie"  },
   { id:"7wonders",     name:"7 Wonders",       emoji:"🏛️", targetScore:null, lowestWins:false, maxRounds:3,    desc:"3 manches — score le plus haut gagne"         },
   { id:"dixit",        name:"Dixit",           emoji:"🐇", targetScore:30,   lowestWins:false, maxRounds:null, desc:"Premier à 30 pts gagne"                       },
@@ -129,8 +131,6 @@ const GLOBAL_CSS = `
   @keyframes dieRoll{0%{transform:rotate(0)}25%{transform:rotate(13deg) scale(1.04)}50%{transform:rotate(-8deg) scale(.96)}100%{transform:rotate(0)}}
   @keyframes dieLand{0%{transform:scale(1.26) rotate(8deg);opacity:.6}60%{transform:scale(.93)}100%{transform:scale(1) rotate(0);opacity:1}}
   .die-land{animation:dieLand .3s cubic-bezier(.36,.07,.19,.97)}
-  @keyframes gearHint{0%,100%{transform:rotate(0)}25%{transform:rotate(-22deg)}75%{transform:rotate(22deg)}}
-  .gear-hint-anim svg{animation:gearHint 1.1s ease-in-out 3}
   @keyframes swipeFlash{0%{opacity:.9}60%{opacity:.6}100%{opacity:0}}
   .swipe-flash{animation:swipeFlash .38s ease forwards}
   @keyframes hgStream{from{stroke-dashoffset:7}to{stroke-dashoffset:0}}
@@ -139,8 +139,6 @@ const GLOBAL_CSS = `
   @keyframes hourglassShake{0%,100%{transform:rotate(0)}20%{transform:rotate(-9deg)}60%{transform:rotate(9deg)}}
   @keyframes hourglassFlip{0%{transform:rotate(0deg) scale(1)}30%{transform:rotate(120deg) scale(0.9)}60%{transform:rotate(200deg) scale(1.05)}80%{transform:rotate(175deg) scale(0.97)}100%{transform:rotate(180deg) scale(1)}}
   @keyframes timerPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-  @keyframes gearAccPop{0%{opacity:0;transform:translateY(4px) scale(.9)}15%{opacity:1;transform:none}85%{opacity:1}100%{opacity:0;transform:translateY(-6px) scale(.88)}}
-  .gear-acc-pop{animation:gearAccPop 1.8s ease forwards}
   @keyframes histSlide{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
   .hist-slide{animation:histSlide .18s ease}
   @keyframes quickPop{from{opacity:0;transform:scale(.8) translateY(6px)}to{opacity:1;transform:scale(1) translateY(0)}}
@@ -264,77 +262,6 @@ function useWakeLock(active) {
   }, [active]);
 }
 
-// ─────────────────────────────────────────────────────────
-//  GEAR SVG
-// ─────────────────────────────────────────────────────────
-function GearSVG({ rotation, lit }) {
-  return (
-    <svg width="100%" height="100%" viewBox="0 0 100 100" style={{ display:"block", overflow:"visible" }}>
-      <defs>
-        <filter id="kg" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/>
-          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-      </defs>
-      <g transform={`rotate(${rotation} 50 50)`} filter={lit?"url(#kg)":undefined}>
-        <circle cx="50" cy="50" r="43" fill={lit?"rgba(255,255,255,0.09)":"rgba(0,0,0,0.28)"} stroke={lit?"rgba(255,255,255,0.65)":"rgba(255,255,255,0.28)"} strokeWidth="2.5"/>
-        {Array.from({length:12},(_,i)=>{const a=(i/12)*Math.PI*2-Math.PI/2,mj=i%3===0,r1=mj?34:38;return<line key={i} x1={(50+r1*Math.cos(a)).toFixed(2)} y1={(50+r1*Math.sin(a)).toFixed(2)} x2={(50+43*Math.cos(a)).toFixed(2)} y2={(50+43*Math.sin(a)).toFixed(2)} stroke={mj?(lit?"rgba(255,255,255,0.85)":"rgba(255,255,255,0.52)"):(lit?"rgba(255,255,255,0.45)":"rgba(255,255,255,0.20)")} strokeWidth={mj?2.8:1.6} strokeLinecap="round"/>;})}
-        <circle cx="50" cy="50" r="29" fill={lit?"rgba(255,255,255,0.09)":"rgba(0,0,0,0.45)"} stroke={lit?"rgba(255,255,255,0.35)":"rgba(255,255,255,0.13)"} strokeWidth="1.5"/>
-        {[30,150,270].map(deg=>{const a=deg*Math.PI/180;return<line key={deg} x1={(50+Math.cos(a)*11).toFixed(2)} y1={(50+Math.sin(a)*11).toFixed(2)} x2={(50+Math.cos(a)*26).toFixed(2)} y2={(50+Math.sin(a)*26).toFixed(2)} stroke={lit?"rgba(255,255,255,0.65)":"rgba(255,255,255,0.32)"} strokeWidth="3.2" strokeLinecap="round"/>;})}
-        <circle cx="50" cy="50" r="7" fill={lit?"rgba(255,255,255,0.55)":"rgba(255,255,255,0.15)"} stroke={lit?"rgba(255,255,255,0.70)":"rgba(255,255,255,0.28)"} strokeWidth="1.8"/>
-        <circle cx="50" cy="50" r="2.8" fill={lit?"#fff":"rgba(255,255,255,0.50)"}/>
-      </g>
-    </svg>
-  );
-}
-
-const DEG_PER_PT = 30;
-function Gear({ onCommit, size, onFirstUse, playerScore, playerColor }) {
-  const [rot, setRot] = useState(0);
-  const [lit, setLit] = useState(false);
-  const [acc, setAcc] = useState(0);
-  const drag=useRef(null),litT=useRef(null),wheelT=useRef(null),accR=useRef(0),cbR=useRef(onCommit),elR=useRef(null),usedR=useRef(false);
-  cbR.current=onCommit;
-  // Commit: appelé uniquement au relâchement du doigt/clic ou après inactivité molette
-  const commit=useCallback(()=>{if(!accR.current)return;cbR.current(accR.current);accR.current=0;setAcc(0);},[]);
-  const add=useCallback((pts,fromWheel=false)=>{
-    if(!pts)return;
-    if(!usedR.current){usedR.current=true;onFirstUse?.();}
-    setRot(r=>r-pts*DEG_PER_PT);
-    accR.current+=pts;setAcc(accR.current);
-    clearTimeout(litT.current);setLit(true);litT.current=setTimeout(()=>setLit(false),120);
-    // Molette souris : commit après 600ms d'inactivité (pas d'event "fin de scroll")
-    if(fromWheel){clearTimeout(wheelT.current);wheelT.current=setTimeout(commit,600);}
-  },[onFirstUse,commit]);
-  const ang=(cx,cy,px,py)=>Math.atan2(py-cy,px-cx)*180/Math.PI;
-  const sdiff=(a,b)=>{let d=a-b;while(d>180)d-=360;while(d<-180)d+=360;return d;};
-  const gc=()=>{const r=elR.current?.getBoundingClientRect();return r?{cx:r.left+r.width/2,cy:r.top+r.height/2}:{cx:0,cy:0};};
-  const onMD=useCallback((e)=>{e.preventDefault();const{cx,cy}=gc();drag.current={cx,cy,la:ang(cx,cy,e.clientX,e.clientY),ad:0};setLit(true);const mv=(ev)=>{if(!drag.current)return;const{cx,cy}=drag.current;const na=ang(cx,cy,ev.clientX,ev.clientY);const df=sdiff(na,drag.current.la);drag.current.la=na;drag.current.ad-=df;const pts=Math.trunc(drag.current.ad/DEG_PER_PT);if(pts){drag.current.ad-=pts*DEG_PER_PT;add(pts);}};const up=()=>{drag.current=null;setLit(false);commit();window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",up);};window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);},[add,commit]);
-  const onTS=useCallback((e)=>{e.preventDefault();const{cx,cy}=gc();drag.current={cx,cy,la:ang(cx,cy,e.touches[0].clientX,e.touches[0].clientY),ad:0};setLit(true);},[]);
-  const onTM=useCallback((e)=>{e.preventDefault();if(!drag.current)return;const{cx,cy}=drag.current;const na=ang(cx,cy,e.touches[0].clientX,e.touches[0].clientY);const df=sdiff(na,drag.current.la);drag.current.la=na;drag.current.ad-=df;const pts=Math.trunc(drag.current.ad/DEG_PER_PT);if(pts){drag.current.ad-=pts*DEG_PER_PT;add(pts);}},[add]);
-  // Commit au relâchement du doigt
-  const onTE=useCallback(()=>{drag.current=null;setLit(false);commit();},[commit]);
-  useEffect(()=>{const el=elR.current;if(!el)return;const h=(e)=>{e.preventDefault();add(e.deltaY>0?-1:1,true);};el.addEventListener("wheel",h,{passive:false});return()=>el.removeEventListener("wheel",h);},[add]);
-  useEffect(()=>()=>{clearTimeout(litT.current);clearTimeout(wheelT.current);},[]);
-  const ns=playerScore+acc;
-  return(
-    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
-      <div ref={elR} onMouseDown={onMD} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} data-gear aria-label="Molette de score" style={{width:"100%",height:"100%",cursor:"grab",userSelect:"none",touchAction:"none"}}><GearSVG rotation={rot} lit={lit}/></div>
-      {acc!==0&&<div key={acc} className="gear-acc-pop" style={{position:"absolute",top:-52,left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,0.92)",borderRadius:11,pointerEvents:"none",padding:"5px 11px",whiteSpace:"nowrap",zIndex:20,border:`1px solid ${playerColor}66`,display:"flex",alignItems:"center",gap:5}}>
-        <span className="mono" style={{fontSize:12,color:"rgba(255,255,255,0.40)"}}>{playerScore>0?"+":""}{playerScore}</span>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.28)"}}>{acc>0?"＋":"－"}</span>
-        <span className="mono" style={{fontSize:13,fontWeight:800,color:acc>0?"#4ade80":"#f87171"}}>{Math.abs(acc)}</span>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.28)"}}>＝</span>
-        <span className="mono" style={{fontSize:14,fontWeight:900,color:playerColor}}>{ns>0?"+":""}{ns}</span>
-      </div>}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-//  DIE FACE
-// ─────────────────────────────────────────────────────────
-const DP={1:[[50,50]],2:[[30,30],[70,70]],3:[[28,28],[50,50],[72,72]],4:[[28,28],[72,28],[28,72],[72,72]],5:[[28,28],[72,28],[50,50],[28,72],[72,72]],6:[[28,28],[72,28],[28,50],[72,50],[28,72],[72,72]]};
 const ppts=(n,r,cx=50,cy=50,off=-90)=>Array.from({length:n},(_,i)=>{const a=(i/n*360+off)*Math.PI/180;return`${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`;}).join(" ");
 function DieFace({sides,value,size=86,color="#2563eb",rolling=false,percentile=false}){
   const gi=`dg${sides}`,si=`ds${sides}`;
@@ -412,8 +339,8 @@ function PlayerMiniHistory({ entries, color, isMobile }) {
         style={{ display:"flex", alignItems:"center", gap:4, background:"rgba(0,0,0,0.22)",
           border:"none", borderRadius:7, padding:"3px 8px", cursor:"pointer",
           color:"rgba(255,255,255,0.48)", minHeight:26 }}>
-        <span style={{ fontSize:9, fontWeight:700 }}>{open?"▲":"▼"} hist.</span>
-        {!open && (
+        <span style={{ fontSize:9, fontWeight:700, whiteSpace:"nowrap" }}>{open?"▲":"▼"} hist.</span>
+        {!open && !isMobile && (
           <div style={{ display:"flex", gap:2, alignItems:"center", maxWidth:isMobile?72:130, overflow:"hidden" }}>
             {last10.slice(isMobile?-4:-10).map((h,i) => (
               <span key={i} className="mono" style={{ fontSize:9, fontWeight:800, flexShrink:0,
@@ -464,15 +391,19 @@ function SpinnerWheel({ players, onResult, acc, isMobile, renderAction }) {
     return players[Math.floor(phi/SA)%n];
   },[players]);
   const fin=useCallback((a)=>{const w=rW(a);setW(w);setSp(false);sf.current=false;onResult(w);},[rW,onResult]);
-  const stopNow=useCallback(()=>{if(spinning)sf.current=true;},[spinning]);
+  // Un appui lance la roue, un second l'arrête net
+  const stopNow=useCallback(()=>{
+    if(!sf.current)return;
+    cancelAnimationFrame(aR.current);fin(angR.current);
+  },[fin]);
   const spin=useCallback(()=>{
-    if(spinning||players.length<2)return;setW(null);setSp(true);sf.current=false;ltR.current=null;
-    const pV=6+Math.random()*6,aC=400+Math.random()*300,cMs=3e3+Math.random()*7e3;pR.current={pV,aC,cMs};
-    velR.current=0;const ex=Math.random()*360*(2+Math.random()*4);angR.current+=ex;setAng(a=>a+ex);
-    let el=0;
-    const loop=(ts)=>{if(!ltR.current){ltR.current=ts;aR.current=requestAnimationFrame(loop);return;}const dt=Math.min(ts-ltR.current,50);ltR.current=ts;el+=dt;const{pV,aC,cMs}=pR.current;let v;if(sf.current){velR.current=Math.max(0,velR.current-dt*0.012);v=velR.current;}else if(el<aC){v=pV*(el/aC);}else if(el<cMs){v=pV;}else{const d=el-cMs,dd=2500+Math.random()*500;v=Math.max(0,pV*(1-d/dd));}velR.current=v;angR.current+=v*dt;setAng(angR.current);if(v<=0){fin(angR.current);return;}aR.current=requestAnimationFrame(loop);};
+    if(sf.current){stopNow();return;}
+    if(players.length<2)return;setW(null);setSp(true);sf.current=true;ltR.current=null;
+    velR.current=.34+Math.random()*.1;                       // environ un tour par seconde
+    angR.current+=Math.random()*360;setAng(angR.current);    // départ à une position au hasard
+    const loop=(ts)=>{if(ltR.current){angR.current+=velR.current*Math.min(ts-ltR.current,50);setAng(angR.current);}ltR.current=ts;aR.current=requestAnimationFrame(loop);};
     aR.current=requestAnimationFrame(loop);
-  },[spinning,players,fin]);
+  },[players,fin,stopNow]);
   useEffect(()=>()=>cancelAnimationFrame(aR.current),[]);
   if(!players.length)return(<div style={{textAlign:"center",padding:"40px 20px",color:"#50556e"}}><div style={{fontSize:48,marginBottom:8}}>🎡</div><div style={{fontSize:14,fontWeight:700}}>Ajoutez des joueurs pour utiliser la roue</div></div>);
   const W=Math.max(240,Math.min(window.innerWidth-56,window.innerHeight-(isMobile?360:330),460)),CX=W/2,CY=W/2,R=W/2-6,SA=360/players.length;
@@ -483,7 +414,7 @@ function SpinnerWheel({ players, onResult, acc, isMobile, renderAction }) {
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
       <div style={{position:"relative",width:W,height:W+20,flexShrink:0}}>
         <div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"12px solid transparent",borderRight:"12px solid transparent",borderTop:`24px solid ${nc}`,zIndex:10,filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.7))"}}/>
-        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} onClick={spin} role="img" aria-label="Roue : toucher pour lancer" style={{marginTop:20,display:"block",cursor:spinning?"default":"pointer",filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.60))"}}>
+        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} onClick={spin} role="img" aria-label={spinning?"Roue : toucher pour arrêter":"Roue : toucher pour lancer"} style={{marginTop:20,display:"block",cursor:"pointer",filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.60))"}}>
           <circle cx={CX} cy={CY} r={R+4} fill="#111318" stroke="rgba(255,255,255,0.10)" strokeWidth="2"/>
           <g transform={`rotate(${angle} ${CX} ${CY})`}>
             {slices.map(({p,d,tx,ty,ta})=>(<g key={p.id}><path d={d} fill={p.color.hex} stroke="rgba(0,0,0,0.35)" strokeWidth="1.5"/><path d={d} fill="rgba(255,255,255,0.06)"/><g transform={`rotate(${ta} ${tx} ${ty})`}><text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" fontSize={nfs} fontWeight="800" fontFamily="Sora,sans-serif" fill="#fff" stroke="rgba(0,0,0,0.60)" strokeWidth="3.5" paintOrder="stroke fill" style={{userSelect:"none"}}>{p.name.length>9?p.name.slice(0,8)+"…":p.name}</text></g></g>))}
@@ -497,160 +428,7 @@ function SpinnerWheel({ players, onResult, acc, isMobile, renderAction }) {
       {winner&&!spinning&&(<div className="slide-up" style={{padding:"11px 28px",borderRadius:13,background:`linear-gradient(135deg,${winner.color.hex},${winner.color.hex}aa)`,color:"#fff",fontWeight:800,fontSize:17,textAlign:"center"}}>🎉 {winner.name} !</div>)}
       {winner&&!spinning&&renderAction?.(winner)}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
-        <button id="sgt-spin" onClick={spin} disabled={spinning||players.length<2} style={{padding:"13px 28px",borderRadius:12,border:"none",background:spinning?"#374151":`linear-gradient(135deg,${nc},#ef4444)`,color:"#fff",fontWeight:800,fontSize:14,cursor:spinning||players.length<2?"not-allowed":"pointer",opacity:players.length<2?.5:1,minHeight:48}}>{spinning?"⏳ En cours…":"🎡 Lancer"}</button>
-        {spinning&&<button onClick={stopNow} disabled={!spinning} style={{padding:"13px 18px",borderRadius:12,border:"none",background:spinning?"#ef4444":"rgba(239,68,68,0.15)",color:spinning?"#fff":"#f87171",fontWeight:800,fontSize:14,cursor:spinning?"pointer":"default",opacity:spinning?1:.45,transition:"all .2s",minHeight:48}}>⏹ Stop</button>}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-//  SAND TIMER (condensed)
-// ─────────────────────────────────────────────────────────
-function SandTimer({ D, dark }) {
-  const PRE=[{label:"30 s",s:30},{label:"1 min",s:60},{label:"2 min",s:120},{label:"3 min",s:180}];
-  const [dur,setDur]=useState(60),[rem,setRem]=useState(60),[status,setSt]=useState("idle");
-  const [flipping,setFlipping]=useState(false);
-  const ivR=useRef(null),endR=useRef(null);
-  const pr=rem/dur;
-  const ring=pr>.5?"#4ade80":pr>.25?"#fbbf24":"#ef4444";
-  // ── Sable ──────────────────────────────────────────────
-  // tp : 0 = début (haut plein) → 1 = fin (bas plein)
-  const tp=1-pr;
-  // Les ampoules sont larges au milieu et fines au col : la hauteur n'est pas proportionnelle au volume
-  const topY=148-88*Math.pow(pr,.62);                 // surface du sable en haut
-  const dip=status==="idle"?2:Math.min(16,34*tp,40*pr); // creux en entonnoir
-  const botH=84*Math.pow(tp,.8);
-  const botY=264-botH;                                // niveau du sable en bas
-  const mound=Math.min(22,botH*.7);                   // petit tas conique
-  const GLASS="M52,36 L148,36 C166,86 116,122 106,142 Q102,150 106,158 C116,178 166,214 148,264 L52,264 C34,214 84,178 94,158 Q98,150 94,142 C84,122 34,86 52,36 Z";
-  const wood=dark?["#8a5a2b","#c48a4a","#5e3a18"]:["#9a6430","#d9a05c","#6b4019"];
-  const glassEdge=dark?"rgba(226,240,255,0.55)":"rgba(60,90,130,0.45)";
-
-  const tick=useCallback(()=>{const r=Math.max(0,Math.round((endR.current-Date.now())/1000));setRem(r);if(r<=0){clearInterval(ivR.current);setSt("done");playAlarmSound();}},[]);
-  const start=useCallback(()=>{const r=status==="done"?dur:rem;setRem(r);endR.current=Date.now()+r*1e3;setSt("running");clearInterval(ivR.current);ivR.current=setInterval(tick,200);},[status,dur,rem,tick]);
-  const pause=useCallback(()=>{clearInterval(ivR.current);setSt("paused");},[]);
-
-  // Reset avec animation de retournement
-  const reset=useCallback(()=>{
-    clearInterval(ivR.current);
-    setFlipping(true);
-    // Après 600ms (animation flip), réinitialiser
-    setTimeout(()=>{
-      setRem(dur);setSt("idle");setFlipping(false);
-    },600);
-  },[dur]);
-
-  const pick=useCallback((s)=>{clearInterval(ivR.current);setDur(s);setRem(s);setSt("idle");},[]);
-  const fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
-  const done=status==="done";
-  useEffect(()=>()=>clearInterval(ivR.current),[]);
-
-  const hourglassAnim = flipping
-    ? "hourglassFlip 0.6s cubic-bezier(.4,0,.2,1) forwards"
-    : done
-      ? "hourglassShake .55s ease 4"
-      : "none";
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:20,padding:"22px 18px 20px",display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:6,width:"100%",maxWidth:360}}>
-          {PRE.map(p=>(<button key={p.s} onClick={()=>pick(p.s)} aria-pressed={dur===p.s} style={{padding:"10px 2px",whiteSpace:"nowrap",borderRadius:10,border:`1.5px solid ${dur===p.s?ring:D.brd}`,background:dur===p.s?ring+"22":"transparent",color:dur===p.s?ring:D.sub,fontWeight:700,fontSize:14,cursor:"pointer",transition:"all .15s",minHeight:44}}>{p.label}</button>))}
-        </div>
-
-        {/* Sablier */}
-        <svg viewBox="0 0 200 300" role="img" aria-label={`Sablier : ${fmt(rem)} restantes`}
-          style={{height:"clamp(230px, calc(100dvh - 420px), 340px)",maxWidth:"100%",overflow:"visible",filter:"drop-shadow(0 10px 18px rgba(0,0,0,.28))",animation:hourglassAnim}}>
-          <defs>
-            <linearGradient id="hgWood" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor={wood[2]}/><stop offset=".35" stopColor={wood[1]}/><stop offset=".7" stopColor={wood[0]}/><stop offset="1" stopColor={wood[2]}/>
-            </linearGradient>
-            <linearGradient id="hgSand" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="#c8871a"/><stop offset=".42" stopColor="#fbd36b"/><stop offset="1" stopColor="#b97812"/>
-            </linearGradient>
-            <linearGradient id="hgGlass" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="rgba(150,190,230,.34)"/><stop offset=".3" stopColor="rgba(255,255,255,.10)"/><stop offset=".75" stopColor="rgba(150,190,230,.08)"/><stop offset="1" stopColor="rgba(120,160,210,.34)"/>
-            </linearGradient>
-            <clipPath id="hgClip"><path d={GLASS}/></clipPath>
-          </defs>
-
-          {/* Montants tournés */}
-          {[28,172].map(x=>(
-            <g key={x} fill="url(#hgWood)">
-              <rect x={x-3.5} y="30" width="7" height="240" rx="3"/>
-              <ellipse cx={x} cy="52" rx="7" ry="9"/><ellipse cx={x} cy="150" rx="6" ry="16"/><ellipse cx={x} cy="248" rx="7" ry="9"/>
-            </g>
-          ))}
-
-          <path d={GLASS} fill="url(#hgGlass)"/>
-
-          {/* Sable */}
-          <g clipPath="url(#hgClip)">
-            {pr>.003&&<path d={`M0,${topY} Q50,${topY-dip*.25} 100,${topY+dip} Q150,${topY-dip*.25} 200,${topY} L200,150 L0,150 Z`} fill="url(#hgSand)"/>}
-            {tp>.003&&<path d={`M0,${botY+mound*.5} L40,${botY+mound*.45} C75,${botY+mound*.35} 88,${botY-mound*.5} 100,${botY-mound*.5} C112,${botY-mound*.5} 125,${botY+mound*.35} 160,${botY+mound*.45} L200,${botY+mound*.5} L200,266 L0,266 Z`} fill="url(#hgSand)"/>}
-            {/* Filet de sable */}
-            {status==="running"&&pr>.005&&(
-              <g>
-                <line x1="100" y1="147" x2="100" y2={Math.max(150,botY-mound*.5)} stroke="#f2bd45" strokeWidth="2.4" strokeLinecap="round" strokeDasharray="5 2" style={{animation:"hgStream .25s linear infinite"}}/>
-                {[-4,3,-2].map((dx,i)=><circle key={i} cx={100+dx} cy={Math.max(152,botY-mound*.5-4)} r="1.3" fill="#fbd36b" style={{animation:`hgGrain .5s ${i*.16}s ease-out infinite`}}/>)}
-              </g>
-            )}
-          </g>
-
-          {/* Verre : contour et reflets */}
-          <path d={GLASS} fill="none" stroke={glassEdge} strokeWidth="2"/>
-          <path d="M60,46 C52,82 74,108 88,126" fill="none" stroke="rgba(255,255,255,.75)" strokeWidth="4" strokeLinecap="round"/>
-          <path d="M88,174 C70,196 56,220 59,248" fill="none" stroke="rgba(255,255,255,.55)" strokeWidth="4" strokeLinecap="round"/>
-          <path d="M142,50 C144,66 140,80 133,92" fill="none" stroke="rgba(255,255,255,.4)" strokeWidth="2.5" strokeLinecap="round"/>
-
-          {/* Socles */}
-          {[0,1].map(i=>(
-            <g key={i} transform={i?"translate(0 300) scale(1 -1)":undefined}>
-              <rect x="14" y="10" width="172" height="17" rx="8" fill="url(#hgWood)"/>
-              <rect x="26" y="26" width="148" height="10" rx="4" fill="url(#hgWood)"/>
-              <rect x="22" y="13" width="156" height="2.5" rx="1.2" fill="rgba(255,255,255,.28)"/>
-            </g>
-          ))}
-        </svg>
-
-        {/* Temps restant */}
-        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,width:"100%",maxWidth:260}}>
-          <div className="mono" style={{fontSize:40,fontWeight:800,letterSpacing:-1,lineHeight:1,color:done?ring:D.txt,animation:done?"timerPulse .85s ease 4":"none",transition:"color .5s"}}>
-            {fmt(rem)}
-          </div>
-          <div style={{width:"100%",height:7,borderRadius:4,background:ring+"26",overflow:"hidden"}}>
-            <div style={{width:`${pr*100}%`,height:"100%",background:ring,borderRadius:4,transition:"width .28s ease,background .6s ease"}}/>
-          </div>
-        </div>
-
-        {/* Boutons */}
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
-          {(status==="idle"||status==="paused"||status==="done")&&(
-            <button onClick={start} disabled={flipping}
-              style={{padding:"12px 32px",borderRadius:12,border:"none",background:ring,color:"#111",fontWeight:800,fontSize:15,cursor:"pointer",minHeight:48,transition:"background .5s",opacity:flipping?.5:1}}>
-              {status==="done"?"🔁 Rejouer":status==="paused"?"▶ Reprendre":"▶ Démarrer"}
-            </button>
-          )}
-          {status==="running"&&(
-            <button onClick={pause}
-              style={{padding:"12px 32px",borderRadius:12,border:"none",background:"rgba(100,116,139,0.22)",color:D.txt,fontWeight:800,fontSize:15,cursor:"pointer",minHeight:48}}>
-              ⏸ Pause
-            </button>
-          )}
-          {status!=="idle"&&(
-            <button onClick={reset} disabled={flipping} aria-label="Réinitialiser"
-              style={{width:48,height:48,borderRadius:12,border:`1px solid ${D.brd}`,background:flipping?D.acc+"22":"transparent",color:flipping?D.acc:D.sub,cursor:flipping?"default":"pointer",fontSize:22,transition:"all .2s"}}>
-              {flipping?"⟳":"↺"}
-            </button>
-          )}
-        </div>
-
-        {done&&(
-          <div className="slide-up" style={{fontSize:16,fontWeight:800,color:ring,animation:"timerPulse 1s ease infinite"}}>
-            ⏰ Temps écoulé !
-          </div>
-        )}
+        <button id="sgt-spin" onClick={spin} disabled={players.length<2} style={{padding:"13px 28px",borderRadius:12,border:"none",background:spinning?"#ef4444":`linear-gradient(135deg,${nc},#ef4444)`,color:"#fff",fontWeight:800,fontSize:14,cursor:players.length<2?"not-allowed":"pointer",opacity:players.length<2?.5:1,minHeight:48}}>{spinning?"⏹ Stop":"🎡 Lancer"}</button>
       </div>
     </div>
   );
@@ -902,13 +680,11 @@ function MiniLeaderboard({ players, lowestWins, targetScore, D, dark, isMobile }
 function PlayerRow({
   player, rank, medal, isLeader, isExAequo, isSel, flashKey,
   dark, D, isPlaying, isMobile,
-  onAdjust, onCommit, onRemove, onSelect, onColorChange, onRename,
-  playerHistory, showGearHint, onGearFirstUse,
+  onAdjust, onRemove, onSelect, onColorChange, onRename,
+  playerHistory, step,
   dragHandlers, rowRef, isDragging,
 }) {
   const ROW_H  = isMobile ? 76 : 82;
-  const GEAR_SZ= isMobile ? 76 : 86;
-  const gOver  = (GEAR_SZ - ROW_H) / 2;
   const col    = player.color.hex;
 
   const [showPalette, setPalette]   = useState(false);
@@ -929,7 +705,7 @@ function PlayerRow({
 
   // ── Swipe ──
   const onTS = (e) => {
-    if(e.target.closest("[data-gear]")||e.target.closest("[data-pal]")||e.target.closest("[data-rm]")||e.target.closest("[data-drag]")||e.target.closest("[data-sedit]")||e.target.closest("[data-nedit]"))return;
+    if(e.target.closest("[data-step]")||e.target.closest("[data-pal]")||e.target.closest("[data-rm]")||e.target.closest("[data-drag]")||e.target.closest("[data-sedit]")||e.target.closest("[data-nedit]"))return;
     const t=e.touches[0];swipeRef.current={startX:t.clientX,startY:t.clientY,triggered:false};swipedRef.current=false;
   };
   const onTM = (e) => {
@@ -958,17 +734,17 @@ function PlayerRow({
 
   const handleClick = (e) => {
     if(swipedRef.current){swipedRef.current=false;return;}
-    if(e.target.closest("[data-gear]")||e.target.closest("[data-rm]")||e.target.closest("[data-pal]")||e.target.closest("[data-drag]")||e.target.closest("[data-sedit]")||e.target.closest("[data-nedit]"))return;
+    if(e.target.closest("[data-step]")||e.target.closest("[data-rm]")||e.target.closest("[data-pal]")||e.target.closest("[data-drag]")||e.target.closest("[data-sedit]")||e.target.closest("[data-nedit]"))return;
     onSelect();
   };
 
   return(
-    <div style={{position:"relative",paddingTop:gOver,paddingBottom:gOver,zIndex:isSel?10:1}} ref={rowRef}>
+    <div style={{position:"relative",zIndex:isSel?10:1}} ref={rowRef}>
       <div className="p-row" onClick={handleClick} onTouchStart={onTS} onTouchMove={onTM}
         role="button" aria-pressed={isSel} aria-label={`${player.name} — ${player.score} pts`}
         style={{position:"relative",height:ROW_H,borderRadius:14,background:col,cursor:"pointer",overflow:"visible",
           boxShadow:isSel?`inset 0 0 0 9999px rgba(0,0,0,0.08),0 0 0 2.5px ${col},0 0 0 4.5px rgba(255,255,255,0.18)`:isDragging?`inset 0 0 0 9999px rgba(0,0,0,0.06),0 12px 32px ${col}88`:`inset 0 0 0 9999px rgba(0,0,0,0.52),0 2px 7px ${col}25`,
-          opacity:isDragging?.7:1,display:"flex",alignItems:"center",gap:isMobile?6:8,padding:`0 8px 0 ${isMobile?10:13}px`,
+          opacity:isDragging?.7:1,display:"flex",alignItems:"center",gap:isMobile?5:8,padding:`0 8px 0 ${isMobile?7:13}px`,
           transition:"opacity .12s,box-shadow .15s"}}>
 
         {/* Swipe FX */}
@@ -981,7 +757,7 @@ function PlayerRow({
           style={{color:"rgba(255,255,255,0.38)",fontSize:20,flexShrink:0,minWidth:20}}>≡</div>
 
         {/* Rank */}
-        <div style={{minWidth:24,height:24,borderRadius:7,background:"rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:rank<3?13:10,fontWeight:800,color:"#fff",flexShrink:0}}>{medal}</div>
+        {!isMobile&&<div style={{minWidth:24,height:24,borderRadius:7,background:"rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:rank<3?13:10,fontWeight:800,color:"#fff",flexShrink:0}}>{medal}</div>}
 
         {/* Avatar */}
         <div style={{position:"relative",flexShrink:0}} data-pal>
@@ -996,7 +772,7 @@ function PlayerRow({
         </div>
 
         {/* Name + history */}
-        <div style={{minWidth:0,flex:"0 1 auto",maxWidth:isMobile?80:120}} data-nedit>
+        <div style={{minWidth:0,flex:"0 1 auto",width:isMobile?68:120}} data-nedit>
           {editName ? (
             <input ref={nameRef} className="name-edit-input" value={nameVal}
               onChange={e=>setNameVal(e.target.value)}
@@ -1015,6 +791,9 @@ function PlayerRow({
           <PlayerMiniHistory entries={playerHistory} color={col} isMobile={isMobile}/>
         </div>
 
+        <button data-step onClick={e=>{e.stopPropagation();onAdjust(-step);}} aria-label={`Retirer ${step} à ${player.name}`}
+          style={{width:isMobile?42:48,height:isMobile?48:52,borderRadius:12,border:"1px solid rgba(255,255,255,0.28)",background:"rgba(0,0,0,0.28)",color:"#fff",fontSize:24,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>−</button>
+
         {/* Score — tap=edit, long press=quick */}
         <div data-sedit style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",height:"100%",cursor:"text",minWidth:0,position:"relative"}}
           onPointerDown={onScorePD} onPointerUp={onScorePU}
@@ -1027,7 +806,7 @@ function PlayerRow({
               style={{fontSize:isMobile?28:34,width:isMobile?90:110}}/>
           ) : (
             <div key={flashKey} className="mono score-pop"
-              style={{fontSize:isMobile?34:40,fontWeight:700,color:"#fff",letterSpacing:-1.5,lineHeight:1,
+              style={{fontSize:isMobile?28:40,fontWeight:700,color:"#fff",letterSpacing:-1.5,lineHeight:1,
                 textDecoration:"underline dotted rgba(255,255,255,0.22)",textUnderlineOffset:4,userSelect:"none"}}>
               {player.score>0?"+":""}{player.score}
             </div>
@@ -1035,14 +814,8 @@ function PlayerRow({
           {showQuick&&<QuickScorePopup onApply={onAdjust} onEdit={()=>{setEditVal(String(player.score));setEditScore(true);setTimeout(()=>{editRef.current?.focus();editRef.current?.select();},30);}} onClose={()=>setShowQuick(false)} color={col} isMobile={isMobile}/>}
         </div>
 
-        {/* Gear */}
-        <div data-gear style={{position:"absolute",right:isPlaying?(isMobile?6:10):(isMobile?28:34),top:"50%",transform:"translateY(-50%)",zIndex:5}}>
-          <div className={showGearHint?"gear-hint-anim":""} style={{position:"relative"}}>
-            <Gear onCommit={onCommit} size={GEAR_SZ} onFirstUse={onGearFirstUse} playerScore={player.score} playerColor={col}/>
-            {showGearHint&&<div style={{position:"absolute",top:-24,left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,0.85)",color:"#fff",fontSize:9,fontWeight:700,padding:"3px 7px",borderRadius:5,whiteSpace:"nowrap",pointerEvents:"none",border:"1px solid rgba(255,255,255,0.15)"}}>↺ tourner !</div>}
-          </div>
-        </div>
-        <div style={{width:GEAR_SZ+10,flexShrink:0}}/>
+        <button data-step onClick={e=>{e.stopPropagation();onAdjust(step);}} aria-label={`Ajouter ${step} à ${player.name}`}
+          style={{width:isMobile?42:48,height:isMobile?48:52,borderRadius:12,border:"1px solid rgba(255,255,255,0.28)",background:"rgba(255,255,255,0.2)",color:"#fff",fontSize:24,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>+</button>
 
         {/* Remove */}
         {!isPlaying&&<button data-rm onClick={e=>{e.stopPropagation();onRemove();}} className="rm-btn"
@@ -1228,7 +1001,10 @@ export default function ScoreTracker() {
   const [showStats,  setShowSt]   = useState(false);
   const [showOnline, setShowOnl]  = useState(false);
   const [showPicker, setShowPk]   = useState(false);
-  const [gearDone,   setGearDone] = useState(()=>{try{return localStorage.getItem("sgt7gear")==="1";}catch{}return false;});
+  const [step,     setStep]    = useState(()=>{try{const v=Number(localStorage.getItem("sgt7step"));return [1,3,5].includes(v)?v:1;}catch{return 1;}});
+  const [firstMode,setFirstMode]= useState(()=>{try{return localStorage.getItem("sgt7first")==="cards"?"cards":"wheel";}catch{return "wheel";}});
+  const [deal,     setDeal]    = useState(null);
+  const [followCards,setFollow]= useState(()=>{try{return localStorage.getItem("sgt7order")==="1";}catch{return false;}});
 
   // ── Game ID & save ──
   const [gameId, setGameId] = useState(()=>uid());
@@ -1341,24 +1117,37 @@ export default function ScoreTracker() {
   useEffect(()=>{if(players.length>0){const u=new Set(players.map(p=>p.color.hex));setAddColor(PALETTE.find(c=>!u.has(c.hex))||PALETTE[0]);}},[players.length]); // eslint-disable-line
 
   useEffect(()=>{ try{localStorage.setItem("sgt7view",view);}catch{} },[view]);
+  useEffect(()=>{ try{localStorage.setItem("sgt7step",String(step));localStorage.setItem("sgt7first",firstMode);localStorage.setItem("sgt7order",followCards?"1":"0");}catch{} },[step,firstMode,followCards]);
 
   // ── Clear session on deselect ──
   useEffect(()=>{setSession([]);},[selected]);
 
   // ── Auto-victory ──
   useEffect(()=>{
-    if(targetScore===null||gameState!=="playing"||!players.length)return;
-    const sorted=[...players].sort((a,b)=>lowestWins?a.score-b.score:b.score-a.score);
-    const w=sorted[0];
-    const won=lowestWins?w.score<=targetScore:w.score>=targetScore;
-    if(won){setWinner(w);setGameSt("ended");playVictorySound();flash(`🏆 ${w.name} remporte la partie !`,w.color.hex);}
+    // Quand le plus petit score gagne (Skyjo, Uno), la manche doit d'abord être saisie : voir plus bas
+    if(targetScore===null||lowestWins||gameState!=="playing"||!players.length)return;
+    const w=[...players].sort((a,b)=>b.score-a.score)[0];
+    if(w.score>=targetScore){setWinner(w);setGameSt("ended");playVictorySound();flash(`🏆 ${w.name} remporte la partie !`,w.color.hex);}
   },[players,targetScore,gameState,lowestWins]); // eslint-disable-line
 
-  // ── Auto-round limit ──
+  // ── Seuil atteint (Skyjo, Uno) : la partie se termine à la fin de la manche ──
+  const limitRound=useRef(null);   // manche pendant laquelle le seuil a été atteint
+  const limitHit=lowestWins&&targetScore!==null&&gameState==="playing"&&players.some(p=>p.score>=targetScore);
   useEffect(()=>{
-    if(maxRounds===null||gameState!=="playing"||round<maxRounds)return;
+    if(!limitHit){limitRound.current=null;return;}
+    if(limitRound.current===null){limitRound.current=round;return;}
+    if(round>limitRound.current){
+      const w=[...players].sort((a,b)=>a.score-b.score)[0];
+      setRound(limitRound.current);setWinner(w);setGameSt("ended");playVictorySound();
+      flash(`🏆 ${w.name} gagne avec le plus petit score !`,w.color.hex);
+    }
+  },[limitHit,round]); // eslint-disable-line
+
+  // ── Auto-round limit : après la dernière manche, pas à son début ──
+  useEffect(()=>{
+    if(maxRounds===null||gameState!=="playing"||round<=maxRounds||!players.length)return;
     const sorted=[...players].sort((a,b)=>lowestWins?a.score-b.score:b.score-a.score);
-    setWinner(sorted[0]);setGameSt("ended");playVictorySound();
+    setRound(maxRounds);setWinner(sorted[0]);setGameSt("ended");playVictorySound();
     flash(`🏆 Fin des ${maxRounds} manches — ${sorted[0].name} gagne !`,sorted[0].color.hex);
   },[round,maxRounds,gameState,players,lowestWins]); // eslint-disable-line
 
@@ -1383,23 +1172,6 @@ export default function ScoreTracker() {
     if(isOnline&&supabase&&onlineCode){
       const evId=uid();processedEventsRef.current.add(evId);
       supabase.from("sgt_events").insert({id:evId,game_id:onlineCode,player_id:id,player_name:p.name,delta,score:ns,round:atRound,time}).then(()=>{}).catch(()=>{});
-    }
-  },[saveUndo,round,isOnline,onlineCode]);
-
-  // ── Gear commit (1 entry for whole gesture) ──
-  const gearCommit=useCallback((id,delta)=>{
-    if(!delta)return;
-    if("vibrate"in navigator)navigator.vibrate(35);
-    const p=playersRef.current.find(x=>x.id===id);if(!p)return;
-    const ns=p.score+delta,time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
-    saveUndo(playersRef.current);
-    setPlayers(prev=>prev.map(x=>x.id===id?{...x,score:x.score+delta}:x));
-    const entry={id,name:p.name,delta,score:ns,round,time};
-    setHist(h=>{ const nh=[...h,entry]; return nh.length>MAX_HIST?nh.slice(-MAX_HIST):nh; });
-    setFlashCt(f=>({...f,[id]:(f[id]||0)+1}));
-    if(isOnline&&supabase&&onlineCode){
-      const evId=uid();processedEventsRef.current.add(evId);
-      supabase.from("sgt_events").insert({id:evId,game_id:onlineCode,player_id:id,player_name:p.name,delta,score:ns,round,time}).then(()=>{}).catch(()=>{});
     }
   },[saveUndo,round,isOnline,onlineCode]);
 
@@ -1450,7 +1222,7 @@ export default function ScoreTracker() {
 
   const onQ=(v)=>{setAddQ(v);if(!v.trim()){setSugs([]);setSugOpen(false);return;}const q=v.toLowerCase();const r=savedNames.filter(n=>n.toLowerCase().includes(q)&&!playersRef.current.find(p=>p.name.toLowerCase()===n.toLowerCase())).slice(0,8);setSugs(r);setSugOpen(r.length>0);};
 
-  const doReset=useCallback(()=>{saveUndo(playersRef.current);setPlayers(p=>p.map(x=>({...x,score:0})));setHist([]);setRound(1);setStarter(null);setLastSpin(null);setSR(false);setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);flash("Scores remis à zéro 🔄");},[saveUndo,flash]);
+  const doReset=useCallback(()=>{saveUndo(playersRef.current);setPlayers(p=>p.map(x=>({...x,score:0})));setHist([]);setRound(1);setStarter(null);setLastSpin(null);setDeal(null);setSR(false);setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);flash("Scores remis à zéro 🔄");},[saveUndo,flash]);
 
   // ── Groupes de joueurs ──
   const addGroup=(g)=>{
@@ -1498,9 +1270,20 @@ export default function ScoreTracker() {
   // ── Premier joueur : tourne à chaque manche dans l'ordre des cartes ──
   const starterAt=(r)=>{
     if(!starter)return null;
-    const order=displayOrder.filter(id=>players.some(p=>p.id===id));
+    const table=displayOrder.filter(id=>players.some(p=>p.id===id));
+    // Ordre tiré aux cartes s'il a été demandé (les joueurs arrivés ensuite passent à la fin)
+    const drawn=starter.order?.filter(id=>table.includes(id));
+    const order=drawn?[...drawn,...table.filter(id=>!drawn.includes(id))]:table;
     const i=order.indexOf(starter.id),n=order.length;
     return i<0?null:order[(((i+r-starter.round)%n)+n)%n];
+  };
+
+  // ── Ordre de jeu donné par les numéros des cartes ──
+  const cardOrder=(d)=>d?Object.keys(d.nums).sort((a,b)=>d.nums[a]-d.nums[b]):undefined;
+  const toggleFollow=(on)=>{
+    setFollow(on);
+    // Un tirage déjà fait est mis à jour tout de suite
+    if(starter&&deal&&deal.nums[starter.id]===1)setStarter({id:starter.id,round:starter.round,...(on?{order:cardOrder(deal)}:{})});
   };
 
   // ── Preset selection ──
@@ -1516,7 +1299,7 @@ export default function ScoreTracker() {
     if(players.length<2){flash("Il faut au moins 2 joueurs !");return;}
     if(!gamePreset){setShowPr(true);return;}
     setGameSt("playing");setAddBar(false);setGST(Date.now());setElapsed(0);
-    if(!starterAt(round)){setSelected(null);setTab("wheel");flash("Tournez la roue pour désigner le premier joueur 🎡","#16a34a");return;}
+    if(!starterAt(round)){setSelected(null);setTab("wheel");flash("Désignez le premier joueur : roue ou cartes","#16a34a");return;}
     flash("La partie a commencé ! 🎮","#16a34a");
   };
   const endGame=useCallback(()=>{
@@ -1530,7 +1313,7 @@ export default function ScoreTracker() {
     saveUndo(playersRef.current);
     // Garde les joueurs mais remet les scores à 0
     setPlayers(p=>p.map(x=>({...x,score:0})));
-    setGName("Nouvelle partie 🎲");setRound(1);setStarter(null);setLastSpin(null);setLastRoll(null);setHist([]);setGameSt("idle");
+    setGName("Nouvelle partie 🎲");setRound(1);setStarter(null);setLastSpin(null);setDeal(null);setLastRoll(null);setHist([]);setGameSt("idle");
     setWinner(null);setTarget(null);setLowest(false);setMaxRnd(null);setPreset(null);
     setSelected(null);setSession([]);
     setGST(null);setElapsed(0);setGameId(uid());
@@ -1567,7 +1350,6 @@ export default function ScoreTracker() {
   };
 
   const handleWheel=(w)=>{setLastSpin(w.id);if(!starterAt(round))setStarter({id:w.id,round});const time=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});setWHist(h=>[{id:uid(),name:w.name,color:w.color.hex,time,date:new Date().toLocaleDateString("fr-FR")},...h].slice(0,10));};
-  const dismissGear=useCallback(()=>{setGearDone(true);try{localStorage.setItem("sgt7gear","1");}catch{}},[]);
 
   // ── Supabase online ──
   const subscribeToGame=useCallback((gameId)=>{
@@ -1675,7 +1457,7 @@ export default function ScoreTracker() {
   const TABS=[
     {key:"scores",label:"🏆 Scores"},
     {key:"dice",  label:"🎲 Dés"},
-    {key:"wheel", label:"🎡 Roue"},
+    {key:"wheel", label:"👆 1er joueur"},
     {key:"timer", label:"⏳ Sablier"},
   ];
 
@@ -1781,6 +1563,18 @@ export default function ScoreTracker() {
         </div>
       )}
 
+      {/* Fin de partie à confirmer */}
+      {isPlaying&&(limitHit||(maxRounds!==null&&round===maxRounds))&&(
+        <div role="status" style={{maxWidth:isWide?1100:900,margin:"10px auto 0",padding:"0 8px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,border:`1px solid ${D.acc}`,background:D.acc+"22"}}>
+            <span style={{flex:1,fontSize:12,fontWeight:700}}>
+              {limitHit?`${targetScore} points atteints : saisissez toute la manche, puis terminez.`:`Dernière manche (${maxRounds}) : saisissez les points, puis terminez.`}
+            </span>
+            <button onClick={endGame} style={{...mainBtn,background:"#16a34a",color:"#fff"}}>Terminer</button>
+          </div>
+        </div>
+      )}
+
       <main style={{maxWidth:isWide?1100:900,margin:"0 auto",padding:`12px ${isMobile?8:12}px ${bottomPad}px`,overflow:"visible"}}>
 
         {/* ═══ SCORES ═══ */}
@@ -1805,6 +1599,15 @@ export default function ScoreTracker() {
               const s=players.length>1&&players.find(p=>p.id===starterAt(round));
               return s?<div style={{marginBottom:10,fontSize:13,fontWeight:700}}>▶ <span style={{color:s.color.hex}}>{s.name}</span> commence la manche {round}</div>:null;
             })()}
+            {view==="cards"&&players.length>0&&(
+              <div role="group" aria-label="Pas des boutons − et +" style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+                <span style={{fontSize:13,fontWeight:700,marginRight:2}}>Pas</span>
+                {[1,3,5].map(v=>(
+                  <button key={v} aria-pressed={step===v} onClick={()=>setStep(v)}
+                    style={{flex:1,maxWidth:90,height:36,borderRadius:9,border:`1px solid ${step===v?D.acc:D.brd}`,background:step===v?D.acc+"33":D.card,color:D.txt,fontWeight:800,fontSize:14,cursor:"pointer"}}>{v}</button>
+                ))}
+              </div>
+            )}
             {view==="sheet"&&players.length>0&&(
               <ScoreSheet D={D} dark={dark} players={curOrder.map(id=>players.find(p=>p.id===id)).filter(Boolean)}
                 history={history} round={round} lowestWins={lowestWins} starterAt={starterAt}
@@ -1823,7 +1626,7 @@ export default function ScoreTracker() {
                 <div style={{fontSize:isMobile?16:19,fontWeight:800,color:D.txt,marginBottom:8}}>Prêt pour la partie ?</div>
                 <div style={{fontSize:13,lineHeight:2,color:D.sub}}>
                   Ajoutez des joueurs ci-dessous{groups.length?" ou choisissez un groupe":""}.<br/>
-                  <strong style={{color:D.txt}}>Glissez</strong> une carte : ±1 · <strong style={{color:D.txt}}>Molette</strong> : grands écarts<br/>
+                  <strong style={{color:D.txt}}>Glissez</strong> une carte : ±1 · <strong style={{color:D.txt}}>− et +</strong> : par 1, 3 ou 5<br/>
                   <strong style={{color:D.txt}}>Touchez le score</strong> pour le saisir (appui long : ± rapides)<br/>
                   <strong style={{color:D.txt}}>Double-touche sur le nom</strong> : renommer · <strong style={{color:D.txt}}>≡</strong> : réordonner
                 </div>
@@ -1845,14 +1648,12 @@ export default function ScoreTracker() {
                     flashKey={flashCt[player.id]||0}
                     dark={dark} D={D} isPlaying={isPlaying} isMobile={isMobile}
                     onAdjust={pts=>adjust(player.id,pts)}
-                    onCommit={delta=>gearCommit(player.id,delta)}
+                    step={step}
                     onRemove={()=>setCR(player.id)}
                     onSelect={()=>setSelected(selected===player.id?null:player.id)}
                     onColorChange={c=>changeColor(player.id,c)}
                     onRename={n=>renamePlayer(player.id,n)}
                     playerHistory={histByP[player.id]||[]}
-                    showGearHint={!gearDone&&rank===0&&players.length>0}
-                    onGearFirstUse={dismissGear}
                     dragHandlers={dragHandlers}
                     isDragging={dragging?.id===player.id}
                     rowRef={el=>{rowRefs.current[player.id]=el;}}
@@ -1876,23 +1677,33 @@ export default function ScoreTracker() {
         {/* ═══ ROUE ═══ */}
         {tab==="wheel"&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div role="group" aria-label="Mode de tirage" style={{display:"flex",gap:4,padding:4,borderRadius:12,background:D.card,border:`1px solid ${D.brd}`}}>
+              {[["wheel","🎡 Roue"],["cards","🎴 Cartes"]].map(([k,l])=>(
+                <button key={k} aria-pressed={firstMode===k} onClick={()=>setFirstMode(k)}
+                  style={{flex:1,height:38,borderRadius:9,border:"none",cursor:"pointer",fontWeight:800,fontSize:13,background:firstMode===k?D.acc+"33":"transparent",color:firstMode===k?D.txt:D.sub}}>{l}</button>
+              ))}
+            </div>
             <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?16:22,display:"flex",flexDirection:"column",alignItems:"center"}}>
               {players.length>1&&(()=>{
                 const s=players.find(p=>p.id===starterAt(round));
                 return(
                   <div style={{textAlign:"center",marginBottom:12,fontSize:14,fontWeight:700}}>
                     {s?<><div>Manche {round} : <span style={{color:s.color.hex}}>{s.name}</span> commence</div>
-                        <div style={{fontSize:11,color:D.sub,fontWeight:600,marginTop:3}}>Puis chacun son tour à chaque manche.</div>
+                        <div style={{fontSize:11,color:D.sub,fontWeight:600,marginTop:3}}>{starter.order?"Puis dans l’ordre des numéros, à chaque manche.":"Puis chacun son tour à chaque manche."}</div>
                         <button onClick={()=>setStarter(null)} style={{marginTop:6,background:"none",border:"none",color:D.sub,textDecoration:"underline",cursor:"pointer",fontSize:11,minHeight:28}}>Retirer le premier joueur</button></>
-                      :<div>Tournez la roue pour désigner le premier joueur</div>}
+                      :<div>{firstMode==="cards"?"Retournez les cartes : le n°1 commence":"Lancez la roue pour désigner le premier joueur"}</div>}
                   </div>);
               })()}
-              <SpinnerWheel players={players} onResult={handleWheel} acc={D.acc} isMobile={isMobile}
+              {firstMode==="cards"?
+                <FirstPlayerCards D={D} players={curOrder.map(id=>players.find(p=>p.id===id)).filter(Boolean)} deal={deal} setDeal={setDeal}
+                  follow={followCards} onFollow={toggleFollow}
+                  onFirst={(p,d)=>{setStarter({id:p.id,round,...(followCards?{order:cardOrder(d)}:{})});flash(`👑 ${p.name} commence !`,p.color.hex);}}/>
+              :<SpinnerWheel players={players} onResult={handleWheel} acc={D.acc} isMobile={isMobile}
                 renderAction={w=>w.id!==lastSpin?null:starterAt(round)===w.id
                   ?<button onClick={()=>setTab("scores")} style={{...mainBtn,height:44,background:"#16a34a",color:"#fff"}}>Voir les scores →</button>
-                  :<button onClick={()=>setStarter({id:w.id,round})} style={{...mainBtn,height:44,background:D.card,color:D.txt,border:`1px solid ${D.brd}`}}>Faire commencer {w.name}</button>}/>
+                  :<button onClick={()=>setStarter({id:w.id,round})} style={{...mainBtn,height:44,background:D.card,color:D.txt,border:`1px solid ${D.brd}`}}>Faire commencer {w.name}</button>}/>}
             </div>
-            {wheelHist.length>0&&(
+            {firstMode==="wheel"&&wheelHist.length>0&&(
               <div style={{background:D.card,border:`1px solid ${D.brd}`,borderRadius:16,padding:isMobile?12:16}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:9}}>
                   <div style={{fontSize:11,fontWeight:700,color:D.sub,textTransform:"uppercase",letterSpacing:1}}>🏁 Historique roue</div>
@@ -1910,7 +1721,7 @@ export default function ScoreTracker() {
         )}
 
         {/* ═══ SABLIER ═══ */}
-        {tab==="timer"&&<SandTimer D={D} dark={dark}/>}
+        {tab==="timer"&&<SandTimer D={D} dark={dark} onAlarm={playAlarmSound}/>}
       </main>
 
       {/* ════ BARRE AJOUT ════ */}
@@ -1919,7 +1730,7 @@ export default function ScoreTracker() {
           <div style={{maxWidth:isWide?1100:900,margin:"0 auto"}}>
             {isPlaying&&!addBarOpen?(
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:isMobile?"9px 14px":"8px 16px",gap:8}}>
-                <span style={{fontSize:11,fontWeight:600,color:D.sub,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isMobile?"👈👉 Swipe · ↺ Molette · Tap score · Long press = ±rapide":"👈👉 Swipe ±1 · ↺ Molette (bubble live) · Tap score = saisie · Long press = rapide"}</span>
+                <span style={{fontSize:11,fontWeight:600,color:D.sub,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isMobile?"👈👉 Swipe · − + · Tap score · Long press = ±rapide":"👈👉 Swipe ±1 · − + (bubble live) · Tap score = saisie · Long press = rapide"}</span>
                 <button onClick={()=>setAddBar(true)} style={{padding:"7px 13px",borderRadius:9,border:`1px solid ${D.brd}`,background:D.acc+"22",color:D.acc,cursor:"pointer",fontSize:12,fontWeight:700,flexShrink:0,minHeight:38}}>➕ Joueur</button>
               </div>
             ):(

@@ -550,7 +550,7 @@ export default function PhotosManager() {
   // Modale suppression / toast
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // ── Option « Vendu → créer la vente » (engrenage de la page) ──
+  // ── Option « En vente → En attente reception : créer la vente » (engrenage de la page) ──
   const [askSalePrice, setAskSalePrice] = useState(false);
   const [showOptions, setShowOptions]   = useState(false);
   const [salePrices, setSalePrices]     = useState({}); // { nomDuJeu: 'prix saisi' }
@@ -578,11 +578,7 @@ export default function PhotosManager() {
     if (error) console.error('Option non synchronisée entre appareils :', error.message);
   };
 
-  // Jeux concernés par un dépôt dans « Vendu »
-  const saleGames = (pd) =>
-    pd?.vendu && askSalePrice
-      ? [...new Set(pd.photos.map(p => baseGameName(p.game_tag)).filter(Boolean))]
-      : [];
+  const [pendingSale, setPendingSale] = useState(null); // { photos, games, move }
   const parseSalePrice = (v) => {
     const s = String(v || '').trim().replace(',', '.');
     if (!s) return null;                       // champ vide : pas de vente
@@ -936,6 +932,37 @@ export default function PhotosManager() {
     else setDragOverColumn(colId);
   };
 
+  // Déplacement vers « En attente reception » : demander d'abord le prix si l'option est active
+  const withSale = async (ptm, toColumn, move, tagLabel = null) => {
+    if (askSalePrice && toColumn === 'en_attente_reception') {
+      const sold = ptm.filter(p => p.status === 'en_vente');
+      const games = [...new Set(sold.map(p => baseGameName(tagLabel || p.game_tag)).filter(Boolean))];
+      if (games.length) { setSalePrices({}); setPendingSale({ photos: sold, games, move }); return; }
+    }
+    await move();
+  };
+
+  const confirmSale = async () => {
+    if (!pendingSale || savingSale) return;
+    const sales = pendingSale.games
+      .map(name => ({ name, price: parseSalePrice(salePrices[name]) }))
+      .filter(s => s.price !== null);               // prix vide : pas de vente
+    if (sales.some(s => Number.isNaN(s.price))) { showToast('Prix de vente invalide', 'error'); return; }
+    if (sales.length) {
+      setSavingSale(true);
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('transactions').insert(
+        sales.map(s => ({ user_id: username, type: 'sell', game_name: s.name, price: s.price, created_at: now }))
+      );
+      setSavingSale(false);
+      if (error) { showToast('Vente non enregistrée, jeu non déplacé', 'error'); return; }
+    }
+    const { move } = pendingSale;
+    setPendingSale(null);
+    await move();
+    if (sales.length) showToast(sales.length > 1 ? `${sales.length} ventes enregistrées` : 'Vente enregistrée', 'success');
+  };
+
   const onColumnDrop = async (e, toColumn) => {
     e.preventDefault();
 
@@ -944,19 +971,21 @@ export default function PhotosManager() {
       const { tagLabel, fromColId, folderPhotos } = draggingFolder;
       setDraggingFolder(null); setDragOverFolderCol(null);
       if (fromColId === toColumn) return;
-      if (toColumn === 'vendu') { setSalePrices({}); setPendingDelete({ photos: folderPhotos, vendu: true }); return; }
-      await movePhotos(folderPhotos, toColumn, null);
-      // S'assurer que le dossier reste replié dans la colonne de destination
-      // (collapsedFolders contient les dossiers OUVERTS — on supprime pour garder replié)
-      setCollapsedFolders(prev => {
-        const s = new Set(prev[toColumn] || []);
-        s.delete(tagLabel);
-        return { ...prev, [toColumn]: s };
+      if (toColumn === 'vendu') { setPendingDelete({ photos: folderPhotos }); return; }
+      await withSale(folderPhotos, toColumn, async () => {
+        await movePhotos(folderPhotos, toColumn, null);
+        // S'assurer que le dossier reste replié dans la colonne de destination
+        // (collapsedFolders contient les dossiers OUVERTS — on supprime pour garder replié)
+        setCollapsedFolders(prev => {
+          const s = new Set(prev[toColumn] || []);
+          s.delete(tagLabel);
+          return { ...prev, [toColumn]: s };
+        });
+        const destCol  = COLUMNS.find(c => c.id === toColumn);
+        const destLabel = destCol ? destCol.label : toColumn;
+        const toastColor = destCol ? destCol.toastBg : null;
+        showToast(`"${tagLabel === '__ungrouped__' ? 'Sans tag' : baseGameName(tagLabel)}" déplacé vers "${destLabel}"`, 'success', toastColor);
       });
-      const destCol  = COLUMNS.find(c => c.id === toColumn);
-      const destLabel = destCol ? destCol.label : toColumn;
-      const toastColor = destCol ? destCol.toastBg : null;
-      showToast(`"${tagLabel === '__ungrouped__' ? 'Sans tag' : baseGameName(tagLabel)}" déplacé vers "${destLabel}"`, 'success', toastColor);
       return;
     }
 
@@ -965,8 +994,8 @@ export default function PhotosManager() {
     const { photos: ptm } = draggingPhoto;
     const capturedBeforeId = dragOverPhotoId;
     setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
-    if (toColumn === 'vendu') { setSalePrices({}); setPendingDelete({ photos: ptm, vendu: true }); return; }
-    await movePhotos(ptm, toColumn, capturedBeforeId);
+    if (toColumn === 'vendu') { setPendingDelete({ photos: ptm }); return; }
+    await withSale(ptm, toColumn, () => movePhotos(ptm, toColumn, capturedBeforeId));
   };
 
   const movePhotos = async (ptm, toColumn, beforePhotoId = null) => {
@@ -1016,22 +1045,6 @@ export default function PhotosManager() {
   const confirmDelete = async () => {
     if (!pendingDelete) return;
     const { photos: toDelete } = pendingDelete;
-
-    // Ventes à enregistrer AVANT la suppression : en cas d'échec, les photos restent
-    const sales = saleGames(pendingDelete)
-      .map(name => ({ name, price: parseSalePrice(salePrices[name]) }))
-      .filter(s => s.price !== null);
-    if (sales.some(s => Number.isNaN(s.price))) { showToast('Prix de vente invalide', 'error'); return; }
-    if (sales.length) {
-      if (savingSale) return;
-      setSavingSale(true);
-      const now = new Date().toISOString();
-      const { error } = await supabase.from('transactions').insert(
-        sales.map(s => ({ user_id: username, type: 'sell', game_name: s.name, price: s.price, created_at: now }))
-      );
-      setSavingSale(false);
-      if (error) { showToast('Vente non enregistrée, photos conservées', 'error'); return; }
-    }
     setPendingDelete(null);
     const ids = toDelete.map(p => p.id);
     setPhotos(prev => {
@@ -1051,8 +1064,7 @@ export default function PhotosManager() {
       ));
       await supabase.from('sale_photos').delete().in('id', ids);
       showToast(
-        (sales.length ? `${sales.length > 1 ? `${sales.length} ventes enregistrées` : 'Vente enregistrée'} · ` : '') +
-        (ids.length > 1 ? `${ids.length} photos supprimees` : 'Photo supprimee'),
+        ids.length > 1 ? `${ids.length} photos supprimees` : 'Photo supprimee',
         'success'
       );
     } catch { showToast('Erreur suppression', 'error'); loadPhotos(); }
@@ -1440,8 +1452,10 @@ export default function PhotosManager() {
     const sel = COLUMNS.flatMap(col => (photos[col.id] || []).filter(p => selectedPhotos[col.id]?.has(p.id)));
     setShowTagDropdown(false); setTagSearch('');
     if (!sel.length) return;
-    await applyTagToPhotos(sel, tagLabel, colId);
-    showToast(`${sel.length} photo${sel.length > 1 ? 's' : ''} ajoutée${sel.length > 1 ? 's' : ''} à « ${baseGameName(tagLabel)} »`, 'success');
+    await withSale(sel, colId, async () => {
+      await applyTagToPhotos(sel, tagLabel, colId);
+      showToast(`${sel.length} photo${sel.length > 1 ? 's' : ''} ajoutée${sel.length > 1 ? 's' : ''} à « ${baseGameName(tagLabel)} »`, 'success');
+    }, tagLabel);
   };
 
   // Glisser des photos (ou des fichiers du bureau) sur un dossier
@@ -1466,8 +1480,10 @@ export default function PhotosManager() {
       setDraggingPhoto(null); setDragOverColumn(null); setDragOverPhotoId(null);
       const toMove = ptm.filter(p => !(p.game_tag === tagLabel && p.status === colId));
       if (!toMove.length) return;
-      await applyTagToPhotos(toMove, tagLabel, colId);
-      showToast(`${toMove.length} photo${toMove.length > 1 ? 's' : ''} ajoutée${toMove.length > 1 ? 's' : ''} à « ${baseGameName(tagLabel)} »`, 'success');
+      await withSale(toMove, colId, async () => {
+        await applyTagToPhotos(toMove, tagLabel, colId);
+        showToast(`${toMove.length} photo${toMove.length > 1 ? 's' : ''} ajoutée${toMove.length > 1 ? 's' : ''} à « ${baseGameName(tagLabel)} »`, 'success');
+      }, tagLabel);
       return;
     }
     await uploadFilesDirect(files, { status: colId, tag: tagLabel, attenteSince: folderAttenteSince(colId, tagLabel) });
@@ -1607,7 +1623,7 @@ export default function PhotosManager() {
                       <span className="flex-1">
                         <span className="block text-sm font-semibold">Enregistrer la vente</span>
                         <span className={`block text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          En déposant un jeu dans « Vendu », demander le prix et créer la vente.
+                          En passant un jeu de « En vente » à « En attente reception », demander le prix et créer la vente.
                         </span>
                       </span>
                       <span className={`mt-0.5 flex-shrink-0 w-10 h-6 rounded-full p-0.5 transition-colors ${askSalePrice ? 'bg-blue-500' : darkMode ? 'bg-gray-600' : 'bg-gray-300'}`}>
@@ -2666,31 +2682,50 @@ export default function PhotosManager() {
                 )}
               </div>
             )}
-            {saleGames(pendingDelete).length > 0 && (
-              <div className="space-y-2 max-h-52 overflow-y-auto">
-                {saleGames(pendingDelete).map((name, i) => (
-                  <label key={name} className="flex items-center gap-2">
-                    <span className="flex-1 min-w-0 truncate text-sm font-semibold">{name}</span>
-                    <input
-                      type="text" inputMode="decimal" autoFocus={i === 0}
-                      value={salePrices[name] || ''}
-                      onChange={e => setSalePrices(prev => ({ ...prev, [name]: e.target.value }))}
-                      onKeyDown={e => { if (e.key === 'Enter') confirmDelete(); }}
-                      placeholder="Prix"
-                      className={`w-24 px-3 py-2 text-sm rounded-lg border outline-none ${inputCls}`}
-                    />
-                    <span className={`text-sm ${subtext}`}>€</span>
-                  </label>
-                ))}
-                <p className={`text-xs ${subtext}`}>Prix vide : les photos sont supprimées sans créer de vente.</p>
-              </div>
-            )}
             <div className="flex gap-3">
               <button onClick={() => setPendingDelete(null)} className={`flex-1 py-2.5 rounded-xl font-medium text-sm transition-colors ${btnGhost}`}>
                 Annuler
               </button>
-              <button onClick={confirmDelete} disabled={savingSale} className="flex-1 py-2.5 rounded-xl font-medium text-sm bg-red-500 hover:bg-red-600 text-white transition-colors disabled:opacity-50">
-                {saleGames(pendingDelete).some(n => String(salePrices[n] || '').trim()) ? 'Vendre et supprimer' : 'Supprimer'}
+              <button onClick={confirmDelete} className="flex-1 py-2.5 rounded-xl font-medium text-sm bg-red-500 hover:bg-red-600 text-white transition-colors">
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modale vente ── */}
+      {pendingSale && (
+        <div role="dialog" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className={`rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4 ${cardBg}`}>
+            <div>
+              <h3 className="font-bold text-base">Enregistrer la vente ?</h3>
+              <p className={`text-sm mt-1 ${subtext}`}>Le jeu passe en « En attente reception ».</p>
+            </div>
+            <img src="/vente.png" alt="" width="720" height="238" className="w-full h-auto select-none pointer-events-none" />
+            <div className="space-y-2 max-h-52 overflow-y-auto">
+              {pendingSale.games.map((name, i) => (
+                <label key={name} className="flex items-center gap-2">
+                  <span className="flex-1 min-w-0 truncate text-sm font-semibold">{name}</span>
+                  <input
+                    type="text" inputMode="decimal" autoFocus={i === 0}
+                    value={salePrices[name] || ''}
+                    onChange={e => setSalePrices(prev => ({ ...prev, [name]: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') confirmSale(); }}
+                    placeholder="Prix"
+                    className={`w-24 px-3 py-2 text-sm rounded-lg border outline-none ${inputCls}`}
+                  />
+                  <span className={`text-sm ${subtext}`}>€</span>
+                </label>
+              ))}
+              <p className={`text-xs ${subtext}`}>Prix vide : le jeu est déplacé sans créer de vente.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setPendingSale(null)} className={`flex-1 py-2.5 rounded-xl font-medium text-sm transition-colors ${btnGhost}`}>
+                Annuler
+              </button>
+              <button onClick={confirmSale} disabled={savingSale} className="flex-1 py-2.5 rounded-xl font-medium text-sm bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-50">
+                {pendingSale.games.some(n => String(salePrices[n] || '').trim()) ? 'Vendre et déplacer' : 'Déplacer'}
               </button>
             </div>
           </div>
