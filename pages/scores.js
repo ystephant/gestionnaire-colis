@@ -284,6 +284,7 @@ function useWakeLock(active) {
 }
 
 const ppts=(n,r,cx=50,cy=50,off=-90)=>Array.from({length:n},(_,i)=>{const a=(i/n*360+off)*Math.PI/180;return`${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`;}).join(" ");
+const DP={1:[[50,50]],2:[[30,30],[70,70]],3:[[28,28],[50,50],[72,72]],4:[[28,28],[72,28],[28,72],[72,72]],5:[[28,28],[72,28],[50,50],[28,72],[72,72]],6:[[28,28],[72,28],[28,50],[72,50],[28,72],[72,72]]};
 function DieFace({sides,value,size=86,color="#2563eb",rolling=false,percentile=false}){
   const gi=`dg${sides}`,si=`ds${sides}`;
   const defs=(<defs><radialGradient id={gi} cx="35%" cy="28%" r="68%"><stop offset="0%" stopColor="rgba(255,255,255,0.38)"/><stop offset="100%" stopColor="rgba(0,0,0,0.18)"/></radialGradient><filter id={si} x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="6" floodColor="#000" floodOpacity="0.55"/></filter></defs>);
@@ -990,6 +991,7 @@ export default function ScoreTracker() {
   const [showHist,   setSH]       = useState(false);
   const [showReset,  setSR]       = useState(false);
   const [confirmRm,  setCR]       = useState(null);
+  const [ask,        setAsk]      = useState(null);    // confirmation { title, text, ok, run }
   const [showTarget, setShowTgt]  = useState(false);
   const [targetInput,setTgtInput] = useState("");
   const [histFilter, setHFilter]  = useState("all");
@@ -1227,7 +1229,7 @@ export default function ScoreTracker() {
 
   const onQ=(v)=>{setAddQ(v);if(!v.trim()){setSugs([]);setSugOpen(false);return;}const q=v.toLowerCase();const r=savedNames.filter(n=>n.toLowerCase().includes(q)&&!playersRef.current.find(p=>p.name.toLowerCase()===n.toLowerCase())).slice(0,8);setSugs(r);setSugOpen(r.length>0);};
 
-  const doReset=useCallback(()=>{saveUndo(playersRef.current);setPlayers(p=>p.map(x=>({...x,score:0})));setHist([]);setRound(1);setStarter(null);setLastSpin(null);setDeal(null);setSR(false);setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);flash("Scores remis à zéro 🔄");},[saveUndo,flash]);
+  const doReset=useCallback(()=>{saveUndo(playersRef.current);setPlayers(p=>p.map(x=>({...x,score:0})));setHist([]);setRound(1);setStarter(null);setDeal(null);setSR(false);setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);flash("Scores remis à zéro 🔄");},[saveUndo,flash]);
 
   // ── Groupes de joueurs ──
   const addGroup=(g)=>{
@@ -1259,15 +1261,14 @@ export default function ScoreTracker() {
     pushItem(supabase,"groups",g);
     flash(old?`Groupe « ${name} » mis à jour`:`Groupe « ${name} » enregistré`);
   };
-  const removeGroup=(g)=>{
-    if(!window.confirm(`Supprimer le groupe « ${g.name} » ?`))return;
-    deleteItem(supabase,"groups",g.id);
-    setGroups(list=>list.filter(x=>x.id!==g.id));
-  };
+  const removeGroup=(g)=>setAsk({
+    title:"Supprimer le groupe ?", text:`Le groupe « ${g.name} » sera supprimé. Les joueurs de la partie en cours ne changent pas.`, ok:"Supprimer",
+    run:()=>{ deleteItem(supabase,"groups",g.id); setGroups(list=>list.filter(x=>x.id!==g.id)); },
+  });
 
   // Retire tous les joueurs et repart d'une table vide
-  const clearPlayers=()=>{
-    if(!window.confirm("Effacer tous les joueurs de la partie en cours ? Les scores seront perdus."))return;
+  const clearPlayers=()=>setAsk({title:"Effacer les joueurs ?", text:"Tous les joueurs de la partie en cours seront retirés et les scores perdus.", ok:"Effacer", run:doClearPlayers});
+  const doClearPlayers=()=>{
     saveUndo(playersRef.current);
     setPlayers([]);setHist([]);setRound(1);setStarter(null);setDeal(null);setLastRoll(null);setDiceWho(null);setSelected(null);
     setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);setGameId(uid());setShowGrp(false);
@@ -1325,15 +1326,15 @@ export default function ScoreTracker() {
 
   // ── New game ──
   const newGame=useCallback(()=>{
-    saveUndo(playersRef.current);
+    setUndo([]);setDHist([]);setWHist([]);setDiceWho(null);setWheelBusy(false);setFlashCt({});
     // Garde les joueurs mais remet les scores à 0
     setPlayers(p=>p.map(x=>({...x,score:0})));
-    setGName("Nouvelle partie 🎲");setRound(1);setStarter(null);setLastSpin(null);setDeal(null);setLastRoll(null);setHist([]);setGameSt("idle");
+    setGName("Nouvelle partie 🎲");setRound(1);setStarter(null);setDeal(null);setLastRoll(null);setHist([]);setGameSt("idle");
     setWinner(null);setTarget(null);setLowest(false);setMaxRnd(null);setPreset(null);
     setSelected(null);
     setGST(null);setElapsed(0);setGameId(uid());
     flash("Nouvelle partie — scores remis à zéro ! 🔄");
-  },[saveUndo,flash]);
+  },[flash]);
 
   // ── Load saved game ──
   const loadGame=useCallback((g)=>{
@@ -1342,7 +1343,7 @@ export default function ScoreTracker() {
     if(g.lowestWins!=null)setLowest(g.lowestWins);if(g.maxRounds!=null)setMaxRnd(g.maxRounds);
     if(g.gamePreset)setPreset(g.gamePreset);if(g.displayOrder)setDispOrder(g.displayOrder);
     if(g.id)setGameId(g.id);
-    setStarter(g.starter||null);setLastSpin(null);setLastRoll(null);
+    setStarter(g.starter||null);setLastRoll(null);
     setShowPk(false);flash(`Partie "${g.gameName||g.name||"?"}" chargée`);
   },[flash]);
 
@@ -1416,7 +1417,7 @@ export default function ScoreTracker() {
       setPlayers(pArr);setGName(game.name);setRound(game.round||1);
       if(game.target_score!=null)setTarget(game.target_score);
       if(game.lowest_wins!=null)setLowest(game.lowest_wins);
-      setStarter(null);setLastSpin(null);setOnlineCode(gId);setIsOnline(true);subscribeToGame(gId);setShowOnl(false);
+      setStarter(null);setOnlineCode(gId);setIsOnline(true);subscribeToGame(gId);setShowOnl(false);
       flash(`Rejoint la partie ${gId} ! 🌐`,"#4ade80");
     }catch{flash("Erreur de connexion");setOnlineSt("error");}
   },[subscribeToGame,flash]);
@@ -1887,6 +1888,17 @@ export default function ScoreTracker() {
               <button onClick={saveGroup} disabled={!groupName.trim()} style={{...mainBtn,height:46,background:D.acc,color:"#111",opacity:groupName.trim()?1:.5}}>Enregistrer</button>
             </div>
           )}
+        </BottomSheet>
+      )}
+
+      {/* Confirmation (après les autres popins : elle passe au-dessus) */}
+      {ask&&(
+        <BottomSheet onClose={()=>setAsk(null)} D={D} isMobile={isMobile} title={ask.title} maxW={340}>
+          <p style={{fontSize:14,color:D.txt,opacity:.85,lineHeight:1.6,marginBottom:20}}>{ask.text}</p>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setAsk(null)} style={{flex:1,padding:"13px 0",borderRadius:12,border:`1px solid ${D.brd}`,background:"transparent",color:D.txt,cursor:"pointer",fontWeight:700,fontSize:14,minHeight:50}}>Annuler</button>
+            <button data-ask-ok onClick={()=>{const run=ask.run;setAsk(null);run();}} style={{flex:1,padding:"13px 0",borderRadius:12,border:"none",background:"#ef4444",color:"#fff",cursor:"pointer",fontWeight:700,fontSize:14,minHeight:50}}>{ask.ok}</button>
+          </div>
         </BottomSheet>
       )}
 
