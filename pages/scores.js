@@ -59,6 +59,7 @@ import { readLocal, saveItem, pushItem, deleteItem, syncAll } from "../lib/score
 import DiceTable from "../components/DiceTable";
 import ScoreSheet from "../components/ScoreSheet";
 import SandTimer from "../components/SandTimer";
+import ScoreDial from "../components/ScoreDial";
 import FirstPlayerCards from "../components/FirstPlayerCards";
 
 // ─────────────────────────────────────────────────────────
@@ -146,6 +147,10 @@ const GLOBAL_CSS = `
   @keyframes rankChange{0%{background:rgba(252,211,77,0.35)}100%{background:transparent}}
   .rank-change{animation:rankChange 1.2s ease}
   .p-row{transition:box-shadow .2s,filter .15s,opacity .15s}
+  .step-btn{transition:transform .08s,box-shadow .08s}
+  .step-btn:active{transform:scale(.86);box-shadow:0 0 0 5px rgba(255,255,255,.45)}
+  @keyframes burstPop{0%{transform:translate(-50%,-50%) scale(.5)}45%{transform:translate(-50%,-50%) scale(1.3)}100%{transform:translate(-50%,-50%) scale(1)}}
+  @keyframes tapRing{0%{box-shadow:0 0 0 0 rgba(255,255,255,.9)}100%{box-shadow:0 0 0 14px rgba(255,255,255,0)}}
   @media(hover:hover){.p-row:hover{filter:brightness(1.07)}}
   .cdot{width:14px;height:14px;border-radius:50%;border:none;cursor:pointer;transition:transform .12s;-webkit-tap-highlight-color:transparent}
   .cdot:active{transform:scale(1.5)}
@@ -298,50 +303,6 @@ function DieFace({sides,value,size=86,color="#2563eb",rolling=false,percentile=f
 // ─────────────────────────────────────────────────────────
 //  QUICK SCORE POPUP (long press on score)
 // ─────────────────────────────────────────────────────────
-function QuickScorePopup({ onApply, onEdit, onClose, color, isMobile }) {
-  const QUICK = [1, 5, 10, 25, -1, -5, -10];
-  return (
-    <div className="quick-pop"
-      style={{ position:"absolute", bottom:"110%", left:"50%", transform:"translateX(-50%)",
-        zIndex:30, background:"rgba(10,12,20,0.97)", borderRadius:16,
-        padding:"12px 10px 10px", border:`1.5px solid ${color}55`,
-        boxShadow:`0 8px 28px rgba(0,0,0,0.6), 0 0 0 1px ${color}22`,
-        minWidth:isMobile?220:240 }}>
-      <div style={{ fontSize:10, fontWeight:700, color:"rgba(255,255,255,0.40)",
-        textAlign:"center", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>
-        Ajustement rapide
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:5, marginBottom:8 }}>
-        {QUICK.map(v => {
-          const pos = v > 0;
-          return (
-            <button key={v} onClick={() => { onApply(v); onClose(); }}
-              style={{ padding:"9px 4px", borderRadius:9, border:`1.5px solid ${pos?"rgba(74,222,128,0.30)":"rgba(239,68,68,0.30)"}`,
-                background: pos?"rgba(74,222,128,0.10)":"rgba(239,68,68,0.10)",
-                color: pos?"#4ade80":"#f87171",
-                fontWeight:800, fontSize:13, fontFamily:"Space Mono,monospace",
-                cursor:"pointer", minHeight:38 }}>
-              {v > 0 ? "+" : ""}{v}
-            </button>
-          );
-        })}
-        <button onClick={() => { onEdit(); onClose(); }}
-          style={{ padding:"9px 4px", borderRadius:9, border:`1.5px solid rgba(255,255,255,0.15)`,
-            background:"rgba(255,255,255,0.07)", color:"rgba(255,255,255,0.7)",
-            fontWeight:700, fontSize:11, cursor:"pointer", minHeight:38 }}>
-          ✏️ libre
-        </button>
-      </div>
-      <button onClick={onClose}
-        style={{ width:"100%", padding:"7px 0", borderRadius:8, border:"none",
-          background:"rgba(255,255,255,0.07)", color:"rgba(255,255,255,0.45)",
-          cursor:"pointer", fontSize:12, fontWeight:700 }}>
-        Annuler
-      </button>
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────────────────
 //  PLAYER MINI HISTORY
 // ─────────────────────────────────────────────────────────
@@ -351,7 +312,7 @@ function PlayerMiniHistory({ entries, color, isMobile, onOpenChange }) {
   if (!entries.length) return null;
   const last10 = entries.slice(-10);
   return (
-    <div style={{ marginTop:4, position:"relative" }} onClick={e=>e.stopPropagation()}>
+    <div style={{ marginTop:4, position:"relative", width:"fit-content", maxWidth:"100%" }} onClick={e=>e.stopPropagation()}>
       <button onClick={e=>{e.stopPropagation();setOpen(o=>!o);}} aria-expanded={open}
         style={{ display:"flex", alignItems:"center", gap:4, background:"rgba(0,0,0,0.22)",
           border:"none", borderRadius:7, padding:"3px 8px", cursor:"pointer",
@@ -727,13 +688,22 @@ function PlayerRow({
   const col    = player.color.hex;
 
   const [showPalette, setPalette]   = useState(false);
-  const [editScore,   setEditScore] = useState(false);
-  const [editVal,     setEditVal]   = useState("");
-  const [showQuick,   setShowQuick] = useState(false);
   const [editName,    setEditName]  = useState(false);
   const [nameVal,     setNameVal]   = useState(player.name);
   const [swipeFx,     setSwipeFx]   = useState(null);
   const [histOpen,    setHistOpen]  = useState(false);
+  const [burst,       setBurst]     = useState(null);    // cumul des derniers appuis
+  const seen = useRef({ key:flashKey, score:player.score });
+  const burstT = useRef(null);
+  useEffect(()=>{
+    const d=player.score-seen.current.score, hit=flashKey!==seen.current.key;
+    seen.current={key:flashKey,score:player.score};
+    clearTimeout(burstT.current);
+    if(!hit||!d){setBurst(null);return;}
+    setBurst(b=>({total:(b?.total||0)+d,n:(b?.n||0)+1,key:flashKey}));
+    burstT.current=setTimeout(()=>setBurst(null),2200);
+  },[flashKey,player.score]);
+  useEffect(()=>()=>clearTimeout(burstT.current),[]);
 
   // ── Menu joueur : se ferme en touchant ailleurs ──
   useEffect(()=>{
@@ -745,17 +715,13 @@ function PlayerRow({
   },[showPalette,player.id]);
   const startRename = () => { setPalette(false);setNameVal(player.name);setEditName(true);setTimeout(()=>{nameRef.current?.focus();nameRef.current?.select();},30); };
 
-  const editRef    = useRef(null);
   const nameRef    = useRef(null);
-  const longT      = useRef(null);
-  const longFired  = useRef(false);
   const swipeRef   = useRef({ startX:0, startY:0, triggered:false });
   const swipedRef  = useRef(false);
-  const nameTapRef = useRef({ count:0, timer:null });
 
   // ── Swipe ──
   const onTS = (e) => {
-    if(e.target.closest("[data-step]")||e.target.closest("[data-pal]")||e.target.closest("[data-rm]")||e.target.closest("[data-drag]")||e.target.closest("[data-sedit]")||e.target.closest("[data-nedit]"))return;
+    if(e.target.closest("[data-step]")||e.target.closest("[data-pal]")||e.target.closest("[data-rm]")||e.target.closest("[data-drag]")||e.target.closest("[data-nedit]"))return;
     const t=e.touches[0];swipeRef.current={startX:t.clientX,startY:t.clientY,triggered:false};swipedRef.current=false;
   };
   const onTM = (e) => {
@@ -763,33 +729,16 @@ function PlayerRow({
     if(Math.abs(dx)>36&&Math.abs(dx)>Math.abs(dy)*1.3){swipeRef.current.triggered=true;swipedRef.current=true;const pts=dx>0?1:-1;onAdjust(pts);setSwipeFx(pts>0?"＋1":"－1");setTimeout(()=>setSwipeFx(null),380);}
   };
 
-  // ── Long press on score ──
-  const onScorePD = (e) => {
-    e.stopPropagation();longFired.current=false;
-    longT.current=setTimeout(()=>{longFired.current=true;navigator.vibrate?.(40);setShowQuick(true);},600);
-  };
-  const onScorePU = (e) => {
-    clearTimeout(longT.current);
-    if(!longFired.current){setEditVal(String(player.score));setEditScore(true);setTimeout(()=>{editRef.current?.focus();editRef.current?.select();},30);}
-  };
-  const commitScore = () => { const n=parseInt(editVal,10);if(!isNaN(n)&&n!==player.score)onAdjust(n-player.score);setEditScore(false); };
-
-  // ── Double-tap on name → edit ──
-  const onNameTap = (e) => {
-    e.stopPropagation();nameTapRef.current.count++;clearTimeout(nameTapRef.current.timer);
-    if(nameTapRef.current.count>=2){nameTapRef.current.count=0;setNameVal(player.name);setEditName(true);setTimeout(()=>{nameRef.current?.focus();nameRef.current?.select();},30);}
-    else{nameTapRef.current.timer=setTimeout(()=>{nameTapRef.current.count=0;},320);}
-  };
   const commitName = () => { const n=nameVal.trim();if(n&&n!==player.name)onRename(n);setEditName(false); };
 
   const handleClick = (e) => {
     if(swipedRef.current){swipedRef.current=false;return;}
-    if(e.target.closest("[data-step]")||e.target.closest("[data-rm]")||e.target.closest("[data-pal]")||e.target.closest("[data-drag]")||e.target.closest("[data-sedit]")||e.target.closest("[data-nedit]"))return;
+    if(e.target.closest("[data-step]")||e.target.closest("[data-rm]")||e.target.closest("[data-pal]")||e.target.closest("[data-drag]")||e.target.closest("[data-nedit]"))return;
     onSelect();
   };
 
   return(
-    <div style={{position:"relative",zIndex:showPalette||histOpen||showQuick?30:isSel?10:1}} ref={rowRef}>
+    <div style={{position:"relative",zIndex:showPalette||histOpen?30:isSel?10:1}} ref={rowRef}>
       <div className="p-row" onClick={handleClick} onTouchStart={onTS} onTouchMove={onTM}
         role="button" aria-pressed={isSel} aria-label={`${player.name} — ${player.score} pts`}
         style={{position:"relative",height:ROW_H,borderRadius:14,background:col,cursor:"pointer",overflow:"visible",
@@ -834,8 +783,7 @@ function PlayerRow({
               maxLength={20} aria-label="Renommer le joueur" style={{maxWidth:"100%"}}/>
           ) : (
             <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
-              <div data-nedit onClick={onNameTap} title="Double-tap pour renommer"
-                style={{fontWeight:700,fontSize:isMobile?13:17,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"default"}}>
+              <div style={{fontWeight:700,fontSize:isMobile?13:17,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer"}}>
                 {player.name}
               </div>
               <span style={{fontSize:isMobile?10:12,fontWeight:700,color:"rgba(255,255,255,0.65)",whiteSpace:"nowrap",flexShrink:0}}>
@@ -848,30 +796,26 @@ function PlayerRow({
 
         {/* − score + : groupés */}
         <div style={{display:"flex",alignItems:"center",gap:isMobile?2:6,height:"100%",flexShrink:0,padding:isMobile?0:"0 2px"}}>
-          <button data-step onClick={e=>{e.stopPropagation();onAdjust(-step);}} aria-label={`Retirer ${step} à ${player.name}`} className="mono"
+          <button data-step className="mono step-btn" onClick={e=>{e.stopPropagation();onAdjust(-step);}} aria-label={`Retirer ${step} à ${player.name}`}
             style={{width:narrow?42:isMobile?48:72,height:isMobile?52:58,borderRadius:13,border:"1px solid rgba(255,255,255,0.28)",background:"rgba(0,0,0,0.32)",color:"#fff",fontSize:narrow?16:isMobile?18:22,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>−{step}</button>
 
-          {/* Score — tap=edit, long press=quick */}
-          <div data-sedit style={{width:narrow?54:isMobile?70:132,display:"flex",alignItems:"center",justifyContent:"center",height:"100%",cursor:"text",position:"relative"}}
-            onPointerDown={onScorePD} onPointerUp={onScorePU}
-            onPointerLeave={()=>clearTimeout(longT.current)}>
-            {editScore ? (
-              <input ref={editRef} className="score-input-edit" type="number"
-                value={editVal} onChange={e=>setEditVal(e.target.value)}
-                onKeyDown={e=>{if(e.key==="Enter")commitScore();if(e.key==="Escape")setEditScore(false);}}
-                onBlur={commitScore} onClick={e=>e.stopPropagation()}
-                style={{fontSize:isMobile?26:34,width:isMobile?68:110}}/>
-            ) : (
-              <div key={flashKey} className="mono score-pop"
-                style={{fontSize:isMobile?(String(player.score).length>3?21:27):40,fontWeight:700,color:"#fff",letterSpacing:-1.5,lineHeight:1,
-                  textDecoration:"underline dotted rgba(255,255,255,0.22)",textUnderlineOffset:4,userSelect:"none"}}>
-                {player.score>0?"+":""}{player.score}
+          {/* Score : toucher la carte ouvre la demi-boule */}
+          <div style={{width:narrow?54:isMobile?70:132,display:"flex",alignItems:"center",justifyContent:"center",height:"100%",position:"relative"}}>
+            <div key={`score-${flashKey}`} data-score className="mono score-pop"
+              style={{fontSize:isMobile?(String(player.score).length>3?21:27):40,fontWeight:700,color:"#fff",letterSpacing:-1.5,lineHeight:1,userSelect:"none"}}>
+              {player.score>0?"+":""}{player.score}
+            </div>
+            {burst&&(
+              <div key={`bulle-${burst.key}`} data-burst className="mono" aria-live="polite"
+                style={{position:"absolute",left:"50%",top:isMobile?8:10,zIndex:6,pointerEvents:"none",whiteSpace:"nowrap",padding:"2px 9px",borderRadius:20,
+                  fontSize:isMobile?12:14,fontWeight:800,color:"#fff",background:burst.total<0?"#dc2626":"#16a34a",border:"2px solid #fff",
+                  animation:"burstPop .3s ease-out forwards",transform:"translate(-50%,-50%)"}}>
+                {burst.total>0?"+":""}{burst.total}{burst.n>1&&<span style={{opacity:.8,fontSize:isMobile?10:11}}> · {burst.n} fois</span>}
               </div>
             )}
-            {showQuick&&<QuickScorePopup onApply={onAdjust} onEdit={()=>{setEditVal(String(player.score));setEditScore(true);setTimeout(()=>{editRef.current?.focus();editRef.current?.select();},30);}} onClose={()=>setShowQuick(false)} color={col} isMobile={isMobile}/>}
           </div>
 
-          <button data-step onClick={e=>{e.stopPropagation();onAdjust(step);}} aria-label={`Ajouter ${step} à ${player.name}`} className="mono"
+          <button data-step className="mono step-btn" onClick={e=>{e.stopPropagation();onAdjust(step);}} aria-label={`Ajouter ${step} à ${player.name}`}
             style={{width:narrow?42:isMobile?48:72,height:isMobile?52:58,borderRadius:13,border:"none",background:"#fff",color:"#111827",fontSize:narrow?16:isMobile?18:22,fontWeight:800,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>+{step}</button>
         </div>
       </div>
@@ -1027,7 +971,7 @@ export default function ScoreTracker() {
   const [round,    setRound]   = useState(1);
   const [history,  setHist]    = useState([]);
   const [selected, setSelected]= useState(null);
-  const [sessionLog,setSession]= useState([]);
+  const [bannerOff, setBannerOff]= useState(false);
   const [undo,     setUndo]    = useState([]);
   const [toast,    setToast]   = useState(null);
   const [tab,      setTab]     = useState("scores");
@@ -1049,7 +993,6 @@ export default function ScoreTracker() {
   const [showTarget, setShowTgt]  = useState(false);
   const [targetInput,setTgtInput] = useState("");
   const [histFilter, setHFilter]  = useState("all");
-  const [addBarOpen, setAddBar]   = useState(false);
   const [overflowOpen,setOvf]     = useState(false);
   const [showPreset, setShowPr]   = useState(false);
   const [showStats,  setShowSt]   = useState(false);
@@ -1173,8 +1116,15 @@ export default function ScoreTracker() {
   useEffect(()=>{ try{localStorage.setItem("sgt7view",view);}catch{} },[view]);
   useEffect(()=>{ try{localStorage.setItem("sgt7step",String(step));localStorage.setItem("sgt7first",firstMode);localStorage.setItem("sgt7order",followCards?"1":"0");}catch{} },[step,firstMode,followCards]);
 
-  // ── Clear session on deselect ──
-  useEffect(()=>{setSession([]);},[selected]);
+  // ── Écran de victoire : disparaît après 20 s (ou avec la croix) ──
+  useEffect(()=>{
+    setBannerOff(false);
+    if(gameState!=="ended")return;
+    const t=setTimeout(()=>setBannerOff(true),20000);
+    return()=>clearTimeout(t);
+  },[gameState,gameWinner?.id]);
+
+  const [diceWho,setDiceWho]=useState(null);   // joueur qui lance les dés
 
   // ── Auto-victory ──
   useEffect(()=>{
@@ -1208,8 +1158,8 @@ export default function ScoreTracker() {
   // ── Toast ──
   const flash=useCallback((msg,bg)=>{ clearTimeout(toastRef.current);setToast({msg,bg});toastRef.current=setTimeout(()=>setToast(null),2600); },[]);
   const histRef=useRef([]); histRef.current=history;
-  const saveUndo=useCallback((snap)=>{const hist=histRef.current;setUndo(u=>[...u.slice(-29),{players:snap,hist}]);},[]);
-  const doUndo=useCallback(()=>{ if(!undo.length)return;setPlayers(undo[undo.length-1].players);setHist(undo[undo.length-1].hist);setUndo(u=>u.slice(0,-1));flash("Action annulée ↩"); },[undo,flash]);
+  const saveUndo=useCallback((snap)=>{const hist=histRef.current;setUndo(u=>[...u.slice(-99),{players:snap,hist}]);},[]);
+  const doUndo=useCallback(()=>{ if(!undo.length)return;setPlayers(undo[undo.length-1].players);setHist(undo[undo.length-1].hist);setUndo(u=>u.slice(0,-1));if(gameState==="ended"){setGameSt("playing");setWinner(null);}flash("Action annulée ↩"); },[undo,flash,gameState]);
 
   // ── Adjust (swipe, bonus, edit) ──
   const adjust=useCallback((id,delta,atRound=round,allowZero=false)=>{
@@ -1259,6 +1209,7 @@ export default function ScoreTracker() {
   // ── Add player ──
   const addPlayer=useCallback((name=addQ.trim())=>{
     if(!name)return;
+    if(gameState!=="idle"){flash("La partie est lancée : plus d’ajout de joueur");return;}
     if(playersRef.current.find(p=>p.name.toLowerCase()===name.toLowerCase())){flash(`${name} est déjà là !`);return;}
     const p={id:uid(),name,color:addColor,score:0};
     saveUndo(playersRef.current);
@@ -1269,7 +1220,7 @@ export default function ScoreTracker() {
     if(isOnline&&supabase&&onlineCode){
       supabase.from("sgt_players").insert({id:p.id,game_id:onlineCode,name,color_hex:addColor.hex,color_name:addColor.name,score:0,position:next.length-1}).then(()=>{}).catch(()=>{});
     }
-  },[addQ,addColor,saveUndo,savedNames,flash,isOnline,onlineCode]);
+  },[addQ,addColor,saveUndo,savedNames,flash,isOnline,onlineCode,gameState]);
 
   const removePlayer=useCallback((id)=>{saveUndo(playersRef.current);setPlayers(p=>p.filter(x=>x.id!==id));if(selected===id)setSelected(null);setCR(null);},[saveUndo,selected]);
   const changeColor=useCallback((id,color)=>setPlayers(p=>p.map(x=>x.id===id?{...x,color}:x)),[]);
@@ -1280,6 +1231,7 @@ export default function ScoreTracker() {
 
   // ── Groupes de joueurs ──
   const addGroup=(g)=>{
+    if(gameState!=="idle"){setShowGrp(false);flash("La partie est lancée : plus d’ajout de joueur");return;}
     const here=playersRef.current;
     const names=new Set(here.map(p=>p.name.toLowerCase()));
     const used=new Set(here.map(p=>p.color.hex));
@@ -1311,6 +1263,15 @@ export default function ScoreTracker() {
     if(!window.confirm(`Supprimer le groupe « ${g.name} » ?`))return;
     deleteItem(supabase,"groups",g.id);
     setGroups(list=>list.filter(x=>x.id!==g.id));
+  };
+
+  // Retire tous les joueurs et repart d'une table vide
+  const clearPlayers=()=>{
+    if(!window.confirm("Effacer tous les joueurs de la partie en cours ? Les scores seront perdus."))return;
+    saveUndo(playersRef.current);
+    setPlayers([]);setHist([]);setRound(1);setStarter(null);setDeal(null);setLastRoll(null);setDiceWho(null);setSelected(null);
+    setGameSt("idle");setWinner(null);setGST(null);setElapsed(0);setGameId(uid());setShowGrp(false);
+    flash("Joueurs effacés");
   };
 
   // ── Feuille de score : fixer les points d'une case ──
@@ -1352,7 +1313,7 @@ export default function ScoreTracker() {
   const startGame=()=>{
     if(players.length<2){flash("Il faut au moins 2 joueurs !");return;}
     if(!gamePreset){setShowPr(true);return;}
-    setGameSt("playing");setAddBar(false);setGST(Date.now());setElapsed(0);
+    setGameSt("playing");setGST(Date.now());setElapsed(0);
     if(!starterAt(round)){setSelected(null);setTab("wheel");flash("Désignez le premier joueur : roue ou cartes","#16a34a");return;}
     flash("La partie a commencé ! 🎮","#16a34a");
   };
@@ -1369,7 +1330,7 @@ export default function ScoreTracker() {
     setPlayers(p=>p.map(x=>({...x,score:0})));
     setGName("Nouvelle partie 🎲");setRound(1);setStarter(null);setLastSpin(null);setDeal(null);setLastRoll(null);setHist([]);setGameSt("idle");
     setWinner(null);setTarget(null);setLowest(false);setMaxRnd(null);setPreset(null);
-    setSelected(null);setSession([]);
+    setSelected(null);
     setGST(null);setElapsed(0);setGameId(uid());
     flash("Nouvelle partie — scores remis à zéro ! 🔄");
   },[saveUndo,flash]);
@@ -1490,13 +1451,13 @@ export default function ScoreTracker() {
   const isPlaying  = gameState==="playing";
   const isEnded    = gameState==="ended";
   const histByP    = useMemo(()=>{const m={};history.forEach(h=>{if(!m[h.id])m[h.id]=[];m[h.id].push(h);});return m;},[history]);
-  const sessTotal  = sessionLog.reduce((a,b)=>a+b,0);
-  const sessStr    = sessionLog.length?sessionLog.map(v=>(v>0?"+":"")+v).join(" ")+" = "+(sessTotal>=0?"+":"")+sessTotal:null;
+  // Dernier coup annulable (affiché sur le bouton)
+  const lastMove   = undo.length&&history.length&&undo[undo.length-1].hist[undo[undo.length-1].hist.length-1]!==history[history.length-1]?history[history.length-1]:null;
   const dragHandlers={onDown:startDrag,onMove:moveDrag,onUp:endDrag};
 
-  const bonusBarH = selPlayer&&tab==="scores"?(isMobile?192:182):0;
-  const addBarH   = tab==="scores"?(isMobile?70:64):0;
-  const bottomPad = bonusBarH+addBarH+16;
+  const canAdd    = gameState==="idle";
+  const addBarH   = tab==="scores"&&canAdd?(isMobile?96:90):0;
+  const bottomPad = addBarH+24;
 
   const D={
     bg:  dark?"#0b0d12":"#f0ece4",
@@ -1610,8 +1571,10 @@ export default function ScoreTracker() {
       )}
 
       {/* Winner banner */}
-      {isEnded&&gameWinner&&(
-        <div className="slide-up" role="status" style={{background:`linear-gradient(135deg,${gameWinner.color.hex},${gameWinner.color.hex}99)`,padding:"18px 20px",textAlign:"center"}}>
+      {isEnded&&gameWinner&&!bannerOff&&(
+        <div className="slide-up" role="status" style={{position:"relative",background:`linear-gradient(135deg,${gameWinner.color.hex},${gameWinner.color.hex}99)`,padding:"18px 20px",textAlign:"center"}}>
+          <button onClick={()=>setBannerOff(true)} aria-label="Fermer l’écran de victoire"
+            style={{position:"absolute",top:8,right:10,width:40,height:40,borderRadius:"50%",border:"2px solid rgba(255,255,255,.7)",background:"rgba(0,0,0,.3)",color:"#fff",fontSize:18,fontWeight:800,cursor:"pointer"}}>✕</button>
           <div style={{fontSize:28,marginBottom:4}}>🏆</div>
           <div style={{fontWeight:800,fontSize:isMobile?18:20,color:"#fff",marginBottom:3}}>{gameWinner.name} remporte la partie !</div>
           <div className="mono" style={{fontSize:isMobile?22:26,color:"rgba(255,255,255,0.88)"}}>{gameWinner.score>0?"+":""}{gameWinner.score} pts</div>
@@ -1654,14 +1617,25 @@ export default function ScoreTracker() {
               const s=players.length>1&&players.find(p=>p.id===starterAt(round));
               return s?<div style={{marginBottom:10,fontSize:13,fontWeight:700}}>▶ <span style={{color:s.color.hex}}>{s.name}</span> commence la manche {round}</div>:null;
             })()}
-            {view==="cards"&&players.length>0&&(
-              <div role="group" aria-label="Pas des boutons − et +" style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
-                <span style={{fontSize:13,fontWeight:700,marginRight:2}}>Pas</span>
-                {[1,3,5].map(v=>(
-                  <button key={v} aria-pressed={step===v} onClick={()=>setStep(v)}
-                    style={{flex:1,maxWidth:90,height:36,borderRadius:9,border:`1px solid ${step===v?D.acc:D.brd}`,background:step===v?D.acc+"33":D.card,color:D.txt,fontWeight:800,fontSize:14,cursor:"pointer"}}>{v}</button>
-                ))}
+            {players.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,marginBottom:10}}>
+                {view==="cards"&&(
+                  <div role="group" aria-label="Pas des boutons − et +" style={{display:"flex",alignItems:"center",gap:6,flex:"1 1 200px",maxWidth:320}}>
+                    <span style={{fontSize:13,fontWeight:700,marginRight:2}}>Pas</span>
+                    {[1,3,5].map(v=>(
+                      <button key={v} aria-pressed={step===v} onClick={()=>setStep(v)}
+                        style={{flex:1,height:36,borderRadius:9,border:`1px solid ${step===v?D.acc:D.brd}`,background:step===v?D.acc+"33":D.card,color:D.txt,fontWeight:800,fontSize:14,cursor:"pointer"}}>{v}</button>
+                    ))}
+                  </div>
+                )}
+                <button data-undo onClick={doUndo} disabled={!lastMove}
+                  style={{marginLeft:"auto",height:36,padding:"0 12px",borderRadius:9,border:`1px solid ${D.brd}`,background:D.card,color:D.txt,fontWeight:800,fontSize:13,cursor:lastMove?"pointer":"default",opacity:lastMove?1:.45,whiteSpace:"nowrap",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  ↩ Annuler{lastMove?` ${lastMove.name} ${lastMove.delta>0?"+":""}${lastMove.delta}`:""}
+                </button>
               </div>
+            )}
+            {view==="cards"&&players.length>0&&(
+              <div style={{fontSize:12,color:D.sub,fontWeight:600,marginBottom:10}}>Touchez la carte d’un joueur pour choisir une autre valeur.</div>
             )}
             {view==="sheet"&&players.length>0&&(
               <ScoreSheet D={D} dark={dark} players={curOrder.map(id=>players.find(p=>p.id===id)).filter(Boolean)}
@@ -1681,9 +1655,9 @@ export default function ScoreTracker() {
                 <div style={{fontSize:isMobile?16:19,fontWeight:800,color:D.txt,marginBottom:8}}>Prêt pour la partie ?</div>
                 <div style={{fontSize:13,lineHeight:2,color:D.sub}}>
                   Ajoutez des joueurs ci-dessous{groups.length?" ou choisissez un groupe":""}.<br/>
-                  <strong style={{color:D.txt}}>Glissez</strong> une carte : ±1 · <strong style={{color:D.txt}}>− et +</strong> : par 1, 3 ou 5<br/>
-                  <strong style={{color:D.txt}}>Touchez le score</strong> pour le saisir (appui long : ± rapides)<br/>
-                  <strong style={{color:D.txt}}>Double-touche sur le nom</strong> : renommer · <strong style={{color:D.txt}}>≡</strong> : réordonner
+                  <strong style={{color:D.txt}}>− et +</strong> : par 1, 3 ou 5 · <strong style={{color:D.txt}}>Glissez</strong> une carte : ±1<br/>
+                  <strong style={{color:D.txt}}>Touchez une carte</strong> : choisir une valeur<br/>
+                  <strong style={{color:D.txt}}>⋮</strong> : couleur, renommer, retirer · <strong style={{color:D.txt}}>≡</strong> : réordonner
                 </div>
               </div>
             )}
@@ -1705,7 +1679,7 @@ export default function ScoreTracker() {
                     onAdjust={pts=>adjust(player.id,pts)}
                     step={step}
                     onRemove={()=>setCR(player.id)}
-                    onSelect={()=>setSelected(selected===player.id?null:player.id)}
+                    onSelect={()=>setSelected(player.id)}
                     onColorChange={c=>changeColor(player.id,c)}
                     onRename={n=>renamePlayer(player.id,n)}
                     playerHistory={histByP[player.id]||[]}
@@ -1725,7 +1699,8 @@ export default function ScoreTracker() {
         {/* ═══ DÉS ═══ */}
         {tab==="dice"&&(
           <DiceTable D={D} dark={dark} isMobile={isMobile} DieFace={DieFace} playSound={playDiceSound}
-            last={lastRoll} setLast={setLastRoll} history={diceHist} setHistory={setDHist} selPlayer={selPlayer}
+            last={lastRoll} setLast={setLastRoll} history={diceHist} setHistory={setDHist}
+            players={curOrder.map(id=>players.find(p=>p.id===id)).filter(Boolean)} who={diceWho} setWho={setDiceWho}
             onApply={(p,total)=>{adjust(p.id,total);flash(`+${total} pts → ${p.name}`,p.color.hex);}}/>
         )}
 
@@ -1778,17 +1753,10 @@ export default function ScoreTracker() {
       </main>
 
       {/* ════ BARRE AJOUT ════ */}
-      {tab==="scores"&&(
-        <div style={{position:"fixed",bottom:bonusBarH,left:0,right:0,zIndex:25,background:D.hbg,backdropFilter:"blur(16px)",borderTop:`1px solid ${D.brd}`}}>
+      {tab==="scores"&&canAdd&&(
+        <div data-addbar style={{position:"fixed",bottom:0,left:0,right:0,zIndex:25,background:D.hbg,backdropFilter:"blur(16px)",borderTop:`1px solid ${D.brd}`}}>
           <div style={{maxWidth:isWide?1100:900,margin:"0 auto"}}>
-            {isPlaying&&!addBarOpen?(
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:isMobile?"9px 14px":"8px 16px",gap:8}}>
-                <span style={{fontSize:11,fontWeight:600,color:D.sub,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isMobile?"👈👉 Swipe · − + · Tap score · Long press = ±rapide":"👈👉 Swipe ±1 · − + (bubble live) · Tap score = saisie · Long press = rapide"}</span>
-                <button onClick={()=>setAddBar(true)} style={{padding:"7px 13px",borderRadius:9,border:`1px solid ${D.brd}`,background:D.acc+"22",color:D.acc,cursor:"pointer",fontSize:12,fontWeight:700,flexShrink:0,minHeight:38}}>➕ Joueur</button>
-              </div>
-            ):(
               <div style={{padding:isMobile?"10px 12px 12px":"10px 14px 14px"}}>
-                {isPlaying&&<button onClick={()=>setAddBar(false)} style={{float:"right",background:"none",border:"none",color:D.sub,cursor:"pointer",fontSize:14,padding:4}}>✕</button>}
                 <div style={{fontSize:10,fontWeight:700,color:D.sub,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>➕ Ajouter un joueur</div>
                 <div style={{position:"relative"}}>
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1819,45 +1787,14 @@ export default function ScoreTracker() {
                   )}
                 </div>
               </div>
-            )}
           </div>
         </div>
       )}
 
-      {/* ════ BONUS BAR ════ */}
-      {selPlayer&&tab==="scores"&&(
-        <div className="slide-up safe-bottom" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:24,background:dark?"rgba(9,11,17,0.98)":"rgba(238,234,226,0.98)",backdropFilter:"blur(18px)",borderTop:`1px solid ${D.brd}`,padding:isMobile?"7px 10px 10px":"8px 12px 12px"}}>
-          <div style={{maxWidth:900,margin:"0 auto"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:28,height:28,borderRadius:"50%",background:selPlayer.color.hex,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:12,boxShadow:`0 0 10px ${selPlayer.color.hex}66`,flexShrink:0}}>{selPlayer.name[0]}</div>
-                <div>
-                  <div style={{fontWeight:700,fontSize:13,color:selPlayer.color.hex,lineHeight:1.2}}>{selPlayer.name}</div>
-                  <div style={{fontSize:10,color:D.sub}}>Score : <span className="mono" style={{fontWeight:700,color:D.txt}}>{selPlayer.score>=0?"+":""}{selPlayer.score}</span></div>
-                </div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                {sessStr&&(
-                  <>
-                    {!isMobile&&<div style={{fontSize:10,fontWeight:700,color:D.sub}}>Ce tour :</div>}
-                    <div style={{fontSize:11,fontWeight:700,color:sessTotal>=0?"#4ade80":"#f87171",fontFamily:"monospace",background:sessTotal>=0?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)",border:`1px solid ${sessTotal>=0?"rgba(34,197,94,0.25)":"rgba(239,68,68,0.25)"}`,borderRadius:7,padding:"3px 7px",lineHeight:1.3,maxWidth:isMobile?110:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sessStr}</div>
-                    <button onClick={()=>setSession([])} style={{width:26,height:26,borderRadius:6,border:"none",background:"rgba(239,68,68,0.15)",color:"#f87171",cursor:"pointer",fontSize:13,fontWeight:800,flexShrink:0}}>✕</button>
-                  </>
-                )}
-                <button onClick={()=>{setSelected(null);setSession([]);}} style={{width:30,height:30,borderRadius:8,border:`1px solid ${D.brd}`,background:"transparent",color:D.sub,cursor:"pointer",fontSize:14}}>✕</button>
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${isMobile?38:44}px,1fr))`,gap:isMobile?5:6}}>
-              {BONUS_CARDS.map(b=>{const neg=b<0,col=neg?"#f87171":"#4ade80",bg=neg?"rgba(239,68,68,0.10)":"rgba(34,197,94,0.10)",brd=neg?"rgba(239,68,68,0.28)":"rgba(34,197,94,0.28)";return(
-                <button key={b} className="bonus-card" aria-label={`${b>0?"+":""}${b} pts`}
-                  onClick={()=>{adjust(selPlayer.id,b);setSession(p=>[...p,b]);}}
-                  style={{padding:isMobile?"8px 2px":"9px 2px",border:`1.5px solid ${brd}`,background:bg,color:col,fontWeight:800,fontSize:isMobile?12:13,minHeight:isMobile?36:38}}>
-                  {b>0?"+":""}{b}
-                </button>
-              );})}
-            </div>
-          </div>
-        </div>
+      {/* ════ DEMI-BOULE DE VALEURS ════ */}
+      {selPlayer&&tab==="scores"&&view==="cards"&&(
+        <ScoreDial key={selPlayer.id} player={selPlayer} values={BONUS_CARDS} dark={dark}
+          onApply={v=>{adjust(selPlayer.id,v);setSelected(null);}} onClose={()=>setSelected(null)}/>
       )}
 
       {/* ════ MODALS ════ */}
@@ -1940,6 +1877,10 @@ export default function ScoreTracker() {
               </div>
             ))}
           </div>
+          {!canAdd&&<p style={{fontSize:12,color:D.sub,marginBottom:10}}>La partie est lancée : impossible d’ajouter un groupe.</p>}
+          {players.length>0&&!isOnline&&(
+            <button onClick={clearPlayers} style={{width:"100%",minHeight:46,marginBottom:10,borderRadius:10,border:"none",background:"rgba(239,68,68,0.14)",color:"#ef4444",fontWeight:800,fontSize:14,cursor:"pointer"}}>🗑 Effacer les joueurs actuels ({players.length})</button>
+          )}
           {players.length>0&&(
             <div style={{display:"flex",gap:8}}>
               <input value={groupName} onChange={e=>setGroupName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")saveGroup();}} placeholder="Nom du groupe" style={{flex:1,minWidth:0,padding:"12px",borderRadius:10,border:`1px solid ${D.brd}`,background:D.ibg,color:D.txt,fontSize:15}}/>
@@ -1957,7 +1898,7 @@ export default function ScoreTracker() {
       {/* Toast */}
       {toast&&(
         <div className="slide-up" role="status" aria-live="polite"
-          style={{position:"fixed",bottom:bonusBarH+addBarH+12,left:"50%",transform:"translateX(-50%)",zIndex:60,padding:"11px 22px",borderRadius:12,background:toast.bg||(dark?"#252938":"#e8e4dc"),color:dark?"#fff":"#111",fontWeight:700,fontSize:13,boxShadow:"0 5px 20px rgba(0,0,0,.38)",whiteSpace:"nowrap",maxWidth:"90vw",overflow:"hidden",textOverflow:"ellipsis"}}>
+          style={{position:"fixed",bottom:addBarH+12,left:"50%",transform:"translateX(-50%)",zIndex:60,padding:"11px 22px",borderRadius:12,background:toast.bg||(dark?"#252938":"#e8e4dc"),color:dark?"#fff":"#111",fontWeight:700,fontSize:13,boxShadow:"0 5px 20px rgba(0,0,0,.38)",whiteSpace:"nowrap",maxWidth:"90vw",overflow:"hidden",textOverflow:"ellipsis"}}>
           {toast.msg}
         </div>
       )}

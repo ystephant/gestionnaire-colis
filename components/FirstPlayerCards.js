@@ -84,8 +84,7 @@ export default function FirstPlayerCards({ D, dark, players, deal, setDeal, onFi
               <div style={{ position:"relative", width:"100%", height:"100%", transformStyle:"preserve-3d", transition:"transform .55s cubic-bezier(.3,.7,.3,1.1)", transform:shown ? "rotateY(180deg)" : "none" }}>
                 {/* Recto : le nom */}
                 <div style={{ ...face, background:`linear-gradient(160deg,${p.color.hex},${p.color.hex}aa)` }}>
-                  <div style={{ fontSize:30, marginBottom:6 }}>🎴</div>
-                  <div style={{ fontWeight:800, fontSize:14, maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textShadow:"0 1px 3px rgba(0,0,0,.6)" }}>{p.name}</div>
+                  <div style={{ fontWeight:800, fontSize:17, maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textShadow:"0 1px 3px rgba(0,0,0,.6)" }}>{p.name}</div>
                 </div>
                 {/* Verso : le numéro */}
                 <div style={{ ...face, transform:"rotateY(180deg)", background:n === 1 ? "linear-gradient(160deg,#f59e0b,#b45309)" : "linear-gradient(160deg,#334155,#0f172a)" }}>

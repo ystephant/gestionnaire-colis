@@ -7,6 +7,13 @@ export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
+  // Le code de l'appli est bien arrivé : désarme le filet de sécurité de _document.js
+  useEffect(() => {
+    window.__lpmReady = true;
+    document.getElementById('lpm-boot')?.remove();
+    try { sessionStorage.removeItem('lpm_boot_retry'); } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     // Délai minimum pour voir l'écran de chargement
     const timer = setTimeout(() => {

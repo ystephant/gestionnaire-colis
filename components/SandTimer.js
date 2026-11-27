@@ -116,6 +116,9 @@ export default function SandTimer({ D, dark, onAlarm, onStart }) {
     if (angleRef.current) { setStatus("resuming"); tilt(0, 450, drain); } else drain();
   };
 
+  // Stop : remet le sablier plein et debout, sans le relancer
+  const reset = () => { stop(); setPr(1); prRef.current = 1; setAngle(0); setStatus("idle"); };
+
   const pick = (s) => { stop(); setDur(s); setPr(1); setAngle(0); setStatus("idle"); };
 
   const done = status === "done";
@@ -236,6 +239,9 @@ export default function SandTimer({ D, dark, onAlarm, onStart }) {
             style={{ ...mainBtn, padding:"12px 18px", background:done ? ring : "transparent", color:done ? "#fff" : D.txt, border:done ? "none" : `1px solid ${D.brd}`, opacity:busy && status !== "pausing" ? .5 : 1 }}>
             🔁 Relancer
           </button>
+        )}
+        {status !== "idle" && (
+          <button onClick={reset} style={{ ...mainBtn, padding:"12px 18px", background:"#ef4444", color:"#fff" }}>⏹ Stop</button>
         )}
       </div>
 

@@ -100,12 +100,15 @@ const describe = (e) => e.groups
   ? e.groups.map(g => `${g.count}×D${g.type} [${g.values.join(",")}]`).join(" + ")
   : e.diceType === 100 ? "D100" : `${e.diceCount}×D${e.diceType} [${(e.values || []).join(",")}]`;
 
-export default function DiceTable({ D, dark, isMobile, DieFace, playSound, last, setLast, history, setHistory, selPlayer, onApply }) {
+export default function DiceTable({ D, dark, isMobile, DieFace, playSound, last, setLast, history, setHistory, players = [], who, setWho, onApply }) {
   const [pool, setPool] = useState(() => {
     try { const p = JSON.parse(localStorage.getItem(STORE)); if (p && typeof p === "object") return p; } catch {}
     return { 6:2 };
   });
   const [rolling, setRolling] = useState(false);
+  const player = players.find(p => p.id === who) || null;
+  const whoRef = useRef(null);
+  whoRef.current = player?.name || null;
   const busy = useRef(false);
   const rollRef = useRef(null);
 
@@ -129,7 +132,7 @@ export default function DiceTable({ D, dark, isMobile, DieFace, playSound, last,
       playSound();
       navigator.vibrate?.([30, 40, 20]);
       const time = new Date().toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" });
-      setHistory(h => [{ id:String(res.id), groups:res.groups, total:res.total, time }, ...h].slice(0, 50));
+      setHistory(h => [{ id:String(res.id), groups:res.groups, total:res.total, time, who:whoRef.current }, ...h].slice(0, 50));
     }, ROLL_MS + 80);
   };
   rollRef.current = roll;
@@ -189,6 +192,19 @@ export default function DiceTable({ D, dark, isMobile, DieFace, playSound, last,
         </div>
       </div>
 
+      {/* Qui lance ? */}
+      {players.length > 0 && (
+        <div role="group" aria-label="Qui lance les dés" style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={{ fontSize:13, fontWeight:700, color:D.txt, marginRight:2 }}>Qui lance ?</span>
+          {players.map(p => (
+            <button key={p.id} onClick={() => setWho(who === p.id ? null : p.id)} aria-pressed={who === p.id}
+              style={{ minHeight:38, padding:"0 13px", borderRadius:20, fontWeight:800, fontSize:13, cursor:"pointer", border:`2px solid ${p.color.hex}`, background:who === p.id ? p.color.hex : "transparent", color:who === p.id ? "#fff" : D.txt }}>
+              {who === p.id ? "✓ " : ""}{p.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Tapis */}
       <div className="dt-mat" onClick={roll} role="button" aria-label="Tapis de dés : toucher pour lancer"
         style={{
@@ -225,10 +241,10 @@ export default function DiceTable({ D, dark, isMobile, DieFace, playSound, last,
                 {last.groups.map(g => `D${g.type} : ${g.values.join(" + ")}`).join("  ·  ")}
               </div>
             )}
-            {selPlayer && (
-              <button onClick={e => { e.stopPropagation(); onApply(selPlayer, last.total); }}
-                style={{ marginTop:10, padding:"9px 20px", borderRadius:10, border:"2px solid rgba(255,255,255,.5)", background:selPlayer.color.hex, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", minHeight:40 }}>
-                +{last.total} → {selPlayer.name}
+            {player && (
+              <button disabled={!!last.applied} onClick={e => { e.stopPropagation(); onApply(player, last.total); setLast({ ...last, applied:player.name }); }}
+                style={{ marginTop:10, padding:"9px 20px", borderRadius:10, border:"2px solid rgba(255,255,255,.5)", background:last.applied ? "#16a34a" : player.color.hex, color:"#fff", fontWeight:800, fontSize:13, cursor:last.applied ? "default" : "pointer", minHeight:40 }}>
+                {last.applied ? `✅ ${last.total} ajouté à ${last.applied}` : `+${last.total} → ${player.name}`}
               </button>
             )}
           </div>
@@ -249,7 +265,7 @@ export default function DiceTable({ D, dark, isMobile, DieFace, playSound, last,
           <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:200, overflowY:"auto" }}>
             {history.map(e => (
               <div key={e.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:9, background:dark ? "#ffffff03" : "#00000003" }}>
-                <span style={{ flex:1, fontSize:12, color:D.sub }}>{describe(e)}</span>
+                <span style={{ flex:1, fontSize:12, color:D.sub }}>{e.who && <b style={{ color:D.txt }}>{e.who} · </b>}{describe(e)}</span>
                 <span className="mono" style={{ fontSize:15, fontWeight:800, color:D.acc }}>{e.total}</span>
                 <span style={{ fontSize:10, color:D.sub, flexShrink:0 }}>{e.time}</span>
               </div>
